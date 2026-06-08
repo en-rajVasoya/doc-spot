@@ -1,0 +1,210 @@
+// import { memo } from "react";
+// import InteractiveIcon from "../../layout/InteractiveIcon";
+// import Tooltip from "../../layout/Tooltip";
+// import menuIcon from "@images/icon/menu.svg";
+// import gridIcon from "@images/icon/grid.svg";
+// import Breadcrumbs from "../Breadcrumbs";
+// import { useTrash } from "../../../context/TrashContext";
+// import { useNavigate } from "react-router-dom";
+
+// const TrashSubHeader = memo(function TrashSubHeader({ view, setView, setModal  }) {
+//     const { trail, navigateTo, items, deleteForeverApi } = useTrash();
+//     const navigate = useNavigate();
+
+//     const handleEmptyBin = () => {
+//         if (items.length === 0) return
+//         const allIds = items.map(i => i._id)
+//         setModal({ type: "DeleteForeverModal", data: allIds })
+//     }
+
+//     return (
+//         <>
+
+
+//             <header className="header">
+//                 <div className="header-view d-flex align-items-center justify-content-between">
+//                     <Breadcrumbs
+//                         trail={trail}
+//                         onNavigate={navigateTo}
+//                         onHomeClick={() => navigate("/trash-dashboard")}
+//                         maxVisible={5}
+//                         rootLabel="Trash"
+//                         actions={[]}
+//                     />
+
+//                     <div className="d-flex align-items-center">
+//                         <ul className="mb-0 d-flex view-btn">
+//                             <li>
+//                                 <Tooltip text="List View">
+//                                     <button
+//                                         className={`btn btn-icon rounded-end-0 ${view === "list" ? "view-active" : ""}`}
+//                                         onClick={() => setView("list")}
+//                                     >
+//                                         <InteractiveIcon defaultIcon={menuIcon} width={20} />
+//                                     </button>
+//                                 </Tooltip>
+//                             </li>
+//                             <li>
+//                                 <Tooltip text="Grid View">
+//                                     <button
+//                                         className={`btn btn-icon rounded-start-0 ${view === "grid" ? "view-active" : ""}`}
+//                                         onClick={() => setView("grid")}
+//                                     >
+//                                         <InteractiveIcon defaultIcon={gridIcon} width={20} />
+//                                     </button>
+//                                 </Tooltip>
+//                             </li>
+//                         </ul>
+//                     </div>
+//                 </div>
+//             </header>
+//             {/* full width notice bar */}
+//             {items.length > 0 && (
+//                 <div style={{
+//                     width: "100%",
+//                     backgroundColor: "#dee2e6",
+//                     padding: "10px 20px",
+//                     display: "flex",
+//                     alignItems: "center",
+//                     justifyContent: "space-between",
+//                     borderRadius: "5px"
+//                 }}>
+//                     <span style={{ fontSize: "0.85rem", color: "#495057" }}>
+//                         Items in trash are deleted forever after 30 days
+//                     </span>
+//                     <button className="btn-secondary btn-lg" onClick={handleEmptyBin}>
+//                         Empty Bin
+//                     </button>
+//                 </div>
+//             )}
+//         </>
+//     );
+// })
+
+// export default TrashSubHeader;
+
+
+
+
+
+
+import { memo } from "react";
+import InteractiveIcon from "../../layout/InteractiveIcon";
+import Tooltip from "../../layout/Tooltip";
+import menuIcon from "@images/icon/menu.svg";
+import gridIcon from "@images/icon/grid.svg";
+import Breadcrumbs from "../Breadcrumbs";
+import { useTrash } from "../../../context/TrashContext";
+import { useNavigate } from "react-router-dom";
+import backIcon from "@images/icon/arrow-left-outline-icon.svg";
+import { useNotification } from "../../../context/NotificationContext";
+import { useDownload } from "../../../context/DownloadContext";
+
+const TrashSubHeader = memo(function TrashSubHeader({ view, setView, setModal }) {
+    const { trail, navigateTo, items, selectedIds, setSelectedIds, restoreItemApi } = useTrash()
+    const { downloadFile, downloadFolder, downloadMultiple } = useDownload()
+    const { showNotification } = useNotification()
+    const navigate = useNavigate();
+
+    const selectedArray = Array.from(selectedIds || new Set())
+
+    const handleEmptyBin = () => {
+        if (items.length === 0) return
+        const allIds = items.map(i => i._id)
+        setModal({ type: "DeleteForeverModal", data: allIds })
+    }
+
+    //  here restore item 
+    const handleRestore = async () => {
+        for (const id of selectedIds) {
+            await restoreItemApi(id, true)
+        }
+        const message = selectedArray.length > 1 ? "Items restored successfully" : "Item restored successfully"
+        showNotification(message, "success", "bottom-center")
+        setSelectedIds(new Set())
+    }
+
+    //  here delete for ever
+    const handleDeleteForever = () => {
+        if (selectedArray.length === 0) return
+        setModal({ type: "DeleteForeverModal", data: selectedArray })
+    }
+
+    return (
+        <>
+
+
+            <header className="header header-trash">
+                <div className="header-view d-flex align-items-center justify-content-between">
+                    <div className="d-flex align-itmes-cnter">
+                         <Tooltip text="Back" placement="bottom" >
+                        <button className="btn-hover-gray me-3"
+                            onClick={() => navigate('/dashboard')}
+                        >
+                            <InteractiveIcon
+                                defaultIcon={backIcon}
+                                width={20}
+                                height={20}
+                            />
+                        </button>
+                        </Tooltip>
+                        <Breadcrumbs
+                            trail={trail}
+                            onNavigate={navigateTo}
+                            onHomeClick={() => navigate("/trash-dashboard")}
+                            maxVisible={5}
+                            rootLabel="Trash"
+                            actions={["download", "restore", "deleteForever"]}
+                            selectedIds={selectedIds}
+                            onRestore={handleRestore}
+                            onDeleteForever={handleDeleteForever}
+                            downloadFile={downloadFile}
+                            downloadFolder={downloadFolder}
+                            downloadMultiple={downloadMultiple}
+                            items={items}
+
+                        />
+                    </div>
+
+                    <div className="d-flex align-items-center">
+                        <ul className="mb-0 d-flex view-btn">
+                            <li>
+                                <Tooltip text="List View">
+                                    <button
+                                        className={`btn btn-icon rounded-end-0 ${view === "list" ? "view-active" : ""}`}
+                                        onClick={() => setView("list")}
+                                    >
+                                        <InteractiveIcon defaultIcon={menuIcon} width={20} />
+                                    </button>
+                                </Tooltip>
+                            </li>
+                            <li>
+                                <Tooltip text="Grid View">
+                                    <button
+                                        className={`btn btn-icon rounded-start-0 ${view === "grid" ? "view-active" : ""}`}
+                                        onClick={() => setView("grid")}
+                                    >
+                                        <InteractiveIcon defaultIcon={gridIcon} width={20} />
+                                    </button>
+                                </Tooltip>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </header>
+            {/* full width notice bar */}
+            {items.length > 0 && (
+                <div className="empty-bin-section">
+                    <span>
+                        Items in trash are deleted forever after 30 days
+                    </span>
+                    <button className=" btn" onClick={handleEmptyBin}>
+                        Empty Bin
+                    </button>
+                </div>
+            )}
+        </>
+    );
+})
+
+export default TrashSubHeader;

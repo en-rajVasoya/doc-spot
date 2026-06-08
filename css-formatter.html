@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AstroCSS • Single Line CSS Formatter</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --bg-color: #0b0d19;
+            --card-bg: rgba(255, 255, 255, 0.03);
+            --card-border: rgba(255, 255, 255, 0.08);
+            --text-primary: #f3f4f6;
+            --text-secondary: #9ca3af;
+            --accent-primary: #8b5cf6;
+            --accent-secondary: #3b82f6;
+            --accent-gradient: linear-gradient(135deg, #8b5cf6 0%, #3b82f6 100%);
+            --accent-glow: rgba(139, 92, 246, 0.3);
+            --success: #10b981;
+            --error: #ef4444;
+            --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        /* Glowing background blobs */
+        .blob {
+            position: absolute;
+            width: 500px;
+            height: 500px;
+            border-radius: 50%;
+            filter: blur(120px);
+            opacity: 0.15;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        .blob-1 {
+            background-color: var(--accent-primary);
+            top: -10%;
+            left: -10%;
+        }
+
+        .blob-2 {
+            background-color: var(--accent-secondary);
+            bottom: -10%;
+            right: -10%;
+        }
+
+        header {
+            padding: 2.5rem 2rem 1.5rem;
+            text-align: center;
+            z-index: 10;
+        }
+
+        .logo-container {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .logo-icon {
+            width: 2.5rem;
+            height: 2.5rem;
+            background: var(--accent-gradient);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 20px var(--accent-glow);
+            font-weight: 700;
+            font-size: 1.25rem;
+        }
+
+        h1 {
+            font-size: 2.25rem;
+            font-weight: 700;
+            background: linear-gradient(to right, #ffffff, #9ca3af);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.025em;
+        }
+
+        .subtitle {
+            font-size: 1rem;
+            color: var(--text-secondary);
+            max-width: 600px;
+            margin: 0.5rem auto 0;
+            font-weight: 300;
+        }
+
+        main {
+            flex-grow: 1;
+            max-width: 1400px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 0 2rem 3rem;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        /* Glassmorphism Panel */
+        .panel {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 20px;
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            padding: 2rem;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        /* Upload Area */
+        .dropzone {
+            border: 2px dashed var(--card-border);
+            border-radius: 12px;
+            padding: 2rem;
+            text-align: center;
+            cursor: pointer;
+            transition: var(--transition);
+            background: rgba(255, 255, 255, 0.01);
+            position: relative;
+        }
+
+        .dropzone:hover, .dropzone.dragover {
+            border-color: var(--accent-primary);
+            background: rgba(139, 92, 246, 0.03);
+        }
+
+        .dropzone-text {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            pointer-events: none;
+        }
+
+        .dropzone-text span {
+            color: var(--text-primary);
+            font-weight: 500;
+            text-decoration: underline;
+        }
+
+        #file-input {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        /* Editors Workspace */
+        .workspace {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+        }
+
+        @media (max-width: 900px) {
+            .workspace {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .editor-container {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .editor-label {
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .editor-label span.badge {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 0.25rem 0.6rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            border: 1px solid var(--card-border);
+        }
+
+        .text-wrapper {
+            position: relative;
+            width: 100%;
+        }
+
+        textarea {
+            width: 100%;
+            height: 480px;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 1.25rem;
+            color: var(--text-primary);
+            font-family: 'Fira Code', monospace;
+            font-size: 0.875rem;
+            line-height: 1.6;
+            resize: none;
+            outline: none;
+            transition: var(--transition);
+        }
+
+        textarea:focus {
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 15px rgba(139, 92, 246, 0.15);
+        }
+
+        /* Toolbar Actions */
+        .toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+            flex-wrap: wrap;
+            padding-top: 0.5rem;
+            border-top: 1px solid var(--card-border);
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 0.75rem;
+            align-items: center;
+        }
+
+        button {
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.95rem;
+            font-weight: 500;
+            padding: 0.75rem 1.5rem;
+            border-radius: 10px;
+            border: none;
+            cursor: pointer;
+            transition: var(--transition);
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-primary {
+            background: var(--accent-gradient);
+            color: white;
+            box-shadow: 0 4px 15px var(--accent-glow);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(139, 92, 246, 0.4);
+        }
+
+        .btn-primary:active {
+            transform: translateY(0);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-primary);
+            border: 1px solid var(--card-border);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: var(--text-secondary);
+        }
+
+        .btn-secondary:active {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .btn-success {
+            background: var(--success);
+            color: white;
+        }
+
+        /* Stats board */
+        .stats-container {
+            display: flex;
+            gap: 1.5rem;
+            flex-wrap: wrap;
+        }
+
+        .stat-badge {
+            display: flex;
+            flex-direction: column;
+            gap: 0.2rem;
+        }
+
+        .stat-val {
+            font-size: 1.1rem;
+            font-weight: 600;
+            font-family: 'Fira Code', monospace;
+        }
+
+        .stat-lbl {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        /* Toast notification */
+        .toast {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            background: #1e293b;
+            border: 1px solid var(--card-border);
+            border-left: 4px solid var(--success);
+            color: var(--text-primary);
+            padding: 1rem 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            transform: translateY(150%);
+            transition: var(--transition);
+            z-index: 100;
+            font-size: 0.95rem;
+        }
+
+        .toast.show {
+            transform: translateY(0);
+        }
+
+        .toast-error {
+            border-left-color: var(--error);
+        }
+
+        footer {
+            text-align: center;
+            padding: 2rem;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            border-top: 1px solid var(--card-border);
+            z-index: 10;
+            background: rgba(11, 13, 25, 0.8);
+            backdrop-filter: blur(5px);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Background Glows -->
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+
+    <header>
+        <div class="logo-container">
+            <div class="logo-icon">✨</div>
+            <h1>AstroCSS</h1>
+        </div>
+        <p class="subtitle">An advanced formatting utility designed to condense multi-line CSS declarations into clean, single-line rules without changing any style behavior or functionality.</p>
+    </header>
+
+    <main>
+        <div class="panel">
+            <!-- Drag & Drop Zone -->
+            <div class="dropzone" id="dropzone">
+                <p class="dropzone-text" id="dropzone-text">Drag & drop your <span>main.css</span> file here, or click to browse</p>
+                <input type="file" id="file-input" accept=".css">
+            </div>
+
+            <!-- Workspace -->
+            <div class="workspace">
+                <div class="editor-container">
+                    <div class="editor-label">
+                        <span>Original CSS</span>
+                        <span class="badge" id="orig-size-badge">Lines: 0</span>
+                    </div>
+                    <div class="text-wrapper">
+                        <textarea id="css-input" placeholder="/* Paste your multi-line CSS here... */
+
+.card {
+    background-color: #fff;
+    margin: 10px;
+    padding: 20px;
+    border-radius: 8px;
+}"></textarea>
+                    </div>
+                </div>
+
+                <div class="editor-container">
+                    <div class="editor-label">
+                        <span>Formatted CSS (Single Line)</span>
+                        <span class="badge" id="form-size-badge">Lines: 0</span>
+                    </div>
+                    <div class="text-wrapper">
+                        <textarea id="css-output" readonly placeholder="/* Formatted output will appear here... */"></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bottom Toolbar -->
+            <div class="toolbar">
+                <div class="stats-container">
+                    <div class="stat-badge">
+                        <span class="stat-val" id="stat-orig">0 B</span>
+                        <span class="stat-lbl">Original Size</span>
+                    </div>
+                    <div class="stat-badge">
+                        <span class="stat-val" id="stat-form">0 B</span>
+                        <span class="stat-lbl">Formatted Size</span>
+                    </div>
+                    <div class="stat-badge">
+                        <span class="stat-val" id="stat-ratio">0%</span>
+                        <span class="stat-lbl">Line Reduction</span>
+                    </div>
+                </div>
+
+                <div class="btn-group">
+                    <button class="btn-secondary" id="btn-reset">Reset</button>
+                    <button class="btn-secondary" id="btn-copy">Copy Code</button>
+                    <button class="btn-secondary" id="btn-download">Download File</button>
+                    <button class="btn-primary" id="btn-format">Format CSS</button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Toast Notification -->
+    <div class="toast" id="toast">
+        <span id="toast-icon">✓</span>
+        <span id="toast-message">CSS Formatted successfully!</span>
+    </div>
+
+    <footer>
+        <p>© 2026 AstroCSS Utility. Keeps CSS structures, comments, media queries, and rules completely intact.</p>
+    </footer>
+
+    <script>
+        const cssInput = document.getElementById('css-input');
+        const cssOutput = document.getElementById('css-output');
+        const fileInput = document.getElementById('file-input');
+        const dropzone = document.getElementById('dropzone');
+        const dropzoneText = document.getElementById('dropzone-text');
+        
+        // Buttons
+        const btnFormat = document.getElementById('btn-format');
+        const btnCopy = document.getElementById('btn-copy');
+        const btnDownload = document.getElementById('btn-download');
+        const btnReset = document.getElementById('btn-reset');
+
+        // Badges & Stats
+        const origSizeBadge = document.getElementById('orig-size-badge');
+        const formSizeBadge = document.getElementById('form-size-badge');
+        const statOrig = document.getElementById('stat-orig');
+        const statForm = document.getElementById('stat-form');
+        const statRatio = document.getElementById('stat-ratio');
+        const toast = document.getElementById('toast');
+
+        // Notification Helper
+        function showToast(message, isError = false) {
+            toast.classList.remove('show', 'toast-error');
+            document.getElementById('toast-icon').innerText = isError ? '✗' : '✓';
+            document.getElementById('toast-message').innerText = message;
+            if (isError) toast.classList.add('toast-error');
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        // Helper: Format byte sizes
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        // Drag & Drop Handlers
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropzone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                dropzone.classList.add('dragover');
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropzone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                dropzone.classList.remove('dragover');
+            }, false);
+        });
+
+        dropzone.addEventListener('drop', (e) => {
+            const file = e.dataTransfer.files[0];
+            if (file) handleFile(file);
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) handleFile(file);
+        });
+
+        function handleFile(file) {
+            if (!file.name.endsWith('.css')) {
+                showToast('Please select a valid CSS file.', true);
+                return;
+            }
+            dropzoneText.innerHTML = `Loaded: <strong>${file.name}</strong>`;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                cssInput.value = e.target.result;
+                updateStats();
+            };
+            reader.readAsText(file);
+        }
+
+        // Core Parser Logic: collapsing multi-line CSS into single-line rules safely
+        function collapseCSSToSingleLine(css) {
+            if (!css.trim()) return '';
+
+            const tokens = [];
+            let tokenIndex = 0;
+
+            // 1. Mask CSS comments to prevent modification of brace nesting in comments
+            let processed = css.replace(/\/\*[\s\S]*?\*\//g, (match) => {
+                const placeholder = `___TOKEN_COMMENT_${tokenIndex++}___`;
+                tokens.push({ placeholder, value: match });
+                return placeholder;
+            });
+
+            // 2. Mask double-quoted strings (e.g. content values)
+            processed = processed.replace(/"([^"\\]|\\.)*"/g, (match) => {
+                const placeholder = `___TOKEN_STRING_DBL_${tokenIndex++}___`;
+                tokens.push({ placeholder, value: match });
+                return placeholder;
+            });
+
+            // 3. Mask single-quoted strings
+            processed = processed.replace(/'([^'\\]|\\.)*'/g, (match) => {
+                const placeholder = `___TOKEN_STRING_SGL_${tokenIndex++}___`;
+                tokens.push({ placeholder, value: match });
+                return placeholder;
+            });
+
+            // 4. Match all leaf rules: [selectors] { [content] }
+            // Pattern matches any selector followed by matching opening and closing braces with no nested braces
+            processed = processed.replace(/([^{}]+)\{([^{}]+)\}/g, (match, selector, content) => {
+                const commentTokenRegex = /___TOKEN_COMMENT_\d+___/g;
+                const comments = selector.match(commentTokenRegex) || [];
+                
+                // Get selector text without comments
+                const actualSelectorOnly = selector.replace(commentTokenRegex, '');
+                
+                // Extract original indentation (spaces/tabs on the line of the selector)
+                const indentMatch = actualSelectorOnly.match(/(?:^|\n)([ \t]*)[^ \t\n\r]/);
+                const indent = indentMatch ? indentMatch[1] : '';
+                
+                // Clean up selector (collapsing internal newlines/spaces)
+                const cleanSelector = actualSelectorOnly.replace(/\s+/g, ' ').trim();
+                // Clean up properties block content (collapsing internal newlines/spaces)
+                const cleanContent = content.replace(/\s+/g, ' ').trim();
+                
+                // Construct the rule output
+                let result = '';
+                if (comments.length > 0) {
+                    // Place each comment on its own line, prefixed with the correct indent
+                    const cleanComments = comments.map(c => indent + c).join('\n');
+                    result = `\n${cleanComments}\n${indent}${cleanSelector} { ${cleanContent} }`;
+                } else {
+                    result = `\n${indent}${cleanSelector} { ${cleanContent} }`;
+                }
+                
+                return result;
+            });
+
+            // 5. Restore comments and strings in reverse order to ensure perfect mapping
+            for (let i = tokens.length - 1; i >= 0; i--) {
+                const token = tokens[i];
+                processed = processed.replace(token.placeholder, token.value);
+            }
+
+            // 6. Clean up residual empty lines, enforcing clean single-line spacing
+            processed = processed.replace(/\n\s*\n+/g, '\n');
+
+            return processed.trim();
+        }
+
+        // Action Handlers
+        btnFormat.addEventListener('click', () => {
+            const input = cssInput.value;
+            if (!input.trim()) {
+                showToast('Input CSS is empty.', true);
+                return;
+            }
+            
+            try {
+                const formatted = collapseCSSToSingleLine(input);
+                cssOutput.value = formatted;
+                updateStats();
+                showToast('CSS rules condensed into single lines successfully!');
+            } catch (err) {
+                showToast('Error formatting CSS: ' + err.message, true);
+            }
+        });
+
+        btnCopy.addEventListener('click', () => {
+            const output = cssOutput.value;
+            if (!output.trim()) {
+                showToast('Nothing to copy.', true);
+                return;
+            }
+            navigator.clipboard.writeText(output).then(() => {
+                showToast('Formatted CSS copied to clipboard!');
+            }).catch(err => {
+                showToast('Failed to copy text.', true);
+            });
+        });
+
+        btnDownload.addEventListener('click', () => {
+            const output = cssOutput.value;
+            if (!output.trim()) {
+                showToast('Nothing to download.', true);
+                return;
+            }
+            const blob = new Blob([output], { type: 'text/css' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'main.formatted.css';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast('CSS file downloaded successfully!');
+        });
+
+        btnReset.addEventListener('click', () => {
+            cssInput.value = '';
+            cssOutput.value = '';
+            dropzoneText.innerHTML = `Drag & drop your <span>main.css</span> file here, or click to browse`;
+            fileInput.value = '';
+            updateStats();
+            showToast('Fields cleared.');
+        });
+
+        function updateStats() {
+            const origText = cssInput.value;
+            const formText = cssOutput.value;
+
+            // Byte sizes
+            const origBytes = new Blob([origText]).size;
+            const formBytes = new Blob([formText]).size;
+
+            statOrig.innerText = formatBytes(origBytes);
+            statForm.innerText = formatBytes(formBytes);
+
+            // Line counts
+            const origLines = origText ? origText.split('\n').length : 0;
+            const formLines = formText ? formText.split('\n').length : 0;
+
+            origSizeBadge.innerText = `Lines: ${origLines}`;
+            formSizeBadge.innerText = `Lines: ${formLines}`;
+
+            // Line reduction ratio
+            if (origLines > 0) {
+                const diff = origLines - formLines;
+                const ratio = Math.max(0, Math.round((diff / origLines) * 100));
+                statRatio.innerText = `${ratio}%`;
+            } else {
+                statRatio.innerText = '0%';
+            }
+        }
+
+        // Live stats update on typing
+        cssInput.addEventListener('input', updateStats);
+    </script>
+</body>
+</html>

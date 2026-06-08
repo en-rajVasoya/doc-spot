@@ -1,0 +1,2884 @@
+hello here i ma building here mern stack proejct like google drive cloneproejct here lilke user can uplaodis in chunks and files and fodlers here and re uplading from diffrne device here so here from now on dont giveme any diagram ok and one think dont giveme any here long answer here and dont giveme any code here i will tell ly ou ok 
+
+first read my coide here and only say yes here ok 
+
+
+import mongoose, { Mongoose } from "mongoose"
+
+const uploadSchema = mongoose.Schema({
+    
+    //  file or folder name
+    name: {
+        type: String,
+        required: true
+    },
+
+    //  type file or folder
+    type: {
+        type: String,
+        enum: ["folder", "file"],
+        required: true
+    },
+
+    //  file or folder structure
+    parent: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Upload",
+        default: null
+    },
+    owner: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+    },
+
+    //  file only fields - folder null
+    fingerprint: {
+        type: String,
+        default: null
+    },
+    uploadId: {
+        type: String,
+        default: null
+    },
+    fileSize: {
+        type: Number,
+        default: null
+    },
+    fileType: {
+        type: String,
+        default: null
+    },
+    storagePath: {
+        type: String,
+        default: null
+    },
+
+    //  total number of chunks this file is divided into
+    totalChunks: {
+        type: Number,
+        default: null
+    },
+
+    uploadStatus: {
+        type: String,
+        enum: ["uploading", "completed", "expired", null]
+    },
+
+    //  folder color - user can change folder color
+    color: {
+        type: String,
+        default: "Red"
+    },
+
+    //  refCount for sharing and copy without disk duplication
+    //  when refCount hits 0 physical file is deleted
+    refCount: {
+        type: Number,
+        default: 1
+    },
+
+    //  last upload activity - used for expiry cleanup of stuck uploads
+    lastActivity: {
+        type: Date,
+        default: null
+    },
+
+
+    //  sharing field 
+    //  shared with which users
+    sharedWith:[
+        {
+            //  which user
+            userId: {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: "User",
+                required: true
+            },
+
+            //  which permission to give editor = rename, upload, delete  viewer = only view and download
+            permission: {
+                type: String,
+                enum: ["viewer", "editor"],
+                required: true
+            }   
+        }
+    ],
+    
+    //  only flag for faster query 
+    isShared: {
+        type: Boolean,
+        default: false
+    },
+
+
+    //  here when user delete any file or folder then it will go to the trash page
+    isTrashed: {
+        type: Boolean,
+        default: false
+    },
+
+    //  for tracking when user trash item so we can delete after 30days
+    trashedAt: {
+        type: Date,
+        default: null
+    },
+
+    replacesFileId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Upload",
+        default: null
+    },
+
+    // antivirus scan fields
+    scanStatus: {
+        type: String,
+        enum: ["pending", "scanning", "clean", "infected", "failed", null],
+        default: null
+    },
+
+    virusInfo: {
+        type: String,
+        default: null
+    },
+
+    sha256: {
+        type: String,
+        default: null
+    },
+
+}, { timestamps: true })
+
+
+//  indexing for faster queries
+uploadSchema.index({ owner: 1, parent: 1 })
+uploadSchema.index({ owner: 1, fingerprint: 1, parent: 1 })
+uploadSchema.index({ owner: 1, uploadStatus: 1 })
+uploadSchema.index({ uploadId: 1 })
+
+//  shared 
+uploadSchema.index({ "sharedWith.userId": 1, parent: 1 })
+uploadSchema.index({ owner: 1, isShared: 1})
+
+
+//  trashed faster wuery here
+uploadSchema.index({ owner: 1, isTrashed: 1 })
+uploadSchema.index({ trashedAt: 1, isTrashed: 1 })
+
+
+uploadSchema.index({ sha256: 1 })
+uploadSchema.index({ scanStatus: 1 })
+
+const Upload = mongoose.model("Upload", uploadSchema)
+
+export default Upload
+
+
+
+
+
+
+
+
+
+
+import fs from "fs";
+import path from "path"
+import multer from "multer"
+import { v4 as uuidv4 } from "uuid";
+import Upload from "../models/uploadModel.js";
+import Chunk from "../models/chunkModel.js";
+import { releaseFd } from "../middleware/chunkUploadMiddleware.js";
+import { getUserPermission } from "./shareController.js";
+import { clearUploadCache, clearWriteQueue } from "../middleware/chunkUploadMiddleware.js";
+import { checkFileSecurity } from "../utils/fileSecurityCheck.js";
+
+import { addToScanQueue } from "../virusTotal/scanQueue.js";
+import { scanFileWithVirusTotal } from "../virusTotal/virusTotalWorker.js";
+import { scanFileWithClamAV } from "../virusTotal/clamAVWorker.js";
+
+//  first create out /file folder if not exist here
+// const FILES_DIR = path.resolve("./files")
+// if (!fs.existsSync(FILES_DIR)) {
+//   fs.mkdirSync(FILES_DIR, { recursive: true })
+// }
+
+
+
+// small files still use memory - fine for small files under 1MB
+export const smallUpload = multer({ storage: multer.memoryStorage() })
+
+// create temp folder if not exist
+const TEMP_DIR = path.resolve("./temp")
+if (!fs.existsSync(TEMP_DIR)) {
+  fs.mkdirSync(TEMP_DIR, { recursive: true })
+}
+
+
+
+// here helper function of getting first 2 char of upload id to make folder here
+const getBucketPath = (uploadId) => {
+  const bucket = uploadId.substring(0, 2)
+  const bucketDir = path.resolve(`./files/${bucket}`)
+  if (!fs.existsSync(bucketDir)) {
+    fs.mkdirSync(bucketDir, { recursive: true })
+  }
+  return bucketDir
+}
+
+
+
+
+
+
+// STEP-1 for first step we need Init here from frontend we recive the data and storing to mongodb
+export const initUpload = async (req, res) => {
+  try {
+    const { fileName, fingerprint, fileSize, fileType, totalChunks, parent, fileHeader, replacesFileId } = req.body;
+    const owner = req.user._id;
+
+    // empty folder upload here if 
+    if (req.body.fileName === ".keep") {
+      return res.json({ success: true, status: "skipped" });
+    }
+
+
+    //  here check permission like 
+    // 1) when user delete some folder maybe so other usr can not upload a file into that imeediat return resposne before starting chunk upload here
+    // 2) viewer can not uplaod a item in shared folder here
+    if (parent) {
+      const parentFolder = await Upload.findById(parent).select("isTrashed sharedWith owner parent")
+      if (!parentFolder) {
+        return res.status(404).json({ success: false, message: "Parent folder not found" });
+      }
+
+      //  trashed fodler check user can not uplaod to a trash
+      if (parentFolder.isTrashed) {
+        return res.status(400).json({
+          success: false,
+          message: "Cannot upload to a trashed folder",
+          blocked: true
+        });
+      }
+
+      // here for shared fodler if user is only viewer soo user cannot upload to a fodler
+      const permission = await getUserPermission(owner, parent)
+      if (!permission || !["owner", "editor"].includes(permission)) {
+        return res.status(403).json({
+          success: false,
+          message: "You don't have permission to upload to this folder",
+          blocked: true
+        })
+      }
+    }
+
+    //  for security cehck we are checking here MIME type if file is dangaours here so block it 
+    const security = await checkFileSecurity(fileName, fileHeader)
+    if (!security.safe) {
+      return res.status(400).json({ success: false, message: security.reason, blocked: true })
+    }
+
+
+    //  here chekc if file is already uploaded here
+    const existing = await Upload.findOne({
+      fingerprint,
+      owner,
+      parent: parent || null,
+      isTrashed: { $ne: true }
+    })
+
+    if (existing?.uploadStatus === "completed") {
+      return res.status(200).json({ success: true, status: "completed", message: "Completed" })
+    }
+
+    //  if uplaod statues is still uploading here
+    if (existing?.uploadStatus === "uploading") {
+      //  verify if temp file still exist on disk or not 
+      if (!existing.storagePath || !fs.existsSync(existing.storagePath)) {
+        //  file is gone so - delete broken record and start fresh upload here
+        await Upload.deleteOne({ _id: existing._id })
+        await Chunk.deleteMany({ uploadId: existing.uploadId })   // chunk schema all dleete that chunks here
+        //  below we are creating new uplaod fresh
+
+      } else {
+        //  resume support here
+        const uploadedChunks = await Chunk.find({ uploadId: existing.uploadId }).select("chunkIndex -_id")
+        return res.json({
+          success: true,
+          status: "resumable",
+          uploadId: existing.uploadId,
+          uploadedChunks: uploadedChunks.map(c => c.chunkIndex)
+        })
+      }
+    }
+
+
+    const uploadId = uuidv4()
+
+    //  her this is fodler creation with the userId - in future you want to shift to this approch here
+    // const userDir = path.join(FILES_DIR, String(owner))
+    // if (!fs.existsSync(userDir)) {
+    //   fs.mkdirSync(userDir, { recursive: true })
+    // }
+    // const storagePath = path.join(userDir, `${uploadId}.tmp`)
+
+    const bucketDir = getBucketPath(uploadId)
+    const storagePath = path.join(bucketDir, `${uploadId}.tmp`)
+
+    //  now here main point we are doinglike when first user upload a file here wo we are pre-alocating full file size to the disk
+    //  so when random index chunks arrive here we can write at the position here
+    const fd = fs.openSync(storagePath, "w")
+    fs.ftruncateSync(fd, fileSize)
+    fs.closeSync(fd)    //after allocation file close that file
+
+    await Upload.create({
+      name: fileName,
+      type: "file",
+      parent: parent || null,
+      owner,
+      fingerprint,
+      uploadId,
+      fileSize,
+      fileType,
+      storagePath,
+      totalChunks,
+      uploadStatus: "uploading",
+      lastActivity: new Date(),
+      replacesFileId: replacesFileId || null
+      // uploadedChunks removed — using Chunk collection now
+    })
+
+    res.json({ success: true, status: "new", uploadId })
+
+  } catch (error) {
+    console.error(`[INIT ERROR] fileName=${req.body.fileName} | error=${error.message}`);
+    res.status(500).json({ success: false, message: error.message })
+
+  }
+}
+
+
+
+
+// STEP - 2 Start Uploaidng
+// POST - upload/chunk
+//  here we are using indexes and starts becuase if we reive multiple random batch at same time so this will help us to write any chunk at correct position
+export const uploadChunk = async (req, res) => {
+  try {
+    const { received, uploadId } = req.chunkResults
+    return res.json({ success: true, received })
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+
+
+
+
+
+//  STEP - 3 after uploading all chunk save it
+export const completeUpload = async (req, res) => {
+  try {
+    const { uploadId } = req.body;
+    const owner = req.user._id
+
+    const record = await Upload.findOne({ uploadId, owner })
+    if (!record) return res.status(404).json({ success: false, message: "Upload not found" })
+
+    const uploadedCount = await Chunk.countDocuments({ uploadId })
+    console.log(`[COMPLETE DEBUG]`, {
+      fileName: record.name,
+      uploadId: uploadId,
+      expectedChunks: record.totalChunks,
+      foundChunks: uploadedCount,
+      mismatch: uploadedCount !== record.totalChunks,
+      missingCount: record.totalChunks - uploadedCount
+    })
+
+    if (uploadedCount !== record.totalChunks) {
+      console.error(`[COMPLETE ERROR] Mismatch for ${record.name}. id: ...${uploadId.slice(-6)} | Found: ${uploadedCount}, Expected: ${record.totalChunks}`);
+      return res.status(400).json({ success: false, message: "Missing chunks" })
+    }
+
+    // release fd and clear cache BEFORE renameSync
+    releaseFd(uploadId)
+    clearUploadCache(uploadId)
+    clearWriteQueue(uploadId)
+
+
+    //  here we are replacing the file name 
+    const ext = record.name?.includes(".") ? "." + record.name.split(".").pop() : ""
+    const bucketDir = getBucketPath(uploadId)
+    const oldPath = record.storagePath
+    const newPath = path.join(bucketDir, `${uploadId}${ext}`)
+
+    if (fs.existsSync(oldPath)) {
+      fs.renameSync(oldPath, newPath)
+    }
+
+    //  update here status after complete upload 
+    await Upload.updateOne(
+      { uploadId, owner },
+      {
+        uploadStatus: "completed",
+        storagePath: newPath,
+        lastActivity: new Date()
+      }
+    )
+
+
+    //  here we are checking if file is repalcing then after new file upload complete extract al shared data from old file to new here
+    if (record.replacesFileId) {
+      const oldRecord = await Upload.findById(record.replacesFileId)    // here finding that old record becuase eplace file id is same _id as old record id
+
+      if (oldRecord) {
+        //  here trasnfer all data to new one
+        await Upload.updateOne(
+          { uploadId, owner },
+          {
+            sharedWith: oldRecord.sharedWith,
+            isShared: oldRecord.isShared,
+            color: oldRecord.color,
+          }
+        )
+
+        // delete the old file reord from disk
+        if (oldRecord.storagePath && fs.existsSync(oldRecord.storagePath)) {
+          try {
+            fs.unlinkSync(oldRecord.storagePath)
+          } catch (error) {
+            console.log("Old file record ")
+          }
+        }
+
+        // delete the record from mongodb
+        await Upload.deleteOne({ _id: record.replacesFileId })
+
+      }
+    }
+
+    // socket event for when user uploads a file or folder in nested
+    if (record.parent) {
+      let currentParent = await Upload.findById(record.parent).select("sharedWith parent owner")
+
+      while (currentParent) {
+        if (currentParent.owner) {
+          req.emitToUser(currentParent.owner.toString(), "item_uploaded", { folderId: record.parent })
+        }
+        if (currentParent.sharedWith?.length > 0) {
+          currentParent.sharedWith.forEach(s => {
+            req.emitToUser(s.userId.toString(), "item_uploaded", { folderId: record.parent })
+          })
+          break
+        }
+        if (!currentParent.parent) break
+        currentParent = await Upload.findById(currentParent.parent).select("sharedWith parent owner")
+      }
+    }
+
+    // cleanup chunk records
+    await Chunk.deleteMany({ uploadId })
+
+    res.json({ success: true, id: record._id })
+
+
+    //  here after upload done now add that file to quque and scan the file here
+    // setImmediate(() => {
+    //   addToScanQueue(record._id.toString(), () => scanFileWithVirusTotal(record._id, newPath, record.fileSize, owner.toString()))
+    // })
+
+    // clam av here
+    // setImmediate(() => {
+    //   addToScanQueue(record._id.toString(), () => scanFileWithClamAV(record._id, newPath, record.fileSize, owner.toString()))
+    // })
+
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+
+
+
+//  now get upload status of files for re uploading
+export const getUploadStatus = async (req, res) => {
+  try {
+    const { uploadId } = req.params;
+    const owner = req.user._id;
+
+    const record = await Upload.findOne({ uploadId, owner })
+      .select("uploadedChunks totalChunks uploadStatus")
+
+    if (!record) return res.status(404).json({ success: false, message: "Not found" })
+
+
+    res.json({
+      success: true,
+      uploadedChunks: record.uploadedChunks,
+      totalChunks: record.totalChunks,
+      uploadStatus: record.uploadStatus
+    })
+
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+
+
+
+
+
+
+
+
+
+export const uploadSmallBatch = async (req, res) => {
+  try {
+    const owner = req.user._id;
+    const metadata = JSON.parse(req.body.metadata);
+    const parentId = metadata[0]?.parentId || null;
+
+    // check permissions and trash status for the parent folder
+    if (parentId) {
+      const parentFolder = await Upload.findById(parentId).select("isTrashed");
+      if (parentFolder && parentFolder.isTrashed) {
+        return res.status(400).json({
+          success: false,
+          message: "Cannot upload to a trashed folder"
+        });
+      }
+
+      const permission = await getUserPermission(owner, parentId)
+      if (!permission || !["owner", "editor"].includes(permission)) {
+        return res.status(403).json({
+          success: false,
+          message: "You don't have permission to upload to this folder"
+        })
+      }
+    }
+
+    const results = [];
+
+    // STEP 1 — collect all fingerprints
+    const fingerprints = metadata.map(m => m.fingerprint);
+
+    // STEP 2 — get all existing files
+    const existingFiles = await Upload.find({
+      fingerprint: { $in: fingerprints },
+      owner,
+      type: "file",
+      isTrashed: { $ne: true }
+    }).select("fingerprint parent uploadStatus");
+
+
+    // STEP 3 — map
+    const existingMap = new Map();
+    existingFiles.forEach(f => {
+      const key = `${f.fingerprint}_${f.parent || "null"}`;
+      existingMap.set(key, f);
+    });
+
+
+    const operations = [];
+    const writePromises = [];
+    const replaceOps = [] // track replace ops for after bulkWrite
+
+
+    // STEP 4 — process files
+    for (const file of req.files) {
+      const fileIndex = parseInt(file.fieldname.split("_")[1]);
+      const meta = metadata[fileIndex];
+      if (meta.fileName === ".keep") {
+        continue;
+      }
+
+      //  here check if file is dangourse or not 
+      const security = await checkFileSecurity(meta.fileName, file.buffer.slice(0, 4100))
+      if (!security.safe) {
+        results.push({ fingerprint: meta.fingerprint, status: "blocked", message: security.reason })
+        continue
+      }
+
+      const key = `${meta.fingerprint}_${meta.parentId || "null"}`;
+      const existing = existingMap.get(key);
+
+      if (existing?.uploadStatus === "completed") {
+        results.push({ fingerprint: meta.fingerprint, status: "completed" });
+        continue;
+      }
+
+      const uploadId = uuidv4();
+
+      const ext = meta.fileName?.includes(".")
+        ? "." + meta.fileName.split(".").pop()
+        : "";
+      const bucketDir = getBucketPath(uploadId)
+      const storagePath = path.join(bucketDir, `${uploadId}${ext}`)
+
+      // PARALLEL WRITE (no await here)
+      writePromises.push(
+        fs.promises.writeFile(storagePath, file.buffer)
+      );
+
+      operations.push({
+        insertOne: {
+          document: {
+            name: meta.fileName,
+            type: "file",
+            parent: meta.parentId || null,
+            owner,
+            fingerprint: meta.fingerprint,
+            uploadId,
+            fileSize: meta.fileSize,
+            fileType: meta.fileType,
+            storagePath,
+            totalChunks: 1,
+            uploadStatus: "completed",
+            replacesFileId: meta.replacesFileId || null  // add replacesFileId here
+          }
+        }
+      });
+
+      // track replace ops for after bulkWrite
+      if (meta.replacesFileId) {
+        replaceOps.push({
+          fingerprint: meta.fingerprint,
+          parentId: meta.parentId,
+          replacesFileId: meta.replacesFileId,
+          storagePath
+        })
+      }
+
+      results.push({ fingerprint: meta.fingerprint, status: "completed" });
+    }
+
+    //  WAIT ALL FILE WRITES
+    await Promise.all(writePromises);
+
+    // SINGLE DB WRITE
+    if (operations.length > 0) {
+      await Upload.bulkWrite(operations);
+    }
+
+    // STEP 5 — handle replace for small files after bulkWrite
+    for (const op of replaceOps) {
+      const oldRecord = await Upload.findById(op.replacesFileId)
+      if (!oldRecord) continue
+
+      // find new record we just created
+      const newRecord = await Upload.findOne({
+        fingerprint: op.fingerprint,
+        owner,
+        parent: op.parentId || null,
+        uploadStatus: "completed"
+      })
+
+      if (newRecord) {
+        // transfer sharing and color from old file to new file
+        await Upload.updateOne(
+          { _id: newRecord._id },
+          {
+            sharedWith: oldRecord.sharedWith,
+            isShared: oldRecord.isShared,
+            color: oldRecord.color
+          }
+        )
+      }
+
+      // delete old file from disk
+      if (oldRecord.storagePath && fs.existsSync(oldRecord.storagePath)) {
+        try {
+          fs.unlinkSync(oldRecord.storagePath)
+        } catch (err) {
+          console.error("Old file delete failed:", err.message)
+        }
+      }
+
+      // delete old record from mongodb
+      await Upload.deleteOne({ _id: op.replacesFileId })
+    }
+
+
+    //  hre socket event for sshared users tthat file is uploaded inside fodler
+    if (parentId) {
+      let currentParent = await Upload.findById(parentId).select("sharedWith parent owner")
+
+      while (currentParent) {
+        if (currentParent.owner) {
+          req.emitToUser(currentParent.owner.toString(), "item_uploaded", { folderId: String(parentId) })
+        }
+        if (currentParent.sharedWith.length > 0) {
+          currentParent.sharedWith.forEach(s => {
+            req.emitToUser(s.userId.toString(), "item_uploaded", { folderId: String(parentId) })
+          })
+          break
+        }
+        if (!currentParent.parent) break
+        currentParent = await Upload.findById(currentParent.parent).select("sharedWith parent owner")
+
+      }
+    }
+
+    // Return IDs in results
+    const finalResults = await Promise.all(results.map(async res => {
+      if (res.status === "completed") {
+        const record = await Upload.findOne({ fingerprint: res.fingerprint, owner, parent: metadata[0].parentId || null, uploadStatus: "completed" }).select("_id")
+        return { ...res, id: record?._id }
+      }
+      return res
+    }))
+
+    res.json({ success: true, results: finalResults });
+
+
+    //  here after upload all smae files here addd files to queue to scan 
+    // setImmediate(() => {
+    //   finalResults.forEach(async (result) => {
+    //     if(result.status === "completed" && result.id){
+    //       const record = await Upload.findById(result.id).select("storagePath fileSize owner")
+    //       if(record){
+    //         addToScanQueue(result.id.toString(), () => scanFileWithVirusTotal(result.id, record.storagePath, record.fileSize, owner.toString()))
+    //       }
+    //     }
+    //   })
+    // })
+
+    //  clamav 
+    // setImmediate(() => {
+    //   finalResults.forEach(async (result) => {
+    //     if(result.status === "completed" && result.id){
+    //       const record = await Upload.findById(result.id).select("storagePath fileSize owner")
+    //       if(record){
+    //         // Using ClamAV for fast local scanning
+    //         addToScanQueue(result.id.toString(), () => scanFileWithClamAV(result.id, record.storagePath, record.fileSize, owner.toString()))
+    //       }
+
+    //     }
+    //   })
+    // })
+
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+
+//  check bulk file here 
+//  here when user upload folder so first create all folder in mongodb in one http request
+export const createFoldersBulk = async (req, res) => {
+  try {
+    const { folders, parentId, replacesFileId } = req.body
+    const owner = req.user._id;
+
+    // check permissions and trash status for the parent folder
+    if (parentId) {
+      const parentFolder = await Upload.findById(parentId).select("isTrashed");
+      if (parentFolder && parentFolder.isTrashed) {
+        return res.status(400).json({
+          success: false,
+          message: "Cannot create folders in a trashed folder"
+        });
+      }
+
+      const permission = await getUserPermission(owner, parentId)
+      if (!permission || !["owner", "editor"].includes(permission)) {
+        return res.status(403).json({
+          success: false,
+          message: "You don't have permission to create folders here"
+        })
+      }
+    }
+
+    const pathToId = {};
+
+    // group folders by depth level
+    const levels = {}
+    folders.forEach(folder => {
+      const depth = folder.folderPath.split("/").length
+      if (!levels[depth]) levels[depth] = []
+      levels[depth].push(folder)
+    })
+
+    // get sorted depth levels — shallow first
+    const depthKeys = Object.keys(levels).map(Number).sort((a, b) => a - b)
+
+    // this is for the if replace file id is there then create new record here for root folder only
+    if (replacesFileId) {
+      const rootFolder = folders.find(f => f.folderPath.split("/").length === 1)
+      const newRootFolder = await Upload.create({
+        name: rootFolder.name,
+        type: "folder",
+        parent: parentId || null,
+        owner: req.user._id,
+        uploadStatus: null,
+        replacesFileId: replacesFileId
+      })
+      // save root folder id to pathToId so nested folders can reference it as parent
+      pathToId[rootFolder.folderPath] = newRootFolder._id
+    }
+
+    for (const depth of depthKeys) {
+      const levelFolders = levels[depth]
+
+      // skip root folder in bulkWrite if replacesFileId exists because we already created it above
+      const foldersToProcess = replacesFileId
+        ? levelFolders.filter(f => f.folderPath.split("/").length !== 1)
+        : levelFolders
+
+      // build bulkWrite ops for this level
+      const bulkOps = foldersToProcess.map(folder => {
+        const parentObjectId = folder.parentPath
+          ? pathToId[folder.parentPath] || null
+          : parentId || null
+
+        //  here checking like is this root folder or not
+        const isRootFolder = folder.folderPath.split("/").length === 1
+
+        return {
+          updateOne: {
+            filter: {
+              name: folder.name,
+              type: "folder",
+              parent: parentObjectId,
+              owner: req.user._id,
+              isTrashed: { $ne: true }
+            },
+            update: {
+              $setOnInsert: {
+                name: folder.name,
+                type: "folder",
+                parent: parentObjectId,
+                owner: req.user._id,
+                uploadStatus: null,
+                replacesFileId: isRootFolder ? replacesFileId || null : null
+              }
+            },
+            upsert: true
+          }
+        }
+      })
+
+      // only run bulkWrite if there are folders to process
+      if (bulkOps.length > 0) {
+        // execute all folders at this depth level in one bulkWrite
+        await Upload.bulkWrite(bulkOps, { ordered: false })
+      }
+
+      // now fetch the IDs of all folders we just created at this level
+      const createdFolders = await Upload.find({
+        owner: req.user._id,
+        type: "folder",
+        isTrashed: { $ne: true },
+        name: { $in: levelFolders.map(f => f.name) },
+        parent: {
+          $in: levelFolders.map(f =>
+            f.parentPath ? pathToId[f.parentPath] || null : parentId || null
+          )
+        }
+      }).select("name parent")
+
+      // build pathToId for this level so children can reference parents
+      createdFolders.forEach(created => {
+        const match = levelFolders.find(f => {
+          const expectedParent = f.parentPath
+            ? pathToId[f.parentPath] || null
+            : parentId || null
+          return f.name === created.name &&
+            String(created.parent) === String(expectedParent)
+        })
+        if (match) {
+          pathToId[match.folderPath] = created._id
+        }
+      })
+    }
+
+    res.json({ success: true, pathToId });
+
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+
+
+export const checkFilesBulk = async (req, res) => {
+  try {
+    const { files } = req.body
+    const owner = req.user._id
+
+    const conditions = files.map(f => ({
+      fingerprint: f.fingerprint,
+      parent: f.parentId || null
+    }))
+
+    const existingFiles = await Upload.find({
+      $or: conditions,
+      owner,
+      type: "file",
+      isTrashed: { $ne: true }
+    })
+
+    const statusMap = {}
+
+    existingFiles.forEach(file => {
+      if (file.uploadStatus === "completed") {
+        statusMap[file.fingerprint + "_" + file.parent] = {
+          status: "completed"
+        }
+      } else if (file.uploadStatus === "uploading" && file.uploadId) {  // add && file.uploadId check
+        statusMap[file.fingerprint + "_" + file.parent] = {
+          status: "resumable",
+          uploadId: file.uploadId,
+          uploadedChunks: file.uploadedChunks
+        }
+      }
+      // if uploadId is null/undefined — treat as new upload, don't add to statusMap
+    })
+
+    res.json({ success: true, statuses: statusMap })
+
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+
+
+
+
+
+export const cancelUpload = async (req, res) => {
+  try {
+    const { uploadId } = req.params;
+    const owner = req.user._id;
+
+    const record = await Upload.findOne({
+      uploadId,
+      owner,
+      uploadStatus: { $ne: "completed" } // Safety: don't cancel completed files
+    })
+    if (!record) {
+      return res.status(404).json({ success: false, message: "Upload not found or already completed" })
+    }
+
+    // release fd and clear cache first
+    releaseFd(uploadId)
+    clearUploadCache(uploadId)
+    clearWriteQueue(uploadId)
+
+    // delete physical file if exists
+    if (record.storagePath && fs.existsSync(record.storagePath)) {
+      try {
+        fs.unlinkSync(record.storagePath)
+      } catch (err) {
+        console.error("File delete failed:", err.message)
+      }
+    }
+
+    // delete chunks and upload record in parallel
+    await Promise.all([
+      Chunk.deleteMany({ uploadId }),
+      Upload.deleteOne({ uploadId, owner })
+    ])
+
+    res.json({ success: true })
+
+  } catch (error) {
+    console.error("cancelUpload error:", error)
+    res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+
+
+export const cancelFolderUpload = async (req, res) => {
+  try {
+    const { uploadIds, folderIds, rootFolderId } = req.body
+    const owner = req.user._id
+
+    // STEP 1 — release and delete in-progress files
+    if (uploadIds?.length) {
+      const records = await Upload.find({
+        uploadId: { $in: uploadIds },
+        owner,
+        uploadStatus: { $ne: "completed" } // Safety: only cleanup in-progress files
+      })
+
+      records.forEach(record => {
+        releaseFd(record.uploadId)
+        clearUploadCache(record.uploadId)
+        clearWriteQueue(record.uploadId)
+      })
+
+      await Promise.all(
+        records
+          .filter(r => r.storagePath && fs.existsSync(r.storagePath))
+          .map(r =>
+            fs.promises.unlink(r.storagePath).catch(err =>
+              console.error(`File delete failed for ${r.uploadId}:`, err.message)
+            )
+          )
+      )
+
+      const verifiedUploadIds = records.map(r => r.uploadId)
+      await Promise.all([
+        Chunk.deleteMany({ uploadId: { $in: verifiedUploadIds } }),
+        Upload.deleteMany({ uploadId: { $in: verifiedUploadIds }, owner })
+      ])
+    }
+
+    // STEP 2 — recursively delete everything under rootFolderId
+    if (rootFolderId) {
+      const toDelete = []
+      const queue = [rootFolderId]
+
+      // BFS to collect all nested folder and file IDs
+      while (queue.length > 0) {
+        const currentParent = queue.shift()
+        const children = await Upload.find({ parent: currentParent, owner }).select("_id type uploadId storagePath")
+
+        for (const child of children) {
+          toDelete.push(child)
+          if (child.type === "folder") {
+            queue.push(child._id)
+          }
+        }
+      }
+
+      // delete physical files
+      await Promise.all(
+        toDelete
+          .filter(r => r.storagePath && fs.existsSync(r.storagePath))
+          .map(r =>
+            fs.promises.unlink(r.storagePath).catch(err =>
+              console.error(`File delete failed:`, err.message)
+            )
+          )
+      )
+
+      const allIds = toDelete.map(r => r._id)
+      const allUploadIds = toDelete.filter(r => r.uploadId).map(r => r.uploadId)
+
+      // Fetch the root folder first to get its parent for the socket event
+      const rootFolder = await Upload.findById(rootFolderId).select("parent")
+
+      // delete chunks, all records, and root folder itself in parallel
+      await Promise.all([
+        Chunk.deleteMany({ uploadId: { $in: allUploadIds } }),
+        Upload.deleteMany({ _id: { $in: allIds }, owner }),
+        Upload.deleteOne({ _id: rootFolderId, owner })  // delete root folder itself
+      ])
+
+      if (rootFolder && req.emitToUser) {
+        req.emitToUser(owner.toString(), "item_deleted", { parentId: rootFolder.parent })
+      }
+    }
+
+    res.json({ success: true })
+
+  } catch (error) {
+    console.error("cancelFolderUpload error:", error)
+    res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+
+
+
+
+
+//  here this controller here is for the when user upload a same name folder and user select replace this folder with new this will run
+//  and we are moveing all info like shared with and coloer from old folder to new folder here
+export const completeFolderReplace = async (req, res) => {
+  try {
+    const { newFolderId, replacesFileId } = req.body;
+    const owner = req.user._id;
+
+
+    //  first find the older folder here
+    const oldFolder = await Upload.findOne({ _id: replacesFileId, owner });
+    if (!oldFolder) {
+      return res.status(404).json({ success: false, message: "Old folder not found" })
+    }
+
+    //  find the new root folder here
+    const newFolder = await Upload.findOne({ _id: newFolderId, owner })
+    if (!newFolder) {
+      return res.status(404).json({ success: false, message: "New folder not found" })
+    }
+
+
+    //  now trasnfer all shared data from old folder to new folder here
+    await Upload.updateOne(
+      { _id: newFolderId },
+      {
+        sharedWith: oldFolder.sharedWith,
+        isShared: oldFolder.isShared,
+        color: oldFolder.color
+      }
+    )
+
+
+    // now after upload done of new folder delete whole old folder here
+    const deleteRecursive = async (parentId) => {
+      const children = await Upload.find({ parent: parentId, owner })
+      for (const child of children) {
+        if (child.type === "folder") {
+          await deleteRecursive(child._id)
+        } else if (child.type === "file") {
+          // delete file from disk
+          if (child.storagePath && fs.existsSync(child.storagePath)) {
+            try {
+              fs.unlinkSync(child.storagePath)
+            } catch (err) {
+              console.error("File delete failed:", err.message)
+            }
+          }
+        }
+        await Upload.deleteOne({ _id: child._id })
+      }
+    }
+
+    //  delete all nested containes of folder
+    await deleteRecursive(replacesFileId)
+
+    //  now delete root levl folder here
+    await Upload.deleteOne({ _id: replacesFileId, owner })
+
+    res.json({ success: true })
+
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+
+
+
+
+
+
+
+import fs from "fs"
+import fsPromises from "fs/promises"
+import busboy from "busboy"
+import Chunk from "../models/chunkModel.js"
+import Upload from "../models/uploadModel.js"
+
+
+
+//  GLOBAL SEMAPHORE — Limits concurrent disk writes across ALL users
+//  This prevents server crash when 100+ users upload parallel
+const MAX_CONCURRENT_WRITES = 10
+let activeWrites = 0
+const globalWriteQueue = []
+
+const acquireWriteSlot = () => {
+    if (activeWrites < MAX_CONCURRENT_WRITES) {
+        activeWrites++
+        return Promise.resolve()
+    }
+    return new Promise(resolve => globalWriteQueue.push(resolve))
+}
+
+const releaseWriteSlot = () => {
+    activeWrites--
+    if (globalWriteQueue.length > 0) {
+        activeWrites++
+        const next = globalWriteQueue.shift()
+        next()
+    }
+}
+
+
+
+// File Descriptor Pool (Async)
+const fdPool = new Map()
+
+const getFd = async (uploadId, storagePath) => {
+    if (!fdPool.has(uploadId)) {
+        const handle = await fsPromises.open(storagePath, "r+")
+        fdPool.set(uploadId, { fd: handle.fd, handle, lastUsed: Date.now() })
+    } else {
+        fdPool.get(uploadId).lastUsed = Date.now()
+    }
+    return fdPool.get(uploadId).fd
+}
+
+export const releaseFd = (uploadId) => {
+    const entry = fdPool.get(uploadId)
+    if (!entry) return
+    if (entry.handle) entry.handle.close().catch(() => { })
+    fdPool.delete(uploadId)
+}
+
+setInterval(() => {
+    const now = Date.now()
+    for (const [uploadId, entry] of fdPool.entries()) {
+        if (now - entry.lastUsed > 2 * 60 * 1000) {
+            if (entry.handle) entry.handle.close().catch(() => { })
+            fdPool.delete(uploadId)
+        }
+    }
+}, 2 * 60 * 1000)
+
+
+
+
+// Sequential Write Queue (Per File)
+const writeQueues = new Map()
+
+const getWriteQueue = (uploadId) => {
+    if (!writeQueues.has(uploadId)) {
+        writeQueues.set(uploadId, Promise.resolve())
+    }
+    return writeQueues.get(uploadId)
+}
+
+const queueWrite = (uploadId, writeFn) => {
+    const last = getWriteQueue(uploadId)
+    const next = last.then(() => {
+        return new Promise((resolve, reject) => {
+            const timer = setTimeout(() => reject(new Error("Disk write TIMEOUT (20s)")), 60000);
+            writeFn().then(() => { clearTimeout(timer); resolve(); }).catch(err => { clearTimeout(timer); reject(err); });
+        });
+    }).catch(err => {
+        console.error(`[QUEUE ERROR] uploadId=${uploadId} | ${err.message}`);
+        return Promise.resolve();
+    });
+    writeQueues.set(uploadId, next)
+    return next
+}
+
+export const clearWriteQueue = (uploadId) => writeQueues.delete(uploadId)
+
+
+
+
+// Upload Record Cache
+const uploadRecordCache = new Map()
+const CACHE_TTL = 10 * 60 * 1000
+
+const getCachedUpload = async (uploadId, owner) => {
+    const cached = uploadRecordCache.get(uploadId)
+    if (cached && Date.now() - cached.cachedAt < CACHE_TTL) return cached.record
+    const record = await Upload.findOne({ uploadId, owner })
+    if (record) uploadRecordCache.set(uploadId, { record, cachedAt: Date.now() })
+    return record
+}
+
+export const clearUploadCache = (uploadId) => uploadRecordCache.delete(uploadId)
+
+
+
+
+// IMMEDIATE RESPONSE MIDDLEWARE
+// Responds to the browser as soon as data is buffered in RAM.
+// Disk writes happen in the background.
+export const streamChunkMiddleware = (req, res, next) => {
+    const owner = req.user._id
+    const uploadId = req.headers["x-upload-id"]
+    const indexes = JSON.parse(req.headers["x-indexes"] || "[]")
+    const starts = JSON.parse(req.headers["x-starts"] || "[]")
+
+    if (!uploadId) return res.status(400).json({ success: false, message: "Missing x-upload-id" })
+
+    const bb = busboy({
+        headers: req.headers,
+        limits: { fileSize: 10 * 1024 * 1024 }   // 10MB
+    })
+
+    const writePromises = []
+
+    // here start to write to disk 
+    bb.on("file", (fieldname, stream) => {
+        const chunks = []
+        stream.on("data", d => chunks.push(d))
+
+        const promise = new Promise((resolve, reject) => {
+            stream.on("end", async () => {
+                const chunkIndex = parseInt(fieldname.split("_")[1])
+                const position = starts[indexes.indexOf(chunkIndex)]
+                const buffer = Buffer.concat(chunks)
+
+                if (position === undefined || position === -1) return resolve({ skipped: true })
+
+                try {
+                    const record = await getCachedUpload(uploadId, owner)
+                    if (!record) resolve({ skipped: true })
+
+                    const existing = await Chunk.findOne({ uploadId, chunkIndex })
+                    if (existing) return resolve({ skipped: true })
+
+
+                    await acquireWriteSlot()
+                    try {
+                        await queueWrite(uploadId, async () => {
+                            const fd = await getFd(uploadId, record.storagePath)
+                            const ws = fs.createWriteStream(null, { fd, start: position, autoClose: false })
+                            await new Promise((r, j) => {
+                                ws.write(buffer); ws.end();
+                                ws.on("finish", r); ws.on("error", j)
+                            })
+                        })
+                        await Chunk.create({ uploadId, chunkIndex })
+                        resolve({ skipped: false, chunkIndex })
+                    } finally {
+                        releaseWriteSlot()
+                    }
+
+                } catch (error) {
+                    console.error(`[WRITE ERROR] ${uploadId} chunk ${chunkIndex}: ${err.message}`)
+                    reject(error)
+                }
+            })
+        })
+        writePromises.push(promise)
+    })
+
+    bb.on("finish", async () => {
+        try {
+            await Promise.all(writePromises)
+            if (!res.writableEnded) {
+                res.json({ success: true, message: "Written" })
+                console.log(`[WRITE OK] Batch written to disk | id: ...${uploadId.slice(-6)}`)
+            }
+        } catch (error) {
+            if (!res.writableEnded) {
+                res.status(500).json({ success: false, message: "Disk write failed" })
+            }
+        }
+    })
+
+    bb.on("error", (err) => {
+        if (!res.writableEnded) res.status(500).json({ success: false, message: err.message })
+    })
+
+    req.pipe(bb)
+}
+
+
+
+
+
+/* eslint-disable react-hooks/exhaustive-deps */
+/* eslint-disable no-unused-vars */
+
+
+import { createContext, useContext, useState, useRef, useMemo } from "react";
+import { generateFingerprintBatch } from "../utils/fileHash.js"
+import axiosApi from "../utils/api.js"
+// import { data, replace } from "react-router-dom";
+// import { useFileExplorer } from "./FileExplorerContext.jsx";
+
+import { useUploadRefs } from "../hooks/upload/useUploadRefs.js";
+import { useUploadSession } from "../hooks/upload/useUploadSession.js";
+import { useUploadWorkers } from "../hooks/upload/useUploadWorkers.js";
+import { useUploadCancel } from "../hooks/upload/useUploadCancel.js";
+import { useUploadConflict } from "../hooks/upload/useUploadConflict.js";
+
+
+const UploadContext = createContext()
+
+const LARGE_UPLOAD_THRESHOLD = 100
+const BATCH_SIZE = 50
+const SMALL_FILE_THRESHOLD = 1 * 1024 * 1024
+
+
+export function UploadProvider({ children }) {
+
+
+
+    const onUploadCompleteRef = useRef(null)
+    const setOnUploadComplete = (fn) => {
+        onUploadCompleteRef.current = fn
+    }
+
+    //  import refs from useRefs
+    const refs = useUploadRefs()
+    const addFilesRef = useRef(null)
+    const { sessionMapsRef, uploadQueuesRef, uploadStartedRef } = refs
+
+
+    //  for uplaod panel import all function 
+    const {
+        sessions, setSessions,
+        isPanelOpen, setIsPanelOpen,
+        isMinimized, setIsMinimized,
+        updateSession, updateFile,
+        closeSession, removeFile,
+        toggleMinimize
+    } = useUploadSession(refs)
+
+
+    // for uplaoding import all worker here
+    const { uploadSmallBatch, uploadLargeFile, startUploadWorkers, getFileHeader, retryFile, retryFolder } = useUploadWorkers(refs, updateFile, onUploadCompleteRef, updateSession)
+
+
+    // for cancle abort import all
+    const { cancelFileUpload, cancelSessionUpload, closeAllSessions } = useUploadCancel(refs, sessions, setSessions, setIsPanelOpen)
+
+
+    //  for conflick files and folder import 
+    const { conflictModalData, checkAndUpload, resolveConflict } = useUploadConflict(addFilesRef)
+
+
+
+    //   here this function is used for like creating folder if user upload a folder here
+    const createFolders = async (selectedFiles, parentId, replaceMap, isFolder) => {
+        const folderPathSet = new Set()
+
+        // Optimization: Process in chunks to avoid blocking UI
+        const CHUNK = 1000
+        for (let i = 0; i < selectedFiles.length; i += CHUNK) {
+            const batch = selectedFiles.slice(i, i + CHUNK)
+            batch.forEach(file => {
+                const parts = file.webkitRelativePath.split("/")
+                for (let j = 1; j < parts.length; j++) {
+                    folderPathSet.add(parts.slice(0, j).join("/"))
+                }
+            })
+            // yield to main thread
+            await new Promise(r => setTimeout(r, 0))
+        }
+
+        const folders = [...folderPathSet]
+            .sort((a, b) => a.split("/").length - b.split("/").length)
+            .map(folderPath => {
+                const parts = folderPath.split("/")
+                return {
+                    name: parts[parts.length - 1],
+                    folderPath,
+                    parentPath: parts.slice(0, -1).join("/") || null
+                }
+            })
+
+        const { data } = await axiosApi.post("/upload/folders-bulk", {
+            folders,
+            parentId,
+            replacesFileId: isFolder && replaceMap ? Object.values(replaceMap)[0] || null : null
+        })
+        return data.pathToId
+    }
+
+
+
+
+    //  here our main function hta runs first for uplading 
+    const addFiles = async (selectedFiles, parentId = null, replaceMap = {}) => {
+        const isFolder = selectedFiles[0]?.webkitRelativePath?.includes("/")
+        const totalFiles = selectedFiles.length
+        const isLarge = totalFiles >= LARGE_UPLOAD_THRESHOLD
+
+        const sessionStart = performance.now()
+        console.log(`[SESSION START] files: ${totalFiles}`)
+
+        const totalBytes = Array.from(selectedFiles).reduce((sum, f) => sum + f.size, 0)
+        const sessionId = Date.now()
+        const newSession = {
+            id: sessionId,
+            name: isFolder ? selectedFiles[0].webkitRelativePath.split("/")[0] : null,
+            isFolder,
+            isLarge,
+            total: totalFiles,
+            totalBytes,
+            uploadedBytes: 0,
+            parentId: parentId || null,
+            done: 0,
+            skipped: 0,
+            error: 0,
+            uploading: 0,
+            prepared: 0,
+            percent: 0,
+            files: [],
+        }
+
+        setSessions(prev => [newSession, ...prev])
+        setIsPanelOpen(true)
+        setIsMinimized(false)
+
+        const filesMap = new Map()
+        sessionMapsRef.current.set(sessionId, filesMap)
+        uploadQueuesRef.current.set(sessionId, [])
+        uploadStartedRef.current.set(sessionId, false)
+
+        await new Promise(r => setTimeout(r, 0))
+
+        let pathToId = {}
+        const folderPromise = isFolder
+            ? createFolders(selectedFiles, parentId, replaceMap, isFolder).then(result => { pathToId = result })
+            : Promise.resolve()
+
+        const allFileObjects = []
+
+        // PHASE 1 — fingerprint
+        const fingerprintStart = performance.now()
+        for (let i = 0; i < totalFiles; i += BATCH_SIZE) {
+            const batch = selectedFiles.slice(i, i + BATCH_SIZE)
+            const fingerprintResults = await generateFingerprintBatch(batch)
+
+            const fileObjects = fingerprintResults.map((result, index) => {
+                const file = batch[index]
+                const filekey = file.webkitRelativePath || file.name
+                return {
+                    file,
+                    filekey,
+                    fingerprint: result.fingerprint,
+                    parentId: null,
+                    progress: 0,
+                    status: "waiting",
+                    isSmall: file.size < SMALL_FILE_THRESHOLD,
+                    replacesFileId: replaceMap?.[file.name] || null
+                }
+            })
+
+            fileObjects.forEach(f => {
+                filesMap.set(f.filekey, f)
+                allFileObjects.push(f)
+            })
+
+            setSessions(prev => prev.map(s =>
+                s.id === sessionId
+                    ? { ...s, prepared: Math.min(i + BATCH_SIZE, totalFiles) }
+                    : s
+            ))
+
+            await new Promise(r => setTimeout(r, 0))
+        }
+        console.log(`[FINGERPRINT] ${(performance.now() - fingerprintStart).toFixed(1)}ms`)
+
+        // wait folders
+        const folderWaitStart = performance.now()
+        try {
+            await folderPromise
+            if (isFolder) {
+                // Find the ID of the top-most folder to highlight
+                const rootFolderName = selectedFiles[0].webkitRelativePath.split("/")[0]
+                const rootId = pathToId[rootFolderName]
+                setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, rootId } : s))
+
+                // if (onUploadComplete) {
+                //     onUploadComplete()
+                // }
+            }
+        } catch (error) {
+            console.error("Folder creation failed:", error)
+            const errorMessage = error.response?.data?.message || "Folder creation failed"
+            const isPermissionError = error.response?.status === 403 && errorMessage.toLowerCase().includes("permission")
+
+            allFileObjects.forEach(f => {
+                updateFile(sessionId, f.filekey, {
+                    status: isPermissionError ? "blocked" : "error",
+                    message: errorMessage
+                })
+            })
+            // If folder creation fails, we can't continue with the files
+            return
+        }
+        console.log(`[FOLDER CREATE] ${(performance.now() - folderWaitStart).toFixed(1)}ms`)
+
+        allFileObjects.forEach(f => {
+            if (isFolder) {
+                const parts = f.file.webkitRelativePath.split("/")
+                const folderPath = parts.slice(0, -1).join("/")
+                f.parentId = pathToId[folderPath] || null
+            } else {
+                f.parentId = parentId
+            }
+        })
+
+        if (!isLarge) {
+            setSessions(prev => prev.map(s =>
+                s.id === sessionId ? { ...s, files: allFileObjects } : s
+            ))
+        }
+
+       
+        const queue = uploadQueuesRef.current.get(sessionId)
+
+        // PHASE 2 — bulk check
+        const checkStart = performance.now()
+        // Throttled UI update for bulk check
+        let lastUiUpdate = Date.now()
+
+        try {
+            for (let i = 0; i < allFileObjects.length; i += BATCH_SIZE) {
+                const checkBatch = allFileObjects.slice(i, i + BATCH_SIZE)
+
+                const filesPayload = checkBatch.map(f => ({
+                    fingerprint: f.fingerprint,
+                    parentId: f.parentId
+                }))
+
+                const { data: bulkData } = await axiosApi.post("/upload/check-files-bulk", { files: filesPayload })
+                const statuses = bulkData.statuses || {}
+
+                let batchSkipped = 0
+
+                checkBatch.forEach(f => {
+                    const key = f.fingerprint + "_" + (f.parentId || null)
+                    const info = statuses[key]
+
+                    if (info?.status === "completed") {
+                        console.log(`[QUEUE] skipped: ${f.file.name}`)
+                        f.status = "skipped"
+                        f.progress = 100
+                        // batchSkipped++
+                        filesMap.set(f.filekey, f)
+                        updateFile(sessionId, f.filekey, { status: "skipped", progress: 100 }, "waiting")
+                    } else if (info?.status === "resumable") {
+                        console.log(`[QUEUE] resumable: ${f.file.name}`)
+                        f.uploadId = info.uploadId
+                        f.uploadedChunks = info.uploadedChunks
+                        filesMap.set(f.filekey, f)
+                        queue.push(f)
+                    } else {
+                        console.log(`[QUEUE] pushed: ${f.file.name}`)
+                        queue.push(f)
+                    }
+                })
+
+                // if (batchSkipped > 0) {
+                //     setSessions(prev => prev.map(s =>
+                //         s.id === sessionId
+                //             ? { ...s, skipped: (s.skipped || 0) + batchSkipped }
+                //             : s
+                //     ))
+                // }
+
+                // Yield to UI if needed
+                if (Date.now() - lastUiUpdate > 100) {
+                    await new Promise(r => setTimeout(r, 0))
+                    lastUiUpdate = Date.now()
+                }
+            }
+        } catch (error) {
+            // network failed during bulk check — mark all files as error
+            allFileObjects.forEach(f => {
+                updateFile(sessionId, f.filekey, {
+                    status: "error",
+                    message: "No Connection"
+                })
+            })
+
+            //  clear th queue first
+            queue.length = 0
+            queue.push("DONE")
+            return 
+        }
+
+
+        console.log(`[BULK CHECK] ${(performance.now() - checkStart).toFixed(1)}ms`)
+
+        queue.push("DONE")
+         const workers = startUploadWorkers(sessionId)
+        await Promise.all(workers)
+        // onUploadComplete?.()
+
+        // if folder replace - call backend and shared user data with new one and delete old folder here
+        if (isFolder && replaceMap && Object.keys(replaceMap).length > 0) {
+            const oldFolderId = Object.values(replaceMap)[0]
+            const rootFolderName = selectedFiles[0].webkitRelativePath.split("/")[0]
+            const newFolderPathToId = pathToId
+            const newFolderId = newFolderPathToId[rootFolderName]
+
+            if (newFolderId && oldFolderId) {
+                try {
+                    await axiosApi.post("/upload/complete-folder-replace", {
+                        newFolderId,
+                        replacesFileId: oldFolderId
+                    })
+                } catch (err) {
+                    console.error("completeFolderReplace failed:", err)
+                }
+            }
+        }
+
+        const totalTime = performance.now() - sessionStart
+        console.log(`[SESSION DONE] totalTime: ${(totalTime / 1000).toFixed(2)}s`)
+
+        onUploadCompleteRef.current?.()
+    }
+
+    addFilesRef.current = addFiles
+
+
+    const getSessionIssues = (sessionId) => {
+        const filesMap = sessionMapsRef.current.get(sessionId)
+        if (!filesMap) return []
+
+        const issues = []
+        filesMap.forEach((f) => {
+            if (f.status === "blocked" || f.status === "error" || f.status === "allFailed" || f.status === "partial") {
+                issues.push({
+                    name: f.file.name,
+                    status: f.status,
+                    message: f.message || "Upload failed",
+                    path: f.file.webkitRelativePath || f.file.name
+                })
+            }
+        })
+        return issues
+    }
+
+
+    //  use memo for prevents unnecessary  re render here 
+    const contextValue = useMemo(() => ({
+        sessions,
+        isPanelOpen,
+        isMinimized,
+        addFiles,
+        closeSession,
+        toggleMinimize,
+        setOnUploadComplete,
+        removeFile,
+        closeAllSessions,
+        cancelFileUpload,
+        cancelSessionUpload,
+        retryFile,
+        retryFolder,
+
+        conflictModalData,
+        checkAndUpload,
+        resolveConflict,
+        getSessionIssues,
+    }), [
+        sessions, isPanelOpen, isMinimized, addFiles, closeSession,
+        toggleMinimize, setOnUploadComplete, removeFile, closeAllSessions,
+        cancelFileUpload, cancelSessionUpload, retryFile, conflictModalData,
+        checkAndUpload, resolveConflict, retryFolder
+    ])
+
+
+    return (
+        <UploadContext.Provider value={contextValue}>
+            {children}
+        </UploadContext.Provider>
+    )
+}
+
+export function useUpload() {
+    return useContext(UploadContext)
+}
+
+
+
+
+
+
+
+
+//  this file is used for like cancleing single file uplaod or cancel whole uplaod panel uploading
+import axiosApi from "../../utils/api.js";
+
+
+export function useUploadCancel(refs, sessions, setSessions, setIsPanelOpen) {
+
+    const { sessionMapsRef, uploadQueuesRef, uploadStartedRef, abortControllersRef } = refs
+
+    //  here for canceling all upload
+    const cancelFileUpload = async (sessionId, filekey) => {
+        const filesMap = sessionMapsRef.current.get(sessionId)
+        const fileObj = filesMap?.get(filekey)
+
+        //  abort request
+        const controller = abortControllersRef.current.get(filekey)
+        if (controller) {
+            controller.abort()
+            abortControllersRef.current.delete(filekey)
+        }
+
+        //  here cleanup backend — ONLY if not already finished
+        if (fileObj?.uploadId && fileObj.status !== "done" && fileObj.status !== "skipped") {
+            try {
+                await axiosApi.delete(`/upload/cancle/${fileObj.uploadId}`)
+            } catch (error) {
+                console.log("cancle file failed ", error)
+            }
+        }
+
+        // remove from panel
+        filesMap?.delete(filekey)
+        setSessions(prev => {
+            const nextSessions = prev.map(s => {
+                if (s.id !== sessionId) return s
+                const updatedFiles = s.files.filter(f => f.filekey !== filekey)
+                return { ...s, files: updatedFiles }
+            }).filter(s => s.isFolder || s.isLarge || s.files?.length > 0)
+
+            if (nextSessions.length === 0) {
+                setIsPanelOpen(false)
+            }
+
+            return nextSessions
+        })
+    }
+
+
+    //  here cancle folder upload
+
+    // cancel entire folder or large session
+    const cancelSessionUpload = async (sessionId) => {
+        const filesMap = sessionMapsRef.current.get(sessionId)
+        if (!filesMap) return
+
+        // STEP 1 — stop workers immediately by clearing queue
+        const queue = uploadQueuesRef.current.get(sessionId)
+        if (queue) {
+            queue.length = 0
+            queue.push("DONE")
+        }
+
+        // STEP 2 — abort all in-flight requests
+        filesMap.forEach((_, filekey) => {
+            const controller = abortControllersRef.current.get(filekey)
+            if (controller) {
+                controller.abort()
+                abortControllersRef.current.delete(filekey)
+            }
+        })
+
+        // STEP 3 — collect uploadIds from files that are NOT finished
+        const uploadIds = []
+        filesMap.forEach(f => {
+            if (f.uploadId && f.status !== "done" && f.status !== "skipped") {
+                uploadIds.push(f.uploadId)
+            }
+        })
+
+        // STEP 4 — collect folderIds if this is a folder session
+        const folderIds = []
+        const session = sessions.find(s => s.id === sessionId)
+        if (session?.folderIds?.length > 0) {
+            folderIds.push(...session.folderIds)
+        }
+
+        // STEP 5 — backend cleanup
+        const isFinished = session && ((session.done || 0) + (session.skipped || 0) + (session.error || 0) + (session.blocked || 0)) >= (session.total || 0);
+
+        if (!isFinished && (uploadIds.length > 0 || folderIds.length > 0 || session?.rootId)) {
+            try {
+                await axiosApi.delete("/upload/cancle-folder", {
+                    data: { uploadIds, folderIds, rootFolderId: session.rootId }
+                })
+            } catch (error) {
+                console.error("cancel folder cleanup failed:", error)
+            }
+        }
+
+        // STEP 6 — cleanup refs
+        sessionMapsRef.current.delete(sessionId)
+        uploadQueuesRef.current.delete(sessionId)
+        uploadStartedRef.current.delete(sessionId)
+
+        // STEP 7 — update UI
+        setSessions(prev => {
+            const updated = prev.filter(s => s.id !== sessionId)
+            if (updated.length === 0) setIsPanelOpen(false)
+            return updated
+        })
+    }
+
+
+    //  for closing all files and folder in upload panel
+    const closeAllSessions = async () => {
+        // Collect all active session IDs before we start wiping them
+        const activeSessionIds = sessions.map(s => s.id)
+
+        // Run the robust cancel function on every single one
+        await Promise.all(activeSessionIds.map(id => cancelSessionUpload(id)))
+
+        // Wipe the UI 
+        setSessions([])
+        setIsPanelOpen(false)
+
+        // Clean refs
+        sessionMapsRef.current.clear()
+        uploadQueuesRef.current.clear()
+        uploadStartedRef.current.clear()
+        abortControllersRef.current.clear() // Added to ensure memory leak prevention on abort
+    }
+
+
+
+    return {
+        cancelFileUpload,
+        cancelSessionUpload,
+        closeAllSessions        
+      
+    }
+}
+
+
+
+
+
+//  this file is used for conflict in upload lke if same name file or folder exist
+//  so modal will open and show here replace all or keep both here
+import { useState, useRef } from "react"
+
+
+//  here this is helper function to create file and foldr unique name if same file is there then give name abc (2).txt here
+const generateUniqueName = (originalName, existingItems) => {
+    if (!existingItems || existingItems.length === 0) {
+        return `${originalName} (1)`
+    }
+
+    const ext = originalName.includes(".")
+        ? "." + originalName.split(".").pop()
+        : ""
+    const base = originalName.includes(".")
+        ? originalName.substring(0, originalName.lastIndexOf("."))
+        : originalName
+
+    let counter = 1
+    let newName = `${base} (${counter})${ext}`
+
+    while (existingItems.some(i => i.name === newName)) {
+        counter++
+        newName = `${base} (${counter})${ext}`
+    }
+
+    return newName
+}
+
+
+
+export function useUploadConflict(addFiles) {
+    //  here this is for the confilick file or folder name like replace all or keep both
+    const [conflictModalData, setConflictModalData] = useState(null)
+    const pendingUploadRef = useRef(null)   //here for storing pending upload while modal is open
+
+
+    //  here this is for like same file name or folder name exist in current directory or not 
+    const checkAndUpload = (selectedFiles, parentId, items) => {
+        if (!items || items.length === 0) {
+            addFiles.current(selectedFiles, parentId)
+            return
+        }
+
+        //  first checking i this folder or ingle file here 
+        const isFolder = selectedFiles[0]?.webkitRelativePath?.includes("/")
+
+
+        //  if this is folder 
+        if (isFolder) {
+            // for folder only check root folder name
+            const rootFolderName = selectedFiles[0].webkitRelativePath.split("/")[0]
+            const existingFolder = items.find(i => i.name === rootFolderName && i.type === "folder")
+
+            if (existingFolder) {
+                // if folder already exist same name modal open now
+                pendingUploadRef.current = { selectedFiles, parentId, isFolder: true, items }
+                setConflictModalData({
+                    conflicts: [rootFolderName],
+                    replaceMap: { [rootFolderName]: existingFolder._id }
+                })
+                return
+            }
+        } else {
+            //  for single files
+            const conflicts = []
+            const replaceMap = {}
+
+            selectedFiles.forEach(file => {
+                const existing = items.find(i => i.name === file.name && i.type === "file")
+                console.log("checking file", file.name, "found existing", existing)
+                if (existing) {
+                    conflicts.push(file.name)
+                    replaceMap[file.name] = existing._id
+                }
+            })
+            console.log("conflicts", conflicts)
+
+            if (conflicts.length > 0) {
+                //  how modal here
+                pendingUploadRef.current = { selectedFiles, parentId, isFolder: false, items }
+                setConflictModalData({ conflicts, replaceMap })
+                return
+            }
+        }
+
+        //  no conflits upload normal here
+        addFiles.current(selectedFiles, parentId)
+    }
+
+
+    //  here this is function for slove conflict here like user choice here replace or kepp both 
+    const resolveConflict = (choice) => {
+        if (!choice || !pendingUploadRef.current) {
+            setConflictModalData(null)
+            pendingUploadRef.current = null
+            return
+        }
+
+        const { selectedFiles, parentId, items } = pendingUploadRef.current
+        const { replaceMap } = conflictModalData
+
+        if (choice === "replace") {
+            addFiles.current(selectedFiles, parentId, replaceMap)
+        } else {
+            if (pendingUploadRef.current.isFolder) {
+                // rename the root folder segment in every file's webkitRelativePath
+                const originalRootName = selectedFiles[0].webkitRelativePath.split("/")[0]
+                const newRootName = generateUniqueName(originalRootName, items)
+
+                const renamedFiles = selectedFiles.map(file => {
+                    const newPath = file.webkitRelativePath.replace(
+                        new RegExp(`^${originalRootName}/`),
+                        `${newRootName}/`
+                    )
+                    const renamedFile = new File([file], file.name, { type: file.type })
+                    Object.defineProperty(renamedFile, "webkitRelativePath", {
+                        value: newPath,
+                        writable: false
+                    })
+                    return renamedFile
+                })
+
+                addFiles.current(renamedFiles, parentId, {})
+            } else {
+                // existing file rename logic stays the same
+                const renamedFiles = selectedFiles.map(file => {
+                    if (!replaceMap[file.name]) return file
+                    const newName = generateUniqueName(file.name, items)
+                    const renamedFile = new File([file], newName, { type: file.type })
+                    if (file.webkitRelativePath) {
+                        Object.defineProperty(renamedFile, "webkitRelativePath", {
+                            value: file.webkitRelativePath,
+                            writable: false
+                        })
+                    }
+                    return renamedFile
+                })
+                addFiles.current(renamedFiles, parentId, {})
+            }
+        }
+
+        setConflictModalData(null)
+        pendingUploadRef.current = null
+    }
+
+
+    return {
+        conflictModalData,
+        setConflictModalData,
+        checkAndUpload,
+        resolveConflict
+    }
+}
+
+
+
+
+
+// this file containes only all ref varible of uplaod context here
+import { useRef } from "react"
+
+
+export function useUploadRefs() {
+    const sessionMapsRef = useRef(new Map())
+    const uploadQueuesRef = useRef(new Map())
+    const uploadStartedRef = useRef(new Map())
+    const abortControllersRef = useRef(new Map())
+    
+    return { sessionMapsRef, uploadQueuesRef, uploadStartedRef, abortControllersRef }
+}
+
+
+
+
+
+//  this function is used to update Upload Panel file items 
+import { useState, useRef } from "react"
+
+const CHUNK_SIZE = 7 * 1024 * 1024
+
+
+export function useUploadSession(refs) {
+    const { sessionMapsRef, uploadQueuesRef, uploadStartedRef } = refs
+
+    const [sessions, setSessionsState] = useState([])
+    const sessionsRef = useRef([])
+    const throttleTimerRef = useRef(null)
+
+    const [isPanelOpen, setIsPanelOpen] = useState(false)
+    const [isMinimized, setIsMinimized] = useState(false)
+
+    const lastCalcRef = useRef({}) // Track last calculation time per session
+    const calcCacheRef = useRef({}) // Store last calculated values
+
+    // Throttled state update to prevent re-render explosion
+    const setSessions = (updater, force = false) => {
+        const next = typeof updater === "function" ? updater(sessionsRef.current) : updater
+        sessionsRef.current = next
+
+        if (force) {
+            if (throttleTimerRef.current) clearTimeout(throttleTimerRef.current)
+            setSessionsState(next)
+            throttleTimerRef.current = null
+            return
+        }
+
+        if (!throttleTimerRef.current) {
+            throttleTimerRef.current = setTimeout(() => {
+                setSessionsState(sessionsRef.current)
+                throttleTimerRef.current = null
+            }, 500) // Update UI every 500ms
+        }
+    }
+
+    // update a specific session's summary fields
+    const updateSession = (sessionId, changes) => {
+        setSessions(prev =>
+            prev.map(s => s.id === sessionId ? { ...s, ...changes } : s)
+        )
+    }
+
+    // update a specific file inside a session
+    const updateFile = (sessionId, filekey, changes, manualOldStatus = null, manualOldProgress = null) => {
+        const filesMap = sessionMapsRef.current.get(sessionId)
+        if (!filesMap) return
+
+        const existing = filesMap.get(filekey)
+        if (existing) {
+            filesMap.set(filekey, { ...existing, ...changes })
+        }
+
+        setSessions(prev =>
+            prev.map(s => {
+                if (!s || s.id !== sessionId) return s
+
+                const isLarge = s.isLarge;
+                const now = Date.now()
+                const lastCal = lastCalcRef.current[sessionId] || 0;
+
+                // small files direct state update
+                if (!isLarge && !s.isFolder) {
+                    const updatedFiles = (s.files || []).map(f =>
+                        f.filekey === filekey ? { ...f, ...changes } : f
+                    )
+                    return { ...s, files: updatedFiles }
+                }
+
+
+                //  for large files and folder logic of updating state here
+                let next = { ...s }
+
+                // clculate finished state for later use
+                const isFinished = (status) => ["done", "skipped", "error", "blocked"].includes(status)
+
+                //  now calculate all other state here
+                const oldStatus = manualOldStatus || existing?.status
+                const wasFinished = isFinished(oldStatus)
+                const nowFinished = changes.status ? isFinished(changes.status) : wasFinished
+
+
+                //  here update the  counter 
+                if (changes.status) {
+                    if (nowFinished && !wasFinished) {
+                        //  if now finished so moving here from non finished to finished
+                        next[changes.status] = (next[changes.status] || 0) + 1;
+
+                        if (oldStatus === "uploading") {
+                            next.uploading = Math.max(0, (next.uploading || 0) - 1)
+                        }
+
+                    } else if (nowFinished && wasFinished && oldStatus !== changes.status) {
+                        //  moving from one finished state to another  (error => done)
+                        next[oldStatus] = Math.max(0, (next[oldStatus] || 0) - 1)
+                        next[changes.status] = (next[changes.status] || 0) + 1
+
+                    } else if (!nowFinished && wasFinished) {
+                        // moving back to non - finshed from finished
+                        next[oldStatus] = Math.max(0, (next[oldStatus] || 0) - 1)
+                        if (changes.status === "uploading") {
+                            next.uploading = (next.uploading || 0) + 1
+                        }
+
+                    } else if (changes.status === "uploading" && oldStatus !== "uploading" && !wasFinished) {
+                        //  normal transition to uploading
+                        next.uploading = (next.uploading || 0) + 1
+                    }
+                }
+
+                //  handle progress and byte tracking 
+                if (changes.progress !== undefined || changes.status) {
+                    const fileSize = existing?.file?.size || 0;
+
+                    if (fileSize > 0) {
+                        //  use manualOldProgress for retry here fro tracking progress previous
+                        const oldFileProgress = manualOldProgress !== null ? manualOldProgress : (existing?.progress || 0)
+                        const newFileProgress = changes.progress !== undefined ? changes.progress : oldFileProgress
+
+
+                        //  byte calulation at 0 and file size
+                        const oldUploaded = Math.min(fileSize, Math.max(0, (oldFileProgress / 100) * fileSize))
+                        const newUploaded = Math.min(fileSize, Math.max(0, (newFileProgress / 100) * fileSize))
+                        const byteDiff = newUploaded - oldUploaded
+
+                        //  update session Bytes ensuring it stays between 0 and totalBytes
+                        next.uploadedBytes = Math.max(0, Math.min(next.totalBytes, (next.uploadedBytes || 0) + byteDiff))
+
+                    }
+
+                    // update percent on bytes
+                    if (next.totalBytes > 0) {
+                        let calcPercent = (next.uploadedBytes / next.totalBytes) * 100;
+
+                        //  only allow the Ui to show here 100% if all file in folder is uploaded if one file is less then show here only 99.99%
+                        const totalFinished = (next.done || 0) + (next.skipped || 0) + (next.error || 0) + (next.blocked || 0)
+                        if (totalFinished < next.total && calcPercent >= 100) {
+                            calcPercent = 99.9
+                        }
+                        next.percent = Number(calcPercent.toFixed(1))
+
+                    } else {
+                        // ONLY fallback to file count if totalBytes is 0
+                        const totalFinished = (next.done || 0) + (next.skipped || 0) + (next.error || 0) + (next.blocked || 0)
+                        next.percent = next.total > 0 ? Number(((totalFinished / next.total) * 100).toFixed(1)) : 0
+                    }
+                }
+
+
+                //  handle speed tracking
+                if (changes.speed !== undefined || (nowFinished && wasFinished === false)) {
+                    const oldFileSpeed = existing?.speed || 0
+                    const newFileSpeed = nowFinished ? 0 : (changes.speed !== undefined ? changes.speed : oldFileSpeed)
+                    const speedDiff = newFileSpeed - oldFileSpeed
+
+                    next.speed = Math.max(0, (next.speed || 0) + speedDiff)
+                }
+                return next
+            })
+        )
+
+    }
+
+
+    // here remove one session from panel when user removes it for specific file and folder - remove not abort here
+    const closeSession = (sessionId) => {
+        setSessions(prev => {
+            const updated = prev.filter(s => s.id !== sessionId)
+            if (updated.length === 0) setIsPanelOpen(false)
+            return updated
+        }, true) // force update
+        sessionMapsRef.current.delete(sessionId)
+        uploadQueuesRef.current.delete(sessionId)
+        uploadStartedRef.current.delete(sessionId)
+    }
+
+
+    //  for removing single from upload panel 
+    const removeFile = (sessionId, filekey) => {
+        const fileMap = sessionMapsRef.current.get(sessionId)
+        if (!fileMap) return
+
+        //  remove from map here
+        fileMap.delete(filekey)
+
+
+        setSessions(prev => {
+            const nextSessions = prev.map(s => {
+                if (s.id !== sessionId) return s
+                const updateFiles = s.files.filter(f => f.filekey !== filekey)
+                return { ...s, files: updateFiles }
+            }).filter(s => s.isFolder || s.isLarge || s.files?.length > 0)
+
+            if (nextSessions.length === 0) {
+                setIsPanelOpen(false)
+            }
+
+            return nextSessions
+        }, true) // force update
+
+    }
+
+    //  minimize and maximize the panel
+    const toggleMinimize = () => setIsMinimized(prev => !prev)
+
+
+    return {
+        sessions,
+        setSessions,
+        isPanelOpen,
+        setIsPanelOpen,
+        isMinimized,
+        setIsMinimized,
+        updateSession,
+        updateFile,
+        closeSession,
+        removeFile,
+        toggleMinimize
+    }
+
+}
+
+
+
+//  here this file start uplaodihn all files and folder here 
+import axiosApi from "../../utils/api";
+import { isBlockedFile } from "../../utils/blockFileTypes.js";
+
+
+const CHUNK_SIZE = 7 * 1024 * 1024
+const SMALL_FILE_THRESHOLD = 1 * 1024 * 1024
+const SMALL_BATCH_SIZE = 25
+const CHUNK_BATCH_SIZE = 3
+const MAX_CONCURRENT = 3
+
+export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSession) {
+    const { sessionMapsRef, uploadQueuesRef, uploadStartedRef, abortControllersRef } = refs
+
+    //  this is the helper function for read 4100 byts of data as base64 for security checking MIME 
+    const getFileHeader = (file) => {
+        return new Promise((resolve) => {
+            const slice = file.slice(0, 4100)
+            const reader = new FileReader()
+            reader.onload = (e) => {
+                const base64 = btoa(String.fromCharCode(...new Uint8Array(e.target.result)))
+                resolve(base64)
+            }
+            reader.readAsArrayBuffer(slice)
+        })
+    }
+
+
+    //  this function is used for uploading multiple small file in one http request here
+    const uploadSmallBatch = async (sessionId, batch, parentId) => {
+        // STEP 1 — handle placeholders separately
+        batch
+            .filter(f => f.file._isPlaceholder)
+            .forEach(f => {
+                updateFile(sessionId, f.filekey, { status: "done", progress: 100 }, f.status)
+            })
+
+        // STEP 2 — filter real files
+        const realBatch = batch.filter(f => !f.file._isPlaceholder)
+        if (realBatch.length === 0) return
+
+        // STEP 3 — block dangerous files (frontend validation)
+        const safeBatch = []
+        for (const f of realBatch) {
+            if (isBlockedFile(f.file.name)) {
+                updateFile(sessionId, f.filekey, {
+                    status: "blocked",
+                    message: "File type not allowed"
+                }, f.status)
+                continue
+            }
+            safeBatch.push(f)
+        }
+
+        if (safeBatch.length === 0) return
+
+        // STEP 4 — create abort controller for batch
+        const controller = new AbortController()
+        safeBatch.forEach(f => {
+            abortControllersRef.current.set(f.filekey, controller)
+        })
+
+        const form = new FormData()
+        form.append("parent", parentId ? String(parentId) : null)
+
+        try {
+            // STEP 5 — get file headers for backend security check
+            const fileHeaders = await Promise.all(
+                safeBatch.map(f => getFileHeader(f.file))
+            )
+
+            const metadata = safeBatch.map((f, i) => ({
+                fileName: f.file.name,
+                fingerprint: f.fingerprint,
+                fileSize: f.file.size,
+                fileType: f.file.type || "application/octet-stream",
+                parentId: f.parentId,
+                fileHeader: fileHeaders[i],
+                replacesFileId: f.replacesFileId || null
+            }))
+
+            form.append("metadata", JSON.stringify(metadata))
+
+            // STEP 6 — append files and mark uploading
+            safeBatch.forEach((f, i) => {
+                form.append(`file_${i}`, f.file)
+                updateFile(sessionId, f.filekey, { status: "uploading" }, f.status)
+            })
+
+            // STEP 7 — API call
+            const { data } = await axiosApi.post("/upload/small-batch", form, {
+                signal: controller.signal
+            })
+
+            // STEP 8 — handle response
+            safeBatch.forEach(f => {
+                const result = data.results?.find(
+                    r => r.fingerprint === f.fingerprint
+                )
+
+                if (result?.status === "blocked") {
+                    updateFile(sessionId, f.filekey, {
+                        status: "blocked",
+                        message: result.message || "File not allowed"
+                    }, f.status)
+                } else {
+                    // store uploadId back to filesMap for cancel cleanup
+                    const filesMap = sessionMapsRef.current.get(sessionId)
+                    if (filesMap?.has(f.filekey)) {
+                        filesMap.set(f.filekey, {
+                            ...filesMap.get(f.filekey),
+                            uploadId: result?.uploadId
+                        })
+                    }
+
+                    updateFile(sessionId, f.filekey, {
+                        status: "done",
+                        progress: 100,
+                        id: result?.id || null // Store the DB _id
+                    })
+                    // onUploadComplete?.()
+                    // if (f.isRetry) onUploadComplete?.()
+                }
+            })
+
+        } catch (error) {
+            if (error.name === "CanceledError") return
+            console.error("[DEBUG] uploadSmallBatch error response:", error.response?.data);
+            console.error("uploadSmallBatch error:", error)
+
+            const isNetworkError = !error.response
+            const isBlocked = error.response?.status === 403 || error.response?.status === 400
+            const errorMessage = isNetworkError ? "No connection" : error.response?.data?.message || "Upload failed"
+
+            // Treat 403 (Permission) and 400 (Trash) as "blocked" status
+            safeBatch.forEach(f => {
+                updateFile(sessionId, f.filekey, {
+                    status: isBlocked ? "blocked" : "error",
+                    message: errorMessage
+                }, f.status)
+            })
+
+            // if network is down then stop the whole queue
+            if (isNetworkError) {
+                const queue = uploadQueuesRef.current.get(sessionId)
+                if (queue) {
+                    // mark all remaining files in queue as error
+                    queue.forEach(fileObj => {
+                        if (fileObj === "DONE" || !fileObj) return
+                        updateFile(sessionId, fileObj.filekey, {
+                            status: "error",
+                            message: "No connection"
+                        }, fileObj.status)
+                    })
+                    queue.length = 0
+                    queue.push("DONE")
+                }
+            }
+        }
+    }
+
+
+
+    // handle large files uploading 
+    const uploadLargeFile = async (sessionId, fileObj, replaceMap) => {
+        //  file select then update progress bar
+        // if (fileObj.file._isPlaceholder) {
+        //     updateFile(sessionId, filekey, { status: "uploading" })
+        // }
+        if (fileObj.file._isPlaceholder) {
+            updateFile(sessionId, fileObj.filekey, {
+                status: "done",
+                progress: 100
+            }, fileObj.status)
+            return; // STOP upload completely
+        }
+
+        const { file, filekey, fingerprint, parentId } = fileObj;
+        updateFile(sessionId, filekey, { status: "uploading" })
+
+        // create abort controller for this file
+        const controller = new AbortController()
+        abortControllersRef.current.set(filekey, controller)
+
+        try {
+
+            //  here we are blocking the dangorus file extension 
+            if (isBlockedFile(file.name)) {
+                updateFile(sessionId, filekey, { status: "blocked", message: "File type is not allowed" })
+                return
+            }
+            const fileHeader = await getFileHeader(file)
+
+            let uploadId, alreadyUploaded
+
+            //  first init data to backend for check status
+            const initStart = performance.now()
+            const { data: initData } = await axiosApi.post("/upload/init", {
+                fileName: file.name,
+                fingerprint,
+                fileSize: file.size,
+                fileType: file.type || "application/octet-stream",
+                totalChunks: Math.ceil(file.size / CHUNK_SIZE),
+                parent: parentId || null,
+                fileHeader,
+                replacesFileId: replaceMap?.[file.name] || null
+            }, { signal: controller.signal })
+
+
+            //  if the mime is block from backend 
+            if (initData.blocked) {
+                console.warn(`[DEBUG] init blocked: ${file.name} | reason=${initData.message}`);
+                updateFile(sessionId, filekey, { status: "blocked", message: initData.message })
+                return
+            }
+            console.log(`[INIT] ${(performance.now() - initStart).toFixed(1)}ms | uploadId=${initData.uploadId}`);
+
+            //  if file already uploaded then already uploaded
+            if (initData.status === "completed") {
+                updateFile(sessionId, filekey, { status: "skipped", progress: 100 }, fileObj.status)
+                return
+            }
+
+
+            uploadId = initData.uploadId
+
+            // store uploadId in fileObj for cancle use
+            const filesMap = sessionMapsRef.current.get(sessionId)
+            if (filesMap?.has(filekey)) {
+                filesMap.set(filekey, { ...filesMap.get(filekey), uploadId })
+            }
+
+
+            alreadyUploaded = new Set(initData.uploadedChunks || [])    // how many chunks are already uploaded
+            const totalChunks = Math.ceil(file.size / CHUNK_SIZE)
+
+            // here skipp the chunks that are already uploaded
+            const chunks = []
+            for (let i = 0; i < totalChunks; i++) {
+                if (alreadyUploaded.has(i)) continue
+                const start = i * CHUNK_SIZE;
+                const end = Math.min(start + CHUNK_SIZE, file.size)
+                chunks.push({ index: i, start, blob: file.slice(start, end) })
+            }
+
+            //  in one batch how many chunk we want
+            const batches = []
+            for (let i = 0; i < chunks.length; i += CHUNK_BATCH_SIZE) {
+                batches.push(chunks.slice(i, i + CHUNK_BATCH_SIZE))
+            }
+
+            let uploadCount = alreadyUploaded.size
+
+
+            //  internet speed tracking here
+            let bytesInWindow = 0
+            let windowStart = Date.now()
+            const SPEED_UPDATE_INTERVAL = 1500     // here every 1.5 second speed update
+
+
+            //  send batch to the backend /upload-chunk
+            console.log(`[CHUNKS] ${file.name} | Total batches: ${batches.length} | Total chunks: ${chunks.length} | Already uploaded: ${alreadyUploaded.size}`)
+            for (let i = 0; i < batches.length; i++) {
+                const batch = batches[i]
+                const batchBytes = batch.reduce((sum, c) => sum + c.blob.size, 0)
+
+
+                const form = new FormData()
+                batch.forEach(c => form.append(`chunk_${c.index}`, c.blob))
+
+
+                const chunkStart = performance.now()
+                console.log(`[BATCH START] ${file.name} | batch ${i + 1}/${batches.length} | chunks: [${batch.map(c => c.index)}] | sending...`)
+
+                let retries = 0
+                const MAX_RETRIES = 3
+                while (true) {
+                    try {
+                        await axiosApi.post("/upload/upload-chunk", form, {
+                            signal: controller.signal,
+                            timeout: 300000,   // 5 miniutes
+                            headers: {
+                                "x-upload-id": uploadId,
+                                "x-indexes": JSON.stringify(batch.map(c => c.index)),
+                                "x-starts": JSON.stringify(batch.map(c => c.start))
+                            }
+                        })
+                        console.log(`[BATCH OK] ${file.name} | batch ${i + 1}/${batches.length} | took ${(performance.now() - chunkStart).toFixed(0)}ms`)
+                        break // Success!
+                    } catch (err) {
+                        if (err.name === "CanceledError") return
+                        console.error(`[BATCH FAIL DETAIL]`, {
+                            fileName: file.name,
+                            batchIndex: i,
+                            totalBatches: batches.length,
+                            errorName: err.name,
+                            errorCode: err.code,
+                            errorMessage: err.message,
+                            httpStatus: err.response?.status,
+                            httpData: err.response?.data,
+                            isTimeout: err.code === "ECONNABORTED",
+                            isNetworkError: !err.response,
+                            retriesExhausted: retries >= MAX_RETRIES
+                        })
+
+                        const isNetworkError = !err.response
+                        if (isNetworkError && retries < MAX_RETRIES) {
+                            retries++
+                            console.warn(`[RETRY] ${file.name} | batch ${i + 1}/${batches.length} | retry ${retries}/${MAX_RETRIES} | err=${err.message}`)
+                            await new Promise(r => setTimeout(r, 2000 * retries)) // Wait 2s, 4s, 6s
+                            continue
+                        }
+
+                        console.error(`[BATCH FAIL] ${file.name} | batch ${i + 1}/${batches.length} | took ${(performance.now() - chunkStart).toFixed(0)}ms | err.name=${err.name} | err.code=${err.code} | status=${err.response?.status} | msg=${err.message}`)
+                        console.error(`[UPLOAD ERROR] ${new Date().toLocaleTimeString()} | File: ${file.name} | Status: ${err.response?.status} | Msg: ${err.message}`);
+                        updateFile(sessionId, filekey, { status: "error", message: "Upload failed - connection lost" })
+                        throw err
+                    }
+                }
+
+                // update the speed
+                uploadCount += batch.length;
+                bytesInWindow += batchBytes
+
+
+                const now = Date.now()
+                const elapsed = now - windowStart
+
+                const pct = parseFloat(((uploadCount / totalChunks) * 100).toFixed(1))
+
+                if (elapsed >= SPEED_UPDATE_INTERVAL) {
+                    const speedMBps = (bytesInWindow / (1024 * 1024)) / (elapsed / 1000)
+                    updateFile(sessionId, filekey, {
+                        progress: pct,
+                        speed: speedMBps
+                    })
+
+                    // reset window
+                    bytesInWindow = 0;
+                    windowStart = now
+                } else {
+                    updateFile(sessionId, filekey, { progress: pct })
+                }
+
+
+            }
+
+            console.log(`[ALL BATCHES DONE] ${file.name} | All ${batches.length} batches finished | calling /upload/complete...`)
+
+            console.log(`[COMPLETE] calling complete for: ${file.name}, uploadId: ${uploadId}`)
+
+            const { data: completeData } = await axiosApi.post("/upload/complete", { uploadId }, { signal: controller.signal })
+            updateFile(sessionId, filekey, {
+                status: "done",
+                progress: 100,
+                speed: null,
+                id: completeData?.id || null // Store the DB _id
+            }, fileObj.status)
+
+            console.log(`[COMPLETE RESPONSE] ${file.name}: ${JSON.stringify(completeData)}`)
+
+            // if (fileObj.isRetry) onUploadComplete?.()
+
+
+        } catch (error) {
+            console.error(`[LARGEFILE CATCH] ${file.name} | error.name=${error.name} | error.code=${error.code} | error.message=${error.message}`)
+            if (error.name === "CanceledError") return
+            console.error("[DEBUG] uploadLargeFile error response:", error.response?.data);
+            console.error("uploadLargeFile error:", error)
+
+            console.error(`[LARGEFILE CATCH DETAIL]`, {
+                fileName: file.name,
+                errorName: error.name,
+                errorCode: error.code,
+                errorMessage: error.message,
+                httpStatus: error.response?.status,
+                httpData: error.response?.data,
+                isTimeout: error.code === "ECONNABORTED",
+                isNetworkError: !error.response
+            })
+
+            // check if already marked as error from chunk failure
+            const currentFile = sessionMapsRef.current.get(sessionId)?.get(filekey)
+            if (currentFile?.status === "error") {
+                console.warn(`[LARGEFILE CATCH] ${file.name} | Already marked as error, skipping`)
+                return  // ← already handled, don't overwrite
+            }
+
+            const errorMessage = error.response?.data?.message || "Upload failed"
+            const isBlocked = error.response?.status === 403 || error.response?.status === 400
+            const isNetworkError = !error.response
+
+            console.error(`[LARGEFILE CATCH] ${file.name} | Setting status=${isBlocked ? 'blocked' : 'error'} | msg=${errorMessage}`)
+            updateFile(sessionId, filekey, {
+                status: isBlocked ? "blocked" : "error",
+                message: errorMessage
+            }, fileObj.status)
+
+            // if network is down then stop the whole queue (same as small file logic)
+            if (isNetworkError) {
+                console.error(`[LARGEFILE CATCH] ${file.name} | Network error — stopping entire queue`)
+                const queue = uploadQueuesRef.current.get(sessionId)
+                if (queue) {
+                    queue.forEach(queuedFile => {
+                        if (queuedFile === "DONE" || !queuedFile) return
+                        updateFile(sessionId, queuedFile.filekey, {
+                            status: "error",
+                            message: "No connection"
+                        }, queuedFile.status)
+                    })
+                    queue.length = 0
+                    queue.push("DONE")
+                }
+            }
+        }
+
+    }
+
+
+    // create 5 paralle upllading worker here 
+    const startUploadWorkers = (sessionId) => {
+        if (uploadStartedRef.current.get(sessionId)) return []
+        uploadStartedRef.current.set(sessionId, true)
+
+        const queue = uploadQueuesRef.current.get(sessionId)
+        console.log(`[WORKERS] Starting ${MAX_CONCURRENT} workers for session ${sessionId} | Queue size: ${queue.length}`)
+
+        return Array(MAX_CONCURRENT).fill(null).map(async (_, workerIndex) => {
+            console.log(`[WORKER-${workerIndex}] Started`)
+            while (true) {
+                const fileObj = queue.shift()
+                if (!fileObj) {
+                    await new Promise(r => setTimeout(r, 100))
+                    continue
+                }
+                if (fileObj === "DONE") {
+                    console.log(`[WORKER-${workerIndex}] saw DONE, stopping`)
+                    queue.unshift("DONE")
+                    break
+                }
+                console.log(`[WORKER-${workerIndex}] picking up: ${fileObj.file.name} | isSmall=${fileObj.isSmall} | queue remaining: ${queue.length}`)
+                const workerFileStart = performance.now()
+                if (fileObj.isSmall) {
+                    const batch = [fileObj]
+                    while (batch.length < SMALL_BATCH_SIZE && queue[0]?.isSmall) {
+                        batch.push(queue.shift())
+                    }
+                    console.log(`[WORKER-${workerIndex}] uploading small batch of ${batch.length} files`)
+                    await uploadSmallBatch(sessionId, batch, batch[0].parentId)
+                    console.log(`[WORKER-${workerIndex}] small batch done | took ${(performance.now() - workerFileStart).toFixed(0)}ms`)
+                } else {
+                    console.log(`[WORKER-${workerIndex}] uploading large file: ${fileObj.file.name} (${(fileObj.file.size / 1024 / 1024).toFixed(1)}MB)`)
+                    await uploadLargeFile(sessionId, fileObj)
+                    console.log(`[WORKER-${workerIndex}] large file done: ${fileObj.file.name} | took ${(performance.now() - workerFileStart).toFixed(0)}ms`)
+                }
+                console.log(`[WORKER-${workerIndex}] finished processing, looping back for next file`)
+            }
+            console.log(`[WORKER-${workerIndex}] EXITED the while loop — this worker is now DEAD`)
+        })
+    }
+
+
+    //  retru file whe user lcick on retry icon on upload failed here
+    const retryFile = (sessionId, filekey) => {
+        const filesMap = sessionMapsRef.current.get(sessionId)
+        const fileObj = filesMap?.get(filekey)
+        if (!fileObj) return
+
+        // reset status
+        const updated = { ...fileObj, status: "waiting", progress: 0, speed: null, isRetry: true }
+        filesMap.set(filekey, updated)
+        updateFile(sessionId, filekey, { status: "waiting", progress: 0, speed: null }, fileObj.status)
+
+        // get queue and remove DONE sentinel first
+        const queue = uploadQueuesRef.current.get(sessionId)
+        if (queue) {
+            // remove DONE from queue so workers don't stop immediately
+            const doneIndex = queue.indexOf("DONE")
+            if (doneIndex !== -1) queue.splice(doneIndex, 1)
+
+            // push file to front
+            queue.unshift(updated)
+
+            // add DONE back at end
+            queue.push("DONE")
+        }
+
+        // reset uploadStarted so workers can restart
+        uploadStartedRef.current.set(sessionId, false)
+
+        // restart workers
+        startUploadWorkers(sessionId)
+    }
+
+
+
+    //  here we are retrying the foder when user clcik on retry icon on folder upload 
+    const retryFolder = (sessionId) => {
+        const filesMap = sessionMapsRef.current.get(sessionId)
+        if (!filesMap) return
+
+        // 1. Get only the files that actually failed
+        const errorFiles = [];
+        filesMap.forEach((fileObj) => {
+            if (fileObj.status === "error") {
+                errorFiles.push(fileObj)
+            }
+        })
+        console.log(`[DEBUG] retryFolder: Found ${errorFiles.length} files with status 'error'`);
+        if (errorFiles.length === 0) return
+
+        // 2. Reset all error files to "waiting"
+        errorFiles.forEach(fileObj => {
+            // Capture the old "error" status so updateFile knows to subtract from it
+            const oldStatus = fileObj.status;
+            const oldProgress = fileObj.progress;
+
+            const updated = {
+                ...fileObj,
+                status: "waiting",
+                progress: 0,
+                speed: null,
+                isRetry: true
+            };
+
+            filesMap.set(fileObj.filekey, updated);
+
+            // Update the UI state - Passing 'oldStatus' ensures the error count drops to 0
+            updateFile(sessionId, fileObj.filekey, {
+                status: "waiting",
+                progress: 0,
+                speed: null
+            }, oldStatus, oldProgress);
+        });
+
+        // 3. RESET QUEUE COMPLETELY
+        // We create a fresh queue to avoid any leftovers
+        const queue = [];
+        uploadQueuesRef.current.set(sessionId, queue);
+
+        // 4. ADD RETRIED FILES BACK TO QUEUE
+        errorFiles.forEach(fileObj => {
+            const updated = filesMap.get(fileObj.filekey);
+            queue.push(updated);
+        });
+
+        // Add the sentinel so workers know when to stop
+        queue.push("DONE");
+
+        // 5. RESTART WORKERS
+        // Clear the started flag so startUploadWorkers actually runs
+        uploadStartedRef.current.set(sessionId, false);
+        startUploadWorkers(sessionId);
+    }
+
+
+    return {
+        uploadSmallBatch,
+        uploadLargeFile,
+        startUploadWorkers,
+        getFileHeader,
+        retryFile,
+        retryFolder
+    }
+}

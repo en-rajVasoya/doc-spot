@@ -1,0 +1,1873 @@
+https://drive.google.com/file/d/1ZawRBuowUvGfRncBn1VGzkgcrYb_OQtY/view?usp=sharing
+
+
+
+
+
+
+
+
+/// fileHash.js
+const worker = new Worker(
+  new URL("../workers/fileHashWorker.js", import.meta.url),
+  { type: "module" }
+);
+
+const pending = new Map();
+
+worker.onmessage = (e) => {
+  const { batchId, results } = e.data;
+  const resolve = pending.get(batchId);
+  if (!resolve) return;
+  pending.delete(batchId);
+  resolve(results);
+};
+
+worker.onerror = (err) => {
+  pending.forEach(p => p([]));
+  pending.clear();
+};
+
+let batchCounter = 0;
+
+export function generateFingerprintBatch(files) {
+  const batchId = batchCounter++;
+  return new Promise((resolve) => {
+    pending.set(batchId, resolve);
+    worker.postMessage({ files, batchId });
+  });
+}
+
+
+
+
+// fileHashWOrker
+import SparkMD5 from "spark-md5";
+
+const hashFile = async (file) => {
+  const blob = file.slice(0, 2 * 1024 * 1024);
+  const buffer = await blob.arrayBuffer();
+  const spark = new SparkMD5.ArrayBuffer();
+  spark.append(buffer);
+  const hash = spark.end();
+  const name = encodeURIComponent(file.name.trim());
+  return `spot-${name}-${file.size}-${hash}`;
+};
+
+self.onmessage = async (e) => {
+  const { files, batchId } = e.data;
+
+  const results = await Promise.all(
+    files.map(async (file) => {
+      try {
+        const fingerprint = await hashFile(file);
+        const filekey = file.webkitRelativePath || file.name;
+        return { success: true, fingerprint, filekey };
+      } catch (err) {
+        const filekey = file.webkitRelativePath || file.name;
+        return { success: false, filekey, error: err.message };
+      }
+    })
+  );
+
+  self.postMessage({ batchId, results });
+};
+
+
+
+
+
+VITE_API_URL=
+
+
+
+
+
+import dotenv from "dotenv"
+dotenv.config()
+import express from "express"
+import cookieParser from "cookie-parser"
+import cors from "cors"
+import path from "path"
+import { createServer } from "http"
+
+import connectDB from "./config/db.js";
+import userRouter from "./routes/userRoute.js";
+import uploadRouter from "./routes/uploadRoute.js";
+import shareRouter from "./routes/shareROute.js"
+import { initSocket, emitToUser } from "./socket.js"
+import downloadRouter from "./routes/downloadRoute.js"
+import searchRouter from "./routes/searchRoute.js"
+import trashRouter  from "./routes/trashRoute.js"
+import { startTrashCleanup } from "./utils/trashCleanup.js"
+
+
+// connect databse
+connectDB()
+
+//  cron job that run and delete trash page files and folder 
+startTrashCleanup()
+
+//  init the express
+const app = express();
+const httpServer = createServer(app)     // creating http server here   
+app.use((req, res, next) => {
+    req.setTimeout(10 * 60 * 1000);
+    res.setTimeout(10 * 60 * 1000);
+    next();
+});
+httpServer.setTimeout(10 * 60 * 1000);
+
+
+
+app.use(cors({
+    origin: [
+        "http://localhost:5177",
+        "https://localhost:5177",
+        "http://192.168.1.19:5177",
+        "https://192.168.1.19:5177",
+        "http://192.168.1.35:5177",
+        "https://192.168.1.35:5177",
+        "http://192.168.1.4:5177",
+        "https://192.168.1.4:5177",
+    ],
+    credentials: true
+}))
+
+//  init socket server
+initSocket(httpServer)
+// middleware for emmiting every user request 
+app.use((req, res, next) => {
+    req.emitToUser = emitToUser
+    next()
+})
+
+
+//  for getting images for frontend
+app.use("/uploadimage", express.static(path.resolve("uploadimage")))
+
+//  for getting uploaded files to the frontend here
+const __dirname = path.resolve()
+app.use("/files", (req, res, next) => {
+    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin")
+    next()
+})
+app.use("/files", express.static(path.join(__dirname, "files")))
+
+
+app.use(express.json({ limit: "100mb" }))
+app.use(express.urlencoded({ limit: "100mb", extended: true }))
+app.use(cookieParser())
+
+
+// auth
+app.use("/api/auth", userRouter)
+
+// uploding 
+app.use("/upload", uploadRouter)
+
+
+//  downloading
+app.use("/download", downloadRouter)
+
+//  sharing here
+app.use("/api", shareRouter)
+
+
+//  search api here
+app.use("/search", searchRouter)
+
+
+//  trash api 
+app.use("/trash", trashRouter)
+
+
+
+const PORT = process.env.PORT
+
+// app.listen(PORT, () => {
+//     console.log("Server Running on ", PORT)
+// })
+
+//  we are using socket connection so change to
+httpServer.listen(PORT, () => {
+    console.log("Server Running on", PORT)
+})
+
+
+
+
+
+
+import { Server } from "socket.io"
+
+
+// map for getting online user list
+const onlineUsers = new Map()
+let _io = null
+
+
+// creating here server of scoket io
+export const initSocket = (httpServer) => {
+    _io = new Server(httpServer, {
+        cors: {
+            origin: [
+                "http://localhost:5177",
+                "https://localhost:5177",
+                "http://192.168.1.19:5177",
+                "https://192.168.1.19:5177",
+                "http://192.168.1.35:5177",
+                "https://192.168.1.35:5177",
+                "http://192.168.1.4:5177",
+                "https://192.168.1.4:5177",
+            ],
+            credentials: true
+        },
+        pingTimeout: 60000,
+        pingInterval: 25000
+    })
+
+
+    //  eastablish connection here and getting all online users
+    _io.on("connection", (socket) => {
+        const userId = socket.handshake.query.userId;
+        if (userId) {
+            onlineUsers.set(userId, socket.id)
+            console.log("User connected ", userId)
+        }
+
+        //  if user disconnected then 
+        socket.on("disconnect", () => {
+            onlineUsers.delete(userId)
+            console.log("User disconnected ", userId)
+        })
+    })
+
+    return _io
+}
+
+
+// now emit to user like sending event
+export const emitToUser = (userId, event, data) => {
+    const socketId = onlineUsers.get(userId.toString())
+    if (socketId && _io) {
+        _io.to(socketId).emit(event, data)
+    }
+}
+
+
+
+export { onlineUsers }
+
+
+
+
+
+
+
+
+
+
+
+import { createContext, useContext, useState, useRef, useMemo } from "react";
+import { generateFingerprintBatch } from "../utils/fileHash.js"
+import axiosApi from "../utils/api.js"
+// import { data, replace } from "react-router-dom";
+// import { useFileExplorer } from "./FileExplorerContext.jsx";
+
+import { useUploadRefs } from "../hooks/upload/useUploadRefs.js";
+import { useUploadSession } from "../hooks/upload/useUploadSession.js";
+import { useUploadWorkers } from "../hooks/upload/useUploadWorkers.js";
+import { useUploadCancel } from "../hooks/upload/useUploadCancel.js";
+import { useUploadConflict } from "../hooks/upload/useUploadConflict.js";
+
+
+const UploadContext = createContext()
+
+const LARGE_UPLOAD_THRESHOLD = 100
+const BATCH_SIZE = 50
+const SMALL_FILE_THRESHOLD = 1 * 1024 * 1024
+
+
+export function UploadProvider({ children }) {
+
+
+
+    const onUploadCompleteRef = useRef(null)
+    const setOnUploadComplete = (fn) => {
+        onUploadCompleteRef.current = fn
+    }
+
+    //  import refs from useRefs
+    const refs = useUploadRefs()
+    const addFilesRef = useRef(null)
+    const { sessionMapsRef, uploadQueuesRef, uploadStartedRef } = refs
+
+
+    //  for uplaod panel import all function 
+    const {
+        sessions, setSessions,
+        isPanelOpen, setIsPanelOpen,
+        isMinimized, setIsMinimized,
+        updateSession, updateFile,
+        closeSession, removeFile,
+        toggleMinimize
+    } = useUploadSession(refs)
+
+
+    // for uplaoding import all worker here
+    const { uploadSmallBatch, uploadLargeFile, startUploadWorkers, getFileHeader, retryFile, retryFolder } = useUploadWorkers(refs, updateFile, onUploadCompleteRef, updateSession)
+
+
+    // for cancle abort import all
+    const { cancelFileUpload, cancelSessionUpload, closeAllSessions } = useUploadCancel(refs, sessions, setSessions, setIsPanelOpen)
+
+
+    //  for conflick files and folder import 
+    const { conflictModalData, checkAndUpload, resolveConflict } = useUploadConflict(addFilesRef)
+
+
+
+    //   here this function is used for like creating folder if user upload a folder here
+    const createFolders = async (selectedFiles, parentId, replaceMap, isFolder) => {
+        const folderPathSet = new Set()
+
+        // Optimization: Process in chunks to avoid blocking UI
+        const CHUNK = 1000
+        for (let i = 0; i < selectedFiles.length; i += CHUNK) {
+            const batch = selectedFiles.slice(i, i + CHUNK)
+            batch.forEach(file => {
+                const parts = file.webkitRelativePath.split("/")
+                for (let j = 1; j < parts.length; j++) {
+                    folderPathSet.add(parts.slice(0, j).join("/"))
+                }
+            })
+            // yield to main thread
+            await new Promise(r => setTimeout(r, 0))
+        }
+
+        const folders = [...folderPathSet]
+            .sort((a, b) => a.split("/").length - b.split("/").length)
+            .map(folderPath => {
+                const parts = folderPath.split("/")
+                return {
+                    name: parts[parts.length - 1],
+                    folderPath,
+                    parentPath: parts.slice(0, -1).join("/") || null
+                }
+            })
+
+        const { data } = await axiosApi.post("/upload/folders-bulk", {
+            folders,
+            parentId,
+            replacesFileId: isFolder && replaceMap ? Object.values(replaceMap)[0] || null : null
+        })
+        return data.pathToId
+    }
+
+
+
+
+    //  here our main function hta runs first for uplading 
+    const addFiles = async (selectedFiles, parentId = null, replaceMap = {}) => {
+        const isFolder = selectedFiles[0]?.webkitRelativePath?.includes("/")
+        const totalFiles = selectedFiles.length
+        const isLarge = totalFiles >= LARGE_UPLOAD_THRESHOLD
+
+        const sessionStart = performance.now()
+        console.log(`[SESSION START] files: ${totalFiles}`)
+
+        const totalBytes = Array.from(selectedFiles).reduce((sum, f) => sum + f.size, 0)
+        const sessionId = Date.now()
+        const newSession = {
+            id: sessionId,
+            name: isFolder ? selectedFiles[0].webkitRelativePath.split("/")[0] : null,
+            isFolder,
+            isLarge,
+            total: totalFiles,
+            totalBytes,
+            uploadedBytes: 0,
+            parentId: parentId || null,
+            done: 0,
+            skipped: 0,
+            error: 0,
+            uploading: 0,
+            prepared: 0,
+            percent: 0,
+            files: [],
+        }
+
+        setSessions(prev => [newSession, ...prev])
+        setIsPanelOpen(true)
+        setIsMinimized(false)
+
+        const filesMap = new Map()
+        sessionMapsRef.current.set(sessionId, filesMap)
+        uploadQueuesRef.current.set(sessionId, [])
+        uploadStartedRef.current.set(sessionId, false)
+
+        await new Promise(r => setTimeout(r, 0))
+
+        let pathToId = {}
+        const folderPromise = isFolder
+            ? createFolders(selectedFiles, parentId, replaceMap, isFolder).then(result => { pathToId = result })
+            : Promise.resolve()
+
+        const allFileObjects = []
+
+        // PHASE 1 — fingerprint
+        const fingerprintStart = performance.now()
+        for (let i = 0; i < totalFiles; i += BATCH_SIZE) {
+            const batch = selectedFiles.slice(i, i + BATCH_SIZE)
+            const fingerprintResults = await generateFingerprintBatch(batch)
+
+            const fileObjects = fingerprintResults.map((result, index) => {
+                const file = batch[index]
+                const filekey = file.webkitRelativePath || file.name
+                return {
+                    file,
+                    filekey,
+                    fingerprint: result.fingerprint,
+                    parentId: null,
+                    progress: 0,
+                    status: "waiting",
+                    isSmall: file.size < SMALL_FILE_THRESHOLD,
+                    replacesFileId: replaceMap?.[file.name] || null
+                }
+            })
+
+            fileObjects.forEach(f => {
+                filesMap.set(f.filekey, f)
+                allFileObjects.push(f)
+            })
+
+            setSessions(prev => prev.map(s =>
+                s.id === sessionId
+                    ? { ...s, prepared: Math.min(i + BATCH_SIZE, totalFiles) }
+                    : s
+            ))
+
+            await new Promise(r => setTimeout(r, 0))
+        }
+        console.log(`[FINGERPRINT] ${(performance.now() - fingerprintStart).toFixed(1)}ms`)
+
+        // wait folders
+        const folderWaitStart = performance.now()
+        try {
+            await folderPromise
+            if (isFolder) {
+                // Find the ID of the top-most folder to highlight
+                const rootFolderName = selectedFiles[0].webkitRelativePath.split("/")[0]
+                const rootId = pathToId[rootFolderName]
+                setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, rootId } : s))
+
+                // if (onUploadComplete) {
+                //     onUploadComplete()
+                // }
+            }
+        } catch (error) {
+            console.error("Folder creation failed:", error)
+            const errorMessage = error.response?.data?.message || "Folder creation failed"
+            const isPermissionError = error.response?.status === 403 && errorMessage.toLowerCase().includes("permission")
+
+            allFileObjects.forEach(f => {
+                updateFile(sessionId, f.filekey, {
+                    status: isPermissionError ? "blocked" : "error",
+                    message: errorMessage
+                })
+            })
+            // If folder creation fails, we can't continue with the files
+            return
+        }
+        console.log(`[FOLDER CREATE] ${(performance.now() - folderWaitStart).toFixed(1)}ms`)
+
+        allFileObjects.forEach(f => {
+            if (isFolder) {
+                const parts = f.file.webkitRelativePath.split("/")
+                const folderPath = parts.slice(0, -1).join("/")
+                f.parentId = pathToId[folderPath] || null
+            } else {
+                f.parentId = parentId
+            }
+        })
+
+        if (!isLarge) {
+            setSessions(prev => prev.map(s =>
+                s.id === sessionId ? { ...s, files: allFileObjects } : s
+            ))
+        }
+
+        const workers = startUploadWorkers(sessionId)
+        const queue = uploadQueuesRef.current.get(sessionId)
+
+        // PHASE 2 — bulk check
+        const checkStart = performance.now()
+        // Throttled UI update for bulk check
+        let lastUiUpdate = Date.now()
+
+        try {
+            for (let i = 0; i < allFileObjects.length; i += BATCH_SIZE) {
+                const checkBatch = allFileObjects.slice(i, i + BATCH_SIZE)
+
+                const filesPayload = checkBatch.map(f => ({
+                    fingerprint: f.fingerprint,
+                    parentId: f.parentId
+                }))
+
+                const { data: bulkData } = await axiosApi.post("/upload/check-files-bulk", { files: filesPayload })
+                const statuses = bulkData.statuses || {}
+
+                let batchSkipped = 0
+
+                checkBatch.forEach(f => {
+                    const key = f.fingerprint + "_" + (f.parentId || null)
+                    const info = statuses[key]
+
+                    if (info?.status === "completed") {
+                        f.status = "skipped"
+                        f.progress = 100
+                        // batchSkipped++
+                        filesMap.set(f.filekey, f)
+                        updateFile(sessionId, f.filekey, { status: "skipped", progress: 100 }, "waiting")
+                    } else if (info?.status === "resumable") {
+                        f.uploadId = info.uploadId
+                        f.uploadedChunks = info.uploadedChunks
+                        filesMap.set(f.filekey, f)
+                        queue.push(f)
+                    } else {
+                        queue.push(f)
+                    }
+                })
+
+                // if (batchSkipped > 0) {
+                //     setSessions(prev => prev.map(s =>
+                //         s.id === sessionId
+                //             ? { ...s, skipped: (s.skipped || 0) + batchSkipped }
+                //             : s
+                //     ))
+                // }
+
+                // Yield to UI if needed
+                if (Date.now() - lastUiUpdate > 100) {
+                    await new Promise(r => setTimeout(r, 0))
+                    lastUiUpdate = Date.now()
+                }
+            }
+        } catch (error) {
+            // network failed during bulk check — mark all files as error
+            allFileObjects.forEach(f => {
+                updateFile(sessionId, f.filekey, {
+                    status: "error",
+                    message: "No Connection"
+                })
+            })
+
+            //  clear th queue first
+            queue.length = 0
+            queue.push("DONE")
+            return 
+        }
+
+
+        console.log(`[BULK CHECK] ${(performance.now() - checkStart).toFixed(1)}ms`)
+
+        queue.push("DONE")
+        await Promise.all(workers)
+        // onUploadComplete?.()
+
+        // if folder replace - call backend and shared user data with new one and delete old folder here
+        if (isFolder && replaceMap && Object.keys(replaceMap).length > 0) {
+            const oldFolderId = Object.values(replaceMap)[0]
+            const rootFolderName = selectedFiles[0].webkitRelativePath.split("/")[0]
+            const newFolderPathToId = pathToId
+            const newFolderId = newFolderPathToId[rootFolderName]
+
+            if (newFolderId && oldFolderId) {
+                try {
+                    await axiosApi.post("/upload/complete-folder-replace", {
+                        newFolderId,
+                        replacesFileId: oldFolderId
+                    })
+                } catch (err) {
+                    console.error("completeFolderReplace failed:", err)
+                }
+            }
+        }
+
+        const totalTime = performance.now() - sessionStart
+        console.log(`[SESSION DONE] totalTime: ${(totalTime / 1000).toFixed(2)}s`)
+
+        onUploadCompleteRef.current?.()
+    }
+
+    addFilesRef.current = addFiles
+
+
+    const getSessionIssues = (sessionId) => {
+        const filesMap = sessionMapsRef.current.get(sessionId)
+        if (!filesMap) return []
+
+        const issues = []
+        filesMap.forEach((f) => {
+            if (f.status === "blocked" || f.status === "error" || f.status === "allFailed" || f.status === "partial") {
+                issues.push({
+                    name: f.file.name,
+                    status: f.status,
+                    message: f.message || "Upload failed",
+                    path: f.file.webkitRelativePath || f.file.name
+                })
+            }
+        })
+        return issues
+    }
+
+
+    //  use memo for prevents unnecessary  re render here 
+    const contextValue = useMemo(() => ({
+        sessions,
+        isPanelOpen,
+        isMinimized,
+        addFiles,
+        closeSession,
+        toggleMinimize,
+        setOnUploadComplete,
+        removeFile,
+        closeAllSessions,
+        cancelFileUpload,
+        cancelSessionUpload,
+        retryFile,
+        retryFolder,
+
+        conflictModalData,
+        checkAndUpload,
+        resolveConflict,
+        getSessionIssues,
+    }), [
+        sessions, isPanelOpen, isMinimized, addFiles, closeSession,
+        toggleMinimize, setOnUploadComplete, removeFile, closeAllSessions,
+        cancelFileUpload, cancelSessionUpload, retryFile, conflictModalData,
+        checkAndUpload, resolveConflict, retryFolder
+    ])
+
+
+    return (
+        <UploadContext.Provider value={contextValue}>
+            {children}
+        </UploadContext.Provider>
+    )
+}
+
+export function useUpload() {
+    return useContext(UploadContext)
+}
+
+
+
+
+
+
+
+
+import { useState, useRef } from "react";
+import { useUpload } from "../../../context/UploadContext";
+import { useDownload } from "../../../context/DownloadContext";
+import { useFileExplorer } from "../../../context/FileExplorerContext";
+import { useNavigate } from "react-router-dom";
+import { Modal } from "react-bootstrap";
+import CustomScroll from "../../layout/CustomScroll";
+import ConflictModal from "../../modals/ConflictModal";
+import Tooltip from "../../layout/Tooltip";
+import InteractiveIcon from "../../layout/InteractiveIcon";
+
+import closeIcon from "@images/icon/close-icon.svg";
+import doneIcon from "@images/icon/done-icon.svg";
+import errorIcon from "@images/icon/error-icon.svg";
+import retryIcon from "@images/icon/retry-icon.svg";
+import uploadFileIcon from "@images/icon/upload-file-icon.svg";
+import fileIcon from "@images/svgs/file.svg";
+import listFolder1Icon from "@images/svgs/list/SF1.svg";
+import arrowDown from "@images/icon/arrow-down.svg";
+import arrowUp from "@images/icon/arrow-up.svg";
+import getFileIcon from "../../../utils/getFileIcon";
+
+
+// ─── Icons ───────────────────────────────────────────────
+const CloseIcon = () => <InteractiveIcon defaultIcon={closeIcon} width={24} />;
+const DoneIcon = () => <InteractiveIcon defaultIcon={doneIcon} width={24} />;
+const ErrorIcon = () => <InteractiveIcon defaultIcon={errorIcon} width={24} />;
+const RetryIcon = () => <InteractiveIcon defaultIcon={retryIcon} width={24} />;
+const FolderIcon = () => <InteractiveIcon defaultIcon={listFolder1Icon} alt="" />;
+const UploadFolderIcon = () => <InteractiveIcon defaultIcon={uploadFileIcon} alt="" />;
+const ArrowDownIcon = () => <InteractiveIcon defaultIcon={arrowDown} width={24} />;
+const ArrowUpIcon = () => <InteractiveIcon defaultIcon={arrowUp} width={24} />;
+
+
+// ─── Progress Circle ──────────────────────────────────────
+function ProgressCircle({ percent = 0 }) {
+    const radius = 13;
+    const stroke = 2.5;
+    const normalizedRadius = radius - stroke;
+    const circumference = normalizedRadius * 2 * Math.PI;
+    const strokeDashoffset = circumference - (percent / 100) * circumference;
+    return (
+        <svg height={radius * 2} width={radius * 2} style={{ transform: "rotate(-90deg)", flexShrink: 0 }}>
+            <circle stroke="#BEBEC7" fill="transparent" strokeWidth={stroke} r={normalizedRadius} cx={radius} cy={radius} />
+            <circle
+                stroke="#398415" fill="transparent" strokeWidth={stroke}
+                strokeDasharray={`${circumference} ${circumference}`}
+                style={{ strokeDashoffset, transition: "stroke-dashoffset 0.1s linear" }}
+                strokeLinecap="round" r={normalizedRadius} cx={radius} cy={radius}
+            />
+        </svg>
+    );
+}
+
+
+// ─── Confirm Cancel Modal ─────────────────────────────────
+function ConfirmCancelModal({ show, onConfirm, onClose, message }) {
+    const modalRef = useRef(null);
+    return (
+        <div onClick={(e) => { if (modalRef.current && !modalRef.current.contains(e.target)) onClose() }}>
+            <Modal show={show} backdrop="static" keyboard={false} centered>
+                <div ref={modalRef}>
+                    <Modal.Header className="border-0">
+                        <Modal.Title>Cancel</Modal.Title>
+                    </Modal.Header>
+                    <Modal.Body>{message}</Modal.Body>
+                    <Modal.Footer className="d-flex align-items-center justify-content-between border-0">
+                        <button type="button" className="btn-secondary btn-lg m-0" onClick={onClose}>No, keep it</button>
+                        <button type="button" className="btn-black btn-lg m-0" onClick={onConfirm}>Yes, cancel</button>
+                    </Modal.Footer>
+                </div>
+            </Modal>
+        </div>
+    );
+}
+
+
+// ─── Upload Issues Modal ──────────────────────────────────
+function UploadIssuesModal({ show, onClose, sessionId }) {
+    const { getSessionIssues } = useUpload();
+    const issues = sessionId ? getSessionIssues(sessionId) : [];
+    return (
+        <Modal show={show} onHide={onClose} centered backdrop="static">
+            <Modal.Header className="border-0 pb-2">
+                <Modal.Title>Upload Issues</Modal.Title>
+            </Modal.Header>
+            <Modal.Body className="pt-0">
+                <div style={{ maxHeight: "300px", overflowY: "auto", paddingRight: "5px" }}>
+                    {issues.length === 0 && <p className="text-muted">No specific file issues found.</p>}
+                    {issues.map((issue, idx) => (
+                        <div key={idx} className="mb-3 border-bottom pb-2">
+                            <div style={{ fontWeight: 500, wordBreak: "break-word", fontSize: "0.9rem" }}>{issue.path}</div>
+                            <div style={{ color: "#d93025", fontSize: "0.85rem", marginTop: "2px" }}>
+                                {issue.message || (issue.status === "blocked" ? "File not allowed" : "Upload failed")}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </Modal.Body>
+            <Modal.Footer className="border-0 mt-3">
+                <button type="button" className="btn-black btn-lg m-0" onClick={onClose}>Close</button>
+            </Modal.Footer>
+        </Modal>
+    );
+}
+
+
+// ─── Upload File Row ──────────────────────────────────────
+function UploadFileRow({ file, sessionId, onRetry, onCancelClick }) {
+    const { removeFile } = useUpload();
+    const { triggerHighlight } = useFileExplorer();
+    const navigate = useNavigate();
+
+    const name = file?.file?.name || file?.file?.webkitRelativePath || "Unknown";
+    const status = file?.status;
+    const progress = file.progress || 0;
+    const speed = file.speed || null;
+
+    const isUploading = status === "uploading" || status === "waiting";
+    const isDone = status === "done" || status === "skipped";
+    const isError = status === "error";
+    const isBlocked = status === "blocked";
+
+    const formatSpeed = (mbps) => {
+        if (!mbps || mbps < 0) return null;
+        if (mbps > 1) return `${mbps.toFixed(1)} MB/s`;
+    };
+
+    const handleOpenFolder = () => {
+        if (file.parentId) navigate(`/dashboard/folder/${file.parentId}`);
+        else navigate("/dashboard");
+        if (file.id) triggerHighlight(file.id);
+    };
+
+    const handleCloseClick = (e) => {
+        e.stopPropagation();
+        if (isUploading) {
+            onCancelClick({ sessionId, filekey: file.filekey, isFolder: false });
+        } else {
+            removeFile(sessionId, file.filekey);
+        }
+    };
+
+    return (
+        <div className="upload-file-item">
+            <div className="upload-file-item-content">
+                {/* upload badge */}
+                <span style={{ fontSize: "10px", color: "#398415", fontWeight: 600, marginRight: 6 }}>↑</span>
+                <div className="upload-file-icon">
+                    <InteractiveIcon defaultIcon={getFileIcon(file?.file?.name)} alt="" style={{ height: "30px" }} />
+                </div>
+                <div className="d-flex align-items-center">
+                    <div className="upload-file-name">{name}</div>
+                    {isUploading && (
+                        <div className="upload-file-count">
+                            {progress}%
+                            {speed && formatSpeed(speed) && (
+                                <span style={{ marginLeft: "6px", opacity: 0.7 }}>· {formatSpeed(speed)}</span>
+                            )}
+                        </div>
+                    )}
+                </div>
+            </div>
+            <div className="upload-right-side">
+                {isUploading && <ProgressCircle percent={progress} />}
+                {isDone && (
+                    <>
+                        <Tooltip text="File uploaded"><span><DoneIcon /></span></Tooltip>
+                        <Tooltip text="Open file"><span className="btn-only-icon" onClick={handleOpenFolder}><UploadFolderIcon /></span></Tooltip>
+                    </>
+                )}
+                {isBlocked && (
+                    <Tooltip text={file.message || "File not allowed"}><span><ErrorIcon /></span></Tooltip>
+                )}
+                {isError && (
+                    <>
+                        <Tooltip text={file.message || "Upload failed"}><span><ErrorIcon /></span></Tooltip>
+                        <Tooltip text="Retry">
+                            <button type="button" className="btn-only-icon" onClick={() => onRetry(file)}><RetryIcon /></button>
+                        </Tooltip>
+                    </>
+                )}
+                <button type="button" className="btn-only-icon" onClick={handleCloseClick}><CloseIcon /></button>
+            </div>
+        </div>
+    );
+}
+
+
+// ─── Upload Folder Row ────────────────────────────────────
+function UploadFolderRow({ session, onCancelClick, onViewIssuesClick, onRetryFolder }) {
+    const { closeSession } = useUpload();
+    const { triggerHighlight } = useFileExplorer();
+    const navigate = useNavigate();
+
+    const { id, name, total, done = 0, skipped = 0, error = 0, blocked = 0, prepared = 0, percent = 0 } = session;
+    const failed = error + blocked;
+    const totalDone = done + skipped;
+
+    let status = "uploading";
+    if (prepared < total) status = "preparing";
+    else if (totalDone + failed >= total && failed === 0) status = "done";
+    else if (totalDone + failed >= total && totalDone === 0) status = "allFailed";
+    else if (totalDone + failed >= total && failed > 0) status = "partial";
+
+    const formatSpeed = (mbps) => {
+        if (!mbps || mbps <= 0) return null;
+        return mbps > 1 ? `${mbps.toFixed(1)} MB/s` : `${(mbps * 1024).toFixed(0)} KB/s`;
+    };
+
+    let subLabel = null;
+    if (status === "preparing") subLabel = `Preparing ${prepared} of ${total}`;
+    else if (status === "uploading") subLabel = `${totalDone} of ${total} · ${percent}%`;
+    else if (status === "done") subLabel = `${total} files uploaded`;
+    else if (status === "partial") subLabel = `${totalDone} done · ${blocked} blocked · ${error} failed`;
+    else if (status === "allFailed") subLabel = `${total} files failed`;
+
+    const isInProgress = status === "preparing" || status === "uploading";
+
+    const handleOpenFolder = () => {
+        if (session.parentId) navigate(`/dashboard/folder/${session.parentId}`);
+        else navigate("/dashboard");
+        if (session.rootId) triggerHighlight(session.rootId);
+    };
+
+    const handleCloseClick = (e) => {
+        e.stopPropagation();
+        if (isInProgress) onCancelClick({ sessionId: id, isFolder: true });
+        else closeSession(id);
+    };
+
+    return (
+        <div className="upload-file-item">
+            <div className="d-flex align-items-center">
+                {/* upload badge */}
+                <span style={{ fontSize: "14px!important", color: "#398415", fontWeight: 900, marginRight: 6 }}>↑</span>
+                <div className="upload-file-icon"><FolderIcon /></div>
+                <div className="d-flex align-items-center">
+                    <div className="upload-file-name">{name}</div>
+                    {subLabel && (
+                        <div className="upload-file-count">
+                            {subLabel}
+                            {status === "uploading" && session.speed > 0 && (
+                                <span style={{ marginLeft: "6px", opacity: 0.7 }}>· {formatSpeed(session.speed)}</span>
+                            )}
+                        </div>
+                    )}
+                </div>
+            </div>
+            <div className="upload-right-side">
+                {(status === "preparing" || status === "uploading") && <ProgressCircle percent={percent} />}
+                {status === "done" && (
+                    <>
+                        <Tooltip text="Folder uploaded"><span><DoneIcon /></span></Tooltip>
+                        <Tooltip text="Open folder"><span className="btn-only-icon" onClick={handleOpenFolder}><UploadFolderIcon /></span></Tooltip>
+                    </>
+                )}
+                {(status === "partial" || status === "allFailed") && (
+                    <>
+                        {error > 0 && (
+                            <Tooltip text="Retry folder">
+                                <button type="button" className="btn-only-icon" onClick={(e) => { e.stopPropagation(); onRetryFolder(session.id); }}><RetryIcon /></button>
+                            </Tooltip>
+                        )}
+                        <Tooltip text="View Issues">
+                            <button type="button" className="btn-only-icon" onClick={(e) => { e.stopPropagation(); onViewIssuesClick(session.id); }}><ErrorIcon /></button>
+                        </Tooltip>
+                    </>
+                )}
+                <button type="button" className="btn-only-icon" onClick={handleCloseClick}><CloseIcon /></button>
+            </div>
+        </div>
+    );
+}
+
+
+// ─── Download Row ─────────────────────────────────────────
+function DownloadRow({ session, onCancelClick }) {
+    const { status, name, progress = 0, speed } = session;
+
+    const isDownloading = status === "downloading";
+    const isCreating = status === "creating";
+    const isDone = status === "done";
+    const isError = status === "error";
+    const isAssembling = status === "assembling";
+
+    const formatSpeed = (mbps) => {
+        if (!mbps) return null;
+        return mbps > 1 ? `${mbps.toFixed(1)} MB/s` : null;
+    };
+
+    const handleCloseClick = (e) => {
+        e.stopPropagation();
+        onCancelClick(session);
+    };
+
+    return (
+        <div className="upload-file-item">
+            <div className="upload-file-item-content">
+                {/* download badge */}
+                <span style={{ fontSize: "14px", color: "#1a73e8", fontWeight: 900, marginRight: 6 }}>↓</span>
+                <div className="upload-file-icon">
+                    <InteractiveIcon defaultIcon={getFileIcon(name)} style={{ height: "30px" }} />
+                </div>
+                <div className="d-flex align-items-center">
+                    <div className="upload-file-name">{name}</div>
+                    {isCreating && <div className="upload-file-count">Creating zip...</div>}
+                    {(isDownloading || isAssembling) && (
+                        <div className="upload-file-count">
+                            {isAssembling ? "Saving... " : `${progress}%`}
+                            {speed && !isAssembling && (
+                                <span style={{ marginLeft: 6, opacity: 0.7 }}>· {formatSpeed(speed)}</span>
+                            )}
+                        </div>
+                    )}
+                </div>
+            </div>
+            <div className="upload-right-side">
+                {isDownloading && <ProgressCircle percent={progress} />}
+                {(isDone || isAssembling) && <Tooltip text="Downloaded"><span><DoneIcon /></span></Tooltip>}
+                {isError && <Tooltip text="Failed"><span><ErrorIcon /></span></Tooltip>}
+                <button className="btn-only-icon" onClick={handleCloseClick}><CloseIcon /></button>
+            </div>
+        </div>
+    );
+}
+
+
+// ─── Main Transfer Panel ──────────────────────────────────
+function TransferPanel() {
+    const {
+        sessions: uploadSessions,
+        isPanelOpen: isUploadOpen,
+        isMinimized,
+        toggleMinimize,
+        closeAllSessions: closeAllUploads,
+        cancelFileUpload,
+        cancelSessionUpload,
+        retryFile,
+        retryFolder,
+        getSessionIssues
+    } = useUpload();
+
+    const {
+        sessions: downloadSessions,
+        isPanelOpen: isDownloadOpen,
+        closeSession: closeDownloadSession,
+        closeAllSessions: closeAllDownloads
+    } = useDownload();
+
+    const [confirmTarget, setConfirmTarget] = useState(null);
+    const [issuesSessionId, setIssuesSessionId] = useState(null);
+
+    const isOpen = isUploadOpen || isDownloadOpen;
+    if (!isOpen) return (
+        <>
+            <ConflictModal />
+        </>
+    );
+
+    const hasActiveUploads = uploadSessions.some(session => {
+        if (session.isFolder || session.isLarge) {
+            const { total = 0, done = 0, skipped = 0, error = 0, blocked = 0 } = session;
+            return (done + skipped + error + blocked) < total;
+        }
+        return session.files?.some(f => f.status === "uploading" || f.status === "waiting");
+    });
+
+    const hasActiveDownloads = downloadSessions.some(s => s.status === "downloading" || s.status === "assembling");
+
+    const handleCloseAll = (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        if (hasActiveUploads || hasActiveDownloads) {
+            setConfirmTarget({ isAll: true });
+        } else {
+            closeAllUploads();
+            closeAllDownloads();
+        }
+    };
+
+    const handleUploadCancelClick = (target) => setConfirmTarget(target);
+
+    const handleDownloadCancelClick = (session) => {
+        if (session.status === "done" || session.status === "error") {
+            closeDownloadSession(session.id);
+        } else {
+            setConfirmTarget({ isDownload: true, session });
+        }
+    };
+
+    const handleConfirmCancel = async () => {
+        if (!confirmTarget) return;
+        if (confirmTarget.isAll) {
+            await closeAllUploads();
+            await closeAllDownloads();
+        } else if (confirmTarget.isDownload) {
+            closeDownloadSession(confirmTarget.session.id);
+        } else if (confirmTarget.isFolder) {
+            await cancelSessionUpload(confirmTarget.sessionId);
+        } else {
+            await cancelFileUpload(confirmTarget.sessionId, confirmTarget.filekey);
+        }
+        setConfirmTarget(null);
+    };
+
+    const getConfirmMessage = () => {
+        if (confirmTarget?.isAll) return "Are you sure you want to cancel all transfers?";
+        if (confirmTarget?.isDownload) return "Are you sure you want to cancel this download?";
+        if (confirmTarget?.isFolder) return "Are you sure you want to cancel this folder upload?";
+        return "Are you sure you want to cancel this file upload?";
+    };
+
+    return (
+        <>
+            <ConflictModal />
+            <UploadIssuesModal
+                show={!!issuesSessionId}
+                onClose={() => setIssuesSessionId(null)}
+                sessionId={issuesSessionId}
+            />
+            <ConfirmCancelModal
+                show={!!confirmTarget}
+                onConfirm={handleConfirmCancel}
+                onClose={() => setConfirmTarget(null)}
+                message={getConfirmMessage()}
+            />
+
+            <div className="upload-file-single-box">
+                <div className="upload-file-box">
+                    <div className="upload-file-sub-box">
+
+                        {/* Header */}
+                        <div className="upload-file-header">
+                            <span className="file-name">Transfers</span>
+                            <div className="d-flex align-items-center">
+                                <button type="button" className="btn-only-icon" onClick={toggleMinimize}>
+                                    {isMinimized ? <ArrowUpIcon /> : <ArrowDownIcon />}
+                                </button>
+                                <button type="button" className="btn-only-icon" onClick={handleCloseAll}>
+                                    <CloseIcon />
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Body */}
+                        {!isMinimized && (
+                            <div className="upload-file-body-wrapper">
+                                <div className="upload-file-body">
+                                    <CustomScroll className="upload-file-ustom-scroll" showBottomBlur={false}>
+
+                                        {/* Upload sessions */}
+                                        {uploadSessions.map(session => {
+                                            if (session.isFolder || session.isLarge) {
+                                                return (
+                                                    <UploadFolderRow
+                                                        key={session.id}
+                                                        session={session}
+                                                        onCancelClick={handleUploadCancelClick}
+                                                        onViewIssuesClick={(id) => setIssuesSessionId(id)}
+                                                        onRetryFolder={retryFolder}
+                                                    />
+                                                );
+                                            }
+                                            return session.files?.map(file => (
+                                                <UploadFileRow
+                                                    key={file.filekey}
+                                                    file={file}
+                                                    sessionId={session.id}
+                                                    onRetry={() => retryFile(session.id, file.filekey)}
+                                                    onCancelClick={handleUploadCancelClick}
+                                                />
+                                            ));
+                                        })}
+
+                                        {/* Download sessions */}
+                                        {downloadSessions.map(session => (
+                                            <DownloadRow
+                                                key={session.id}
+                                                session={session}
+                                                onCancelClick={handleDownloadCancelClick}
+                                            />
+                                        ))}
+
+                                    </CustomScroll>
+                                </div>
+                            </div>
+                        )}
+
+                    </div>
+                </div>
+            </div>
+        </>
+    );
+}
+
+export default TransferPanel;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import { createContext, useContext, useState, useRef, useEffect } from "react"
+import { openDB } from "idb"
+import axiosApi from "../utils/api.js"
+import streamSaver from "streamsaver"
+
+const DownloadContext = createContext()
+
+const CHUNK_SIZE = 25 * 1024 * 1024  // 25MB per chunk
+const MAX_CONCURRENT = 2             // 2 parallel download workers
+const DB_NAME = "dataspot_downloads"
+const DB_VERSION = 2
+const STORE_NAME = "chunks"
+
+// -------------------------------------------------------
+// we also store zip job info in indexedDB so after browser
+// refresh we can resume folder download from where it left off
+// key: "zipjob_${folderId}" => { zipId, fileSize, folderName }
+// -------------------------------------------------------
+const ZIP_JOB_STORE = "zipjobs"
+
+// initialize indexedDB - now with two stores
+// one for chunks, one for zip job info
+const initDB = async () => {
+    return openDB(DB_NAME, DB_VERSION, {  // bump version for new store
+        upgrade(db) {
+            if (!db.objectStoreNames.contains(STORE_NAME)) {
+                db.createObjectStore(STORE_NAME)
+            }
+            // new store for zip job info
+            if (!db.objectStoreNames.contains(ZIP_JOB_STORE)) {
+                db.createObjectStore(ZIP_JOB_STORE)
+            }
+        }
+    })
+}
+
+export function DownloadProvider({ children }) {
+
+    const [sessions, setSessions] = useState([])
+    const [isPanelOpen, setIsPanelOpen] = useState(false)
+    const [isMinimized, setIsMinimized] = useState(false)
+
+    const activeDownloadsRef = useRef(new Map())  // fileId -> abortController
+    // track polling intervals so we can clear them on cancel
+    const pollingIntervalsRef = useRef(new Map())  // folderId -> intervalId
+
+    const sessionsRef = useRef([])
+
+
+    // update a specific download session
+    const updateSession = (sessionId, changes) => {
+        setSessions(prev =>
+            prev.map(s => s.id === sessionId ? { ...s, ...changes } : s)
+        )
+    }
+
+
+    // -------------------------------------------------------
+    // IndexedDB helpers - UNTOUCHED from your existing code
+    // -------------------------------------------------------
+    const saveChunk = async (db, fileId, chunkIndex, data) => {
+        await db.put(STORE_NAME, data, `${fileId}_chunk_${chunkIndex}`)
+    }
+
+    const getSavedChunks = async (db, fileId, totalChunks) => {
+        const saved = new Set()
+        for (let i = 0; i < totalChunks; i++) {
+            const chunk = await db.get(STORE_NAME, `${fileId}_chunk_${i}`)
+            if (chunk) saved.add(i)
+        }
+        return saved
+    }
+
+    const getChunk = async (db, fileId, chunkIndex) => {
+        return db.get(STORE_NAME, `${fileId}_chunk_${chunkIndex}`)
+    }
+
+    const cleanupChunks = async (db, fileId, totalChunks) => {
+        try {
+            console.log(`[CLEANUP] Starting cleanup for ${totalChunks} chunks of ${fileId}...`);
+            const tx = db.transaction(STORE_NAME, "readwrite")
+            for (let i = 0; i < totalChunks; i++) {
+                tx.store.delete(`${fileId}_chunk_${i}`)
+            }
+            await tx.done
+            console.log(`[CLEANUP SUCCESS] All chunks deleted for ${fileId}!`);
+        } catch (e) {
+            console.error(`[CLEANUP ERROR] Failed to delete chunks for ${fileId}:`, e);
+        }
+    }
+
+
+
+    //  this funtion will start here service worker to stream file chunks from index db to the chrome downloa dpanel
+    const assembleAndSave = async (db, fileId, totalChunks, fileName, fileType, fileSize, sessionId) => {
+        try {
+            // Initialize StreamSaver (Uses external MITM iframe to bypass local SSL requirement!)
+            const fileStream = streamSaver.createWriteStream(fileName, {
+                size: fileSize,
+            });
+
+            const writer = fileStream.getWriter();
+
+            for (let i = 0; i < totalChunks; i++) {
+                const chunk = await db.get(STORE_NAME, `${fileId}_chunk_${i}`);
+                if (!chunk) throw new Error(`Missing chunk ${i}`);
+                await writer.write(new Uint8Array(chunk));
+            }
+
+            await writer.close();
+
+            await cleanupChunks(db, fileId, totalChunks);
+
+            setSessions(prev => prev.map(s => {
+                if (s.id === sessionId) {
+                    return { ...s, status: "done", progress: 100 }
+                }
+                return s;
+            }));
+
+            console.log(`[SUCCESS] StreamSaver assembled and saved ${fileName} perfectly!`);
+
+        } catch (error) {
+            console.error("StreamSaver assembly failed:", error);
+        }
+    }
+
+
+    // -------------------------------------------------------
+    // NEW - save zip job info to IndexedDB
+    // so after browser refresh we can resume folder download
+    // key: folderId => { zipId, fileSize, folderName }
+    // -------------------------------------------------------
+    const saveZipJob = async (db, folderId, zipJobInfo) => {
+        await db.put(ZIP_JOB_STORE, zipJobInfo, `zipjob_${folderId}`)
+    }
+
+    const getZipJob = async (db, folderId) => {
+        return db.get(ZIP_JOB_STORE, `zipjob_${folderId}`)
+    }
+
+    const deleteZipJob = async (db, folderId) => {
+        await db.delete(ZIP_JOB_STORE, `zipjob_${folderId}`)
+    }
+
+
+    // -------------------------------------------------------
+    // CORE CHUNK DOWNLOAD LOGIC
+    // extracted into its own function so both downloadFile
+    // and downloadFolder can reuse the exact same logic
+    // fileId = actual file id OR zipId for folder zips
+    // endpoint = the url to fetch chunks from
+    // -------------------------------------------------------
+    const downloadInChunks = async (fileId, endpoint, fileSize, fileName, fileType, isFolder = false, folderId = null, sessionId) => {
+        const totalChunks = Math.ceil(fileSize / CHUNK_SIZE)
+
+        const abortController = new AbortController()
+        activeDownloadsRef.current.set(fileId, abortController)
+
+        try {
+            const db = await initDB()
+            const totalChunks = Math.ceil(fileSize / CHUNK_SIZE)
+            const savedChunks = await getSavedChunks(db, fileId, totalChunks)
+            let downloadedCount = savedChunks.size
+
+            const progress = parseFloat(((downloadedCount / totalChunks) * 100).toFixed(1))
+
+            // check existing progress in indexedDB - resume support
+
+
+            updateSession(sessionId, {
+                progress: parseFloat(((downloadedCount / totalChunks) * 100).toFixed(1))
+            })
+
+            // build list of chunks still needed
+            const chunksToDownload = []
+            for (let i = 0; i < totalChunks; i++) {
+                if (!savedChunks.has(i)) {
+                    const start = i * CHUNK_SIZE
+                    const end = Math.min(start + CHUNK_SIZE, fileSize) - 1
+                    chunksToDownload.push({ index: i, start, end })
+                }
+            }
+
+            // speed tracking
+            let bytesInWindow = 0
+            let windowStart = Date.now()
+            const SPEED_UPDATE_INTERVAL = 1500
+
+            // download chunks with concurrency control
+            const queue = [...chunksToDownload]
+
+            const worker = async () => {
+                while (queue.length > 0) {
+                    if (abortController.signal.aborted) break
+
+                    const chunk = queue.shift()
+                    if (!chunk) break
+
+                    try {
+                        const response = await axiosApi.get(endpoint, {
+                            headers: { Range: `bytes=${chunk.start}-${chunk.end}` },
+                            responseType: "arraybuffer",
+                            signal: abortController.signal
+                        })
+
+                        if (abortController.signal.aborted) break
+
+                        await saveChunk(db, fileId, chunk.index, response.data)
+
+                        downloadedCount++
+                        bytesInWindow += chunk.end - chunk.start + 1
+
+                        const now = Date.now()
+                        const elapsed = now - windowStart
+                        const progress = parseFloat(((downloadedCount / totalChunks) * 100).toFixed(1))
+
+                        const sessionKey = sessionId
+
+                        if (elapsed >= SPEED_UPDATE_INTERVAL) {
+                            const speedMBps = (bytesInWindow / (1024 * 1024)) / (elapsed / 1000)
+                            updateSession(sessionKey, { progress, speed: speedMBps })
+                            bytesInWindow = 0
+                            windowStart = now
+                        } else {
+                            updateSession(sessionKey, { progress })
+                        }
+
+                        await new Promise(r => setTimeout(r, 100))
+
+                    } catch (error) {
+                        if (error.name === "CanceledError") return
+                        console.warn(`chunk ${chunk.index} failed, retrying...`, error)
+                        queue.push(chunk)
+                    }
+                }
+            }
+
+            // run concurrent workers
+            await Promise.all(Array(MAX_CONCURRENT).fill(null).map(() => worker()))
+
+            // if finished without abort - assemble and save
+            if (!abortController.signal.aborted) {
+                const sessionKey = sessionId
+                updateSession(sessionKey, { status: "assembling", progress: 100 })
+
+                // Hand off to Service Worker for persistent streaming
+                await assembleAndSave(db, fileId, totalChunks, fileName, fileType, fileSize, sessionId)
+
+                // We don't cleanupChunks immediately because the SW is still reading them!
+                // The cleanup should happen once the SW is done or the user closes the session.
+                // For now, let's leave it to be cleaned up when the session is closed.
+            }
+
+        } catch (error) {
+            console.error("downloadInChunks error:", error)
+            const sessionKey = sessionId
+            updateSession(sessionKey, { status: "error" })
+        } finally {
+            activeDownloadsRef.current.delete(fileId)
+        }
+    }
+
+
+    // -------------------------------------------------------
+    // YOUR EXISTING downloadFile - UNTOUCHED
+    // just calls the shared downloadInChunks function now
+    // -------------------------------------------------------
+    const downloadFile = async (file) => {
+        const { _id: fileId, name, fileSize, fileType } = file
+
+        if (activeDownloadsRef.current.has(fileId)) return
+
+        const db = await initDB()
+        const totalChunks = Math.ceil(fileSize / CHUNK_SIZE)
+        const savedChunks = await getSavedChunks(db, fileId, totalChunks)
+
+        const progress = parseFloat(((savedChunks.size / totalChunks) * 100).toFixed(1))
+
+        const sessionId = crypto.randomUUID()
+
+        setSessions(prev => [{
+            id: sessionId,
+            fileId,
+            name,
+            fileSize,
+            fileType,
+            totalChunks,
+            status: "downloading",
+            progress,
+            speed: null,
+            error: null
+        }, ...prev])
+
+        setIsPanelOpen(true)
+        setIsMinimized(false)
+
+        await downloadInChunks(
+            fileId,
+            `/download/file/${fileId}`,
+            fileSize,
+            name,
+            fileType,
+            false,
+            null,
+            sessionId
+        )
+    }
+
+
+    // -------------------------------------------------------
+    // NEW downloadFolder - completely rewritten
+    // Phase 1 - create zip on backend and poll until ready
+    // Phase 2 - download zip in chunks exactly like a file
+    // resume works because zipId and fileSize saved to IndexedDB
+    // -------------------------------------------------------
+    const downloadFolder = async (folder) => {
+        const { _id: folderId, name } = folder
+
+        // check if already downloading this folder
+        if (activeDownloadsRef.current.has(folderId)) return
+
+        const sessionId = crypto.randomUUID()
+
+        // add session to panel immediately
+        setSessions(prev => [{
+            id: sessionId,
+            fileId: folderId,
+            name: `${name}.zip`,
+            fileSize: null,
+            status: "creating",   // new status - zip is being created
+            progress: 0,
+            speed: null,
+            isFolder: true
+        }, ...prev])
+
+        setIsPanelOpen(true)
+        setIsMinimized(false)
+
+        try {
+            const db = await initDB()
+
+            // -----------------------------------------------
+            // CHECK INDEXEDDB FIRST - resume after refresh
+            // if zipJob exists in IndexedDB zip was already
+            // created before refresh so skip phase 1 entirely
+            // -----------------------------------------------
+            let zipId, fileSize, folderName
+
+            const savedZipJob = await getZipJob(db, folderId)
+
+            if (savedZipJob) {
+                // zip was already created before refresh
+                // jump straight to chunk download phase
+                console.log(`[FOLDER DOWNLOAD] Resuming from saved zip job: ${savedZipJob.zipId}`)
+                zipId = savedZipJob.zipId
+                fileSize = savedZipJob.fileSize
+                folderName = savedZipJob.folderName
+
+                // update session with correct fileSize and status
+                updateSession(sessionId, {
+                    status: "downloading",
+                    fileSize,
+                    name: `${folderName}.zip`,
+                    zipId
+                })
+
+            } else {
+                // -----------------------------------------------
+                // PHASE 1 - create zip on backend
+                // -----------------------------------------------
+                updateSession(sessionId, { status: "creating" })
+
+                // call backend to start zip creation
+                // backend responds immediately with zipId
+                // child process builds zip in background
+                const { data: createData } = await axiosApi.post(`/download/folder/${folderId}`)
+
+                if (!createData.success) {
+                    updateSession(sessionId, { status: "error" })
+                    return
+                }
+
+                zipId = createData.zipId
+                folderName = createData.folderName
+
+                // -----------------------------------------------
+                // PHASE 1b - poll backend every 2 seconds
+                // until zip status is "ready" or "error"
+                // -----------------------------------------------
+                fileSize = await new Promise((resolve, reject) => {
+                    const interval = setInterval(async () => {
+                        try {
+                            const { data: statusData } = await axiosApi.get(`/download/zip-status/${zipId}`)
+
+                            if (statusData.status === "ready") {
+                                // zip is ready on disk
+                                clearInterval(interval)
+                                pollingIntervalsRef.current.delete(folderId)
+                                resolve(statusData.fileSize)
+                            }
+
+                            if (statusData.status === "error") {
+                                clearInterval(interval)
+                                pollingIntervalsRef.current.delete(folderId)
+                                reject(new Error(statusData.error || "Zip creation failed"))
+                            }
+
+                        } catch (err) {
+                            clearInterval(interval)
+                            pollingIntervalsRef.current.delete(folderId)
+                            reject(err)
+                        }
+                    }, 2000) // poll every 2 seconds
+
+                    // save interval id so we can cancel it if user cancels
+                    pollingIntervalsRef.current.set(folderId, interval)
+                })
+
+                // -----------------------------------------------
+                // SAVE ZIP JOB TO INDEXEDDB before starting download
+                // so if browser refreshes during download
+                // we can skip zip creation and resume chunks directly
+                // -----------------------------------------------
+                await saveZipJob(db, folderId, { zipId, fileSize, folderName })
+
+                // update session now that we know the file size
+                updateSession(sessionId, {
+                    status: "downloading",
+                    fileSize,
+                    name: `${folderName}.zip`,
+                    zipId
+                })
+            }
+
+            // -----------------------------------------------
+            // PHASE 2 - download zip in chunks
+            // zipId is used as fileId for chunk storage in IndexedDB
+            // this is identical to how file download works
+            // -----------------------------------------------
+            await downloadInChunks(
+                zipId,                          // used as fileId for IndexedDB chunk keys
+                `/download/zip/${zipId}`,       // endpoint with range request support
+                fileSize,
+                `${folderName}.zip`,
+                "application/zip",
+                true,                           // isFolder flag
+                folderId,                       // used as session key in panel
+                sessionId
+            )
+
+        } catch (error) {
+            console.error("downloadFolder error:", error)
+            updateSession(sessionId, { status: "error" })
+            // clear polling if still running
+            const interval = pollingIntervalsRef.current.get(folderId)
+            if (interval) {
+                clearInterval(interval)
+                pollingIntervalsRef.current.delete(folderId)
+            }
+        }
+    }
+
+
+    // -------------------------------------------------------
+    // abortDownload - clears active download and polling interval
+    // -------------------------------------------------------
+    const abortDownload = (fileId) => {
+        const controller = activeDownloadsRef.current.get(fileId)
+        if (controller) {
+            controller.abort()
+            activeDownloadsRef.current.delete(fileId)
+        }
+        // if it's a folder, also clear the zip-status polling interval
+        const interval = pollingIntervalsRef.current.get(fileId)
+        if (interval) {
+            clearInterval(interval)
+        }
+    }
+
+    // -------------------------------------------------------
+    // closeSession - updated to handle folder zip cleanup
+    // -------------------------------------------------------
+    const closeSession = async (sessionId) => {
+        const session = sessions.find(s => s.id === sessionId)
+        if (!session) return;
+        const fileId = session.fileId;
+
+        // stop download immediately
+        abortDownload(fileId)
+
+        const db = await initDB()
+
+        if (session && !session.isFolder) {
+            // file - cleanup chunks from IndexedDB
+            try {
+                await cleanupChunks(db, fileId, session.totalChunks)
+            } catch (e) {
+                console.error("Chunk cleanup failed:", e)
+            }
+        }
+
+        if (session && session.isFolder) {
+            // folder - cleanup zip job from IndexedDB
+            // and delete zip from backend disk
+            try {
+                const zipJob = await getZipJob(db, fileId)
+                if (zipJob) {
+                    // delete chunks saved for this zip
+                    const totalChunks = Math.ceil(zipJob.fileSize / CHUNK_SIZE)
+                    await cleanupChunks(db, zipJob.zipId, totalChunks)
+                    // delete zip job record
+                    await deleteZipJob(db, fileId)
+                    // tell backend to delete zip file from disk
+                    await axiosApi.delete(`/download/zip/${zipJob.zipId}`)
+                }
+            } catch (e) {
+                console.error("Zip cleanup failed:", e)
+            }
+        }
+
+        setSessions(prev => {
+            const updated = prev.filter(s => s.id !== sessionId)
+            if (updated.length === 0) setIsPanelOpen(false)
+            return updated
+        })
+    }
+
+
+    // -------------------------------------------------------
+    // closeAllSessions - updated to handle folders too
+    // -------------------------------------------------------
+    const closeAllSessions = async () => {
+        // stop all downloads immediately
+        activeDownloadsRef.current.forEach((controller) => controller.abort())
+        activeDownloadsRef.current.clear()
+
+        // clear all polling intervals
+        pollingIntervalsRef.current.forEach((interval) => clearInterval(interval))
+        pollingIntervalsRef.current.clear()
+
+        try {
+            const db = await initDB()
+            for (const session of sessions) {
+                if (!session.isFolder) {
+                    // cleanup file chunks
+                    await cleanupChunks(db, session.fileId, session.totalChunks)
+                } else {
+                    // cleanup folder zip job and chunks
+                    const zipJob = await getZipJob(db, session.fileId)
+                    if (zipJob) {
+                        const totalChunks = Math.ceil(zipJob.fileSize / CHUNK_SIZE)
+                        await cleanupChunks(db, zipJob.zipId, totalChunks)
+                        await deleteZipJob(db, session.fileId)
+                        // tell backend to delete zip file from disk
+                        try {
+                            await axiosApi.delete(`/download/zip/${zipJob.zipId}`)
+                        } catch (err) {
+                            console.error("deleteZip failed:", err.message)
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.error("Cleanup all failed:", e)
+        }
+
+        setSessions([])
+        setIsPanelOpen(false)
+    }
+
+    const toggleMinimized = () => {
+        setIsMinimized(prev => !prev)
+    }
+
+
+    return (
+        <DownloadContext.Provider value={{
+            sessions,
+            isPanelOpen,
+            isMinimized,
+            toggleMinimized,
+            downloadFile,
+            downloadFolder,
+            closeSession,
+            closeAllSessions
+        }}>
+            {children}
+        </DownloadContext.Provider>
+    )
+}
+
+export function useDownload() {
+    return useContext(DownloadContext)
+}
+
+
+
+
+
+
+
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import App from './App.jsx'
+import 'bootstrap/dist/css/bootstrap.min.css';
+import "flatpickr/dist/themes/material_blue.css";
+import "flatpickr/dist/plugins/monthSelect/style.css";
+import "simplebar-react/dist/simplebar.min.css";
+import './main.css'
+import { AuthProvider } from './context/AuthContext.jsx';
+import { BrowserRouter } from 'react-router-dom'
+import { NotificationProvider } from './context/NotificationContext.jsx';
+
+
+// if ('serviceWorker' in navigator) {
+//     navigator.serviceWorker.register('/streamsaver-sw.js', {
+//       type: "module"
+//     })
+// }
+
+createRoot(document.getElementById('root')).render(
+
+
+  <NotificationProvider>
+    <AuthProvider>
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
+    </AuthProvider>
+  </NotificationProvider>
+
+)
+
+
+
+
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import basicSsl from '@vitejs/plugin-basic-ssl'
+import path from 'path';
+
+// https://vite.dev/config/
+export default defineConfig({
+  plugins: [react(), basicSsl()],
+  resolve:{
+    alias: {
+      '@images': path.resolve(__dirname, 'src/assets/images'), // here it will slove images path
+    }
+  },
+  server: {
+    https: true,
+    host: '0.0.0.0', // Listen on all network interfaces
+    port: 5177,
+    proxy: {
+      '/api': { target: 'http://localhost:4001', changeOrigin: true, secure: false },
+      '/upload': { target: 'http://localhost:4001', changeOrigin: true, secure: false },
+      '/download': { target: 'http://localhost:4001', changeOrigin: true, secure: false },
+      '/search': { target: 'http://localhost:4001', changeOrigin: true, secure: false },
+      '/trash': { target: 'http://localhost:4001', changeOrigin: true, secure: false },
+      '/files': { target: 'http://localhost:4001', changeOrigin: true, secure: false },
+      '/uploadimage': { target: 'http://localhost:4001', changeOrigin: true, secure: false },
+      '/socket.io': { target: 'http://localhost:4001', ws: true }
+    },
+    watch: {
+      usePolling: true,  // Force polling to avoid FSWatcher errors on network drives / Windows
+      interval: 100,     // Check for changes every 100ms
+      ignored: ['**/node_modules/**', '**/dist/**'], // Skip heavy folders
+    },
+  },
+});
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
