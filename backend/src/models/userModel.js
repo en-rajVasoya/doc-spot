@@ -30,7 +30,7 @@ const userSchema = new mongoose.Schema({
     },
 
     //  for active user - admin can deactive user and active user here no need t delete user completely
-    isActive:{
+    is_active:{
         type: Boolean,
         default: true
     },
@@ -53,7 +53,7 @@ userSchema.index({ name: "text", email: "text", user_id: "text" })
 
 
 // sorting indexing
-userSchema.index({ role: 1, isActive: 1, createdAt: -1 })
+userSchema.index({ role: 1, is_active: 1, createdAt: -1 })
 
 
 const User =  mongoose.model("User", userSchema);

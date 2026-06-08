@@ -404,7 +404,7 @@ export function DownloadProvider({ children }) {
                 fileSize = await new Promise((resolve, reject) => {
                     const interval = setInterval(async () => {
                         try {
-                            const { data: statusData } = await axiosApi.get(`/download/zip-status/${zipId}`)
+                            const { data: statusData } = await axiosApi.get(`/download/zip_status/${zipId}`)
 
                             if (statusData.status === "ready") {
                                 clearInterval(interval)
@@ -541,7 +541,7 @@ export function DownloadProvider({ children }) {
                 fileSize = await new Promise((resolve, reject) => {
                     const interval = setInterval(async () => {
                         try {
-                            const { data: statusData } = await axiosApi.get(`/download/zip-status/${zipId}`)
+                            const { data: statusData } = await axiosApi.get(`/download/zip_status/${zipId}`)
 
                             if (statusData.status === "ready") {
                                 clearInterval(interval)

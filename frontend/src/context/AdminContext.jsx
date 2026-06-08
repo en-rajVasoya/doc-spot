@@ -22,7 +22,7 @@ export function AdminAuthProvider({ children }) {
     //  fetch users
     const fetchUsers = async () => {
         try {
-            const res = await axiosApi.get("/admin/get-users", {
+            const res = await axiosApi.get("/admin/get_users", {
                 params: {
                     page: pagination.page,
                     limit: pagination.limit,
@@ -44,7 +44,7 @@ export function AdminAuthProvider({ children }) {
     //  Admin create user
     const createUser = async (formData) => {
         try {
-            const res = await axiosApi.post("/admin/create-user", formData, {
+            const res = await axiosApi.post("/admin/create_user", formData, {
                 headers: { "Content-Type": "multipart/form-data" }
             })
 

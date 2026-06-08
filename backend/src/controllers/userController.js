@@ -90,7 +90,6 @@ export const userLogin = async (req, res) => {
             });
         }
 
-
         // check password vlaidation
         const isPasswordMatch = await bcrypt.compare(password, user.password)
         if (!isPasswordMatch) {

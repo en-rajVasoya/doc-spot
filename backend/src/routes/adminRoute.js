@@ -6,21 +6,16 @@ import profilePicUploadMiddleware from "../middleware/profilePicMiddleware.js"
 
 const adminRouter = express.Router()
 
-
 //  creat user
-adminRouter.post("/create-user", authMiddleware, adminMiddleware, profilePicUploadMiddleware.single("profilePic"), createUser)
-
+adminRouter.post("/create_user", authMiddleware, adminMiddleware, profilePicUploadMiddleware.single("profilePic"), createUser)
 
 // get users
-adminRouter.get("/get-users", authMiddleware, adminMiddleware, getUsers)
-
+adminRouter.get("/get_users", authMiddleware, adminMiddleware, getUsers)
 
 //  update user
-adminRouter.patch("/update-user/:userUpdateId", authMiddleware, adminMiddleware, profilePicUploadMiddleware.single("profilePic"), updateUser)
-
+adminRouter.patch("/update_user/:update_user_id", authMiddleware, adminMiddleware, profilePicUploadMiddleware.single("profilePic"), updateUser)
 
 //  deactive - active user
-adminRouter.patch("/user-status/:userId", authMiddleware, adminMiddleware, updateUserStatus)
-
+adminRouter.patch("/user_status/:user_id", authMiddleware, adminMiddleware, updateUserStatus)
 
 export default adminRouter

@@ -6,14 +6,12 @@ import { fileURLToPath } from "url"
 import { dirname } from "path"
 import mongoose from "mongoose"
 
-//  models - schema
+// models
 import uploadModel from "#models/uploadModel"
 
-//  utils - helper
+// helper
 import { logger } from "#utils/logger"
 import { getUserPermission } from "#utils/userPermissionUtil";
-
-
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -48,9 +46,6 @@ const cleanupOldZips = () => {
 }
 
 setInterval(cleanupOldZips, 60 * 60 * 1000)
-
-
-
 
 // this function is graph look up for collection all nested folder ids
 const collectFilesFromFolders = async (folderIds, pathPrefixMap = {}, includeTrash = false) => {
@@ -126,9 +121,6 @@ const collectFilesFromFolders = async (folderIds, pathPrefixMap = {}, includeTra
     return fileList
 }
 
-
-
-
 // ─── helper: fork zip worker and wire up events ───────────────────────────────
 const startZipWorker = (zipId, zipPath, fileList, folderName) => {
     const workerStartMs = nowMs()
@@ -144,6 +136,7 @@ const startZipWorker = (zipId, zipPath, fileList, folderName) => {
         if (msg.type === "started") {
             console.log(`[ZIP][${zipId}] Worker started | files=${msg.fileCount}`)
         }
+
         if (msg.type === "progress") {
             const job = zipJobsMap.get(zipId)
             if (job) {
@@ -161,6 +154,7 @@ const startZipWorker = (zipId, zipPath, fileList, folderName) => {
                 }
             }
         }
+
         if (msg.type === "done") {
             zipJobsMap.set(zipId, {
                 status: "ready",
@@ -192,38 +186,42 @@ const startZipWorker = (zipId, zipPath, fileList, folderName) => {
     })
 }
 
-
-
-
+// function to downlaod files
 export const downloadFile = async (req, res) => {
     try {
         const { id } = req.params
-        const userId = req.user._id
+        const userID = req.user._id
 
-        const permission = await getUserPermission(userId, id)
+        // retrieve permission
+        const permission = await getUserPermission(userID, id);
+
+        // check if no permission then return
         if (!permission) {
             return res.status(403).json({ success: false, message: "Access denied" })
         }
 
-        const file = await uploadModel.findOne({ _id: id, type: "file", uploadStatus: "completed" })
-        if (!file) {
+        // retrieve file data
+        const fileData = await uploadModel.findOne({ _id: id, type: "file", uploadStatus: "completed" });
+
+        // check if no file data then return error
+        if (!fileData) {
             return res.status(404).json({ success: false, message: "File not found" })
         }
 
-        if (!fs.existsSync(file.storagePath)) {
+        if (!fs.existsSync(fileData.storagePath)) {
             return res.status(404).json({ success: false, message: "File not found on server" })
         }
 
-        const fileSize = file.fileSize
+        const fileSize = fileData.fileSize
         const rangeHeader = req.headers.range
 
-        res.attachment(file.name)
-        res.setHeader("Content-Type", file.fileType || "application/octet-stream")
+        res.attachment(fileData.name)
+        res.setHeader("Content-Type", fileData.fileType || "application/octet-stream")
         res.setHeader("Accept-Ranges", "bytes")
 
         if (!rangeHeader) {
             res.setHeader("Content-Length", fileSize)
-            const stream = fs.createReadStream(file.storagePath)
+            const stream = fs.createReadStream(fileData.storagePath)
             stream.pipe(res)
             return
         }
@@ -242,7 +240,7 @@ export const downloadFile = async (req, res) => {
         res.setHeader("Content-Range", `bytes ${start}-${end}/${fileSize}`)
         res.setHeader("Content-Length", chunkSize)
 
-        const stream = fs.createReadStream(file.storagePath, { start, end })
+        const stream = fs.createReadStream(fileData.storagePath, { start, end })
         stream.pipe(res)
 
     } catch (error) {
@@ -251,32 +249,38 @@ export const downloadFile = async (req, res) => {
     }
 }
 
-
-
-
 // single folder download — now uses $graphLookup via collectFilesFromFolders
 export const downloadFolder = async (req, res) => {
     try {
         const requestStartMs = nowMs()
         const { id } = req.params
-        const userId = req.user._id
+        const userID = req.user._id
 
-        const permission = await getUserPermission(userId, id)
+        // retrieve permission for user
+        const permission = await getUserPermission(userID, id)
+
+        // check if no permission found then return error
         if (!permission) {
             return res.status(403).json({ success: false, message: "Access denied" })
         }
 
-        const folder = await uploadModel.findOne({ _id: id, type: "folder" })
-        if (!folder) {
+        // retrieve folder data
+        const folderData = await uploadModel.findOne({ _id: id, type: "folder" })
+
+        // check if no folder data found then return error message
+        if (!folderData) {
             return res.status(404).json({ success: false, message: "Folder not found" })
         }
 
         // collect all files using $graphLookup — replaces the old BFS while loop
         const collectStartMs = nowMs()
-        const includeTrash = req.query.includeTrash === "true" || folder.isTrashed === true
+
+        const includeTrash = folderData.isTrashed === true;
+
         const fileList = await collectFilesFromFolders([id], {
             [id.toString()]: ""   // root folder itself is not a prefix — files sit at root of zip
-        }, includeTrash)
+        }, includeTrash);
+
         console.log(`[ZIP][folder:${id}] File list ready | files=${fileList.length} | collectMs=${nowMs() - collectStartMs}`)
 
         const zipId = uuidv4()
@@ -285,14 +289,14 @@ export const downloadFolder = async (req, res) => {
         zipJobsMap.set(zipId, {
             status: "creating",
             zipPath,
-            folderName: folder.name,
+            folderName: folderData.name,
             createdAt: Date.now()
         })
 
-        res.json({ success: true, zipId, folderName: folder.name })
+        res.json({ success: true, zipId, folderName: folderData.name })
         console.log(`[ZIP][${zipId}] Job created from folder download | setupMs=${nowMs() - requestStartMs}`)
 
-        startZipWorker(zipId, zipPath, fileList, folder.name)
+        startZipWorker(zipId, zipPath, fileList, folderData.name)
 
     } catch (error) {
         logger.error(error)
@@ -300,25 +304,22 @@ export const downloadFolder = async (req, res) => {
     }
 }
 
-
-
-
 // multi-select download — user selects mix of files and folders
 export const downloadMultiple = async (req, res) => {
     try {
         const requestStartMs = nowMs()
         const { ids } = req.body
-        const userId = req.user._id
+        const userID = req.user._id
 
         // convert ids into array here
         if (!ids || !Array.isArray(ids) || ids.length === 0) {
             return res.status(400).json({ success: false, message: "No items selected" })
         }
 
-
         //  check permission here for safty not anyone can downloa dhere
         for (const id of ids) {
-            const permission = await getUserPermission(userId, id)
+            const permission = await getUserPermission(userID, id);
+
             if (!permission) {
                 return res.status(403).json({ success: false, message: "Access denied" })
             }
@@ -354,7 +355,6 @@ export const downloadMultiple = async (req, res) => {
                         archiveName: item.name
                     })
                 }
-
             } else if (item.type === "folder") {
                 folderIds.push(item._id.toString())
                 // fodler name is prefix so folder structure as it is in side zip
@@ -398,14 +398,12 @@ export const downloadMultiple = async (req, res) => {
 
 }
 
-
-
-
+// function to get zip status
 export const getZipStatus = async (req, res) => {
     try {
-        const { zipId } = req.params
+        const { zip_id } = req.params
 
-        const job = zipJobsMap.get(zipId)
+        const job = zipJobsMap.get(zip_id)
         if (!job) {
             return res.status(404).json({ success: false, message: "Zip job not found" })
         }
@@ -425,14 +423,12 @@ export const getZipStatus = async (req, res) => {
     }
 }
 
-
-
-
+// function to download zip
 export const downloadZip = async (req, res) => {
     try {
-        const { zipId } = req.params
+        const { zip_id } = req.params
 
-        const job = zipJobsMap.get(zipId)
+        const job = zipJobsMap.get(zip_id)
 
         if (!job || job.status !== "ready") {
             return res.status(404).json({ success: false, message: "Zip not ready or not found" })
@@ -479,34 +475,32 @@ export const downloadZip = async (req, res) => {
     }
 }
 
-
-
-
+// function to delete zip
 export const deleteZip = async (req, res) => {
     try {
-        const { zipId } = req.params
+        const { zip_id } = req.params
 
-        const job = zipJobsMap.get(zipId)
+        const job = zipJobsMap.get(zip_id)
         if (!job) {
             return res.status(404).json({ success: false, message: "Zip job not found" })
         }
 
         if (job.status === "creating" && job.childProcess) {
             job.childProcess.kill()
-            console.log(`[ZIP] Killed worker process for zip: ${zipId}`)
+            console.log(`[ZIP] Killed worker process for zip: ${zip_id}`)
         }
 
         if (job.zipPath && fs.existsSync(job.zipPath)) {
             try {
                 fs.unlinkSync(job.zipPath)
-                console.log(`[ZIP] Deleted: ${zipId}`)
+                console.log(`[ZIP] Deleted: ${zip_id}`)
             } catch (err) {
                 logger.error(err)
-                console.error(`[ZIP] Delete failed: ${zipId}`, err.message)
+                console.error(`[ZIP] Delete failed: ${zip_id}`, err.message)
             }
         }
 
-        zipJobsMap.delete(zipId)
+        zipJobsMap.delete(zip_id)
 
         res.json({ success: true })
 
@@ -516,40 +510,27 @@ export const deleteZip = async (req, res) => {
     }
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 //  file preview of pdf here 
 export const previewFile = async (req, res) => {
     try {
         const { id } = req.params
-        const userId = req.user._id
+        const userID = req.user._id
 
-        const permission = await getUserPermission(userId, id)
+        const permission = await getUserPermission(userID, id)
         if (!permission) {
             return res.status(403).json({ success: false, message: "Access denied" })
         }
 
-        const file = await uploadModel.findOne({ _id: id, type: "file", uploadStatus: "completed" })
-        if (!file) {
+        const fileData = await uploadModel.findOne({ _id: id, type: "file", uploadStatus: "completed" })
+        if (!fileData) {
             return res.status(404).json({ success: false, message: "File not found" })
         }
 
-        if (!fs.existsSync(file.storagePath)) {
+        if (!fs.existsSync(fileData.storagePath)) {
             return res.status(404).json({ success: false, message: "File not found on server" })
         }
 
-        const fileSize = file.fileSize
+        const fileSize = fileData.fileSize
         const rangeHeader = req.headers.range
 
         res.setHeader("Content-Type", "application/pdf")
@@ -558,7 +539,7 @@ export const previewFile = async (req, res) => {
 
         if (!rangeHeader) {
             res.setHeader("Content-Length", fileSize)
-            const stream = fs.createReadStream(file.storagePath)
+            const stream = fs.createReadStream(fileData.storagePath)
             stream.pipe(res)
             return
         }
@@ -577,7 +558,7 @@ export const previewFile = async (req, res) => {
         res.setHeader("Content-Range", `bytes ${start}-${end}/${fileSize}`)
         res.setHeader("Content-Length", chunkSize)
 
-        const stream = fs.createReadStream(file.storagePath, { start, end })
+        const stream = fs.createReadStream(fileData.storagePath, { start, end })
         stream.pipe(res)
 
     } catch (error) {

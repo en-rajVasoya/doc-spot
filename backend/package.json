@@ -2,7 +2,7 @@
   "name": "backend",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "server.js",
   "imports": {
     "#models/*": "./src/models/*.js",
     "#utils/*": "./src/utils/*.js"
@@ -10,7 +10,7 @@
   "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "nodemon --ignore files/ --ignore debug_logs.txt --ignore temp/ --ignore zips/ src/index.js"
+    "dev": "nodemon --ignore files/ --ignore debug_logs.txt --ignore temp/ --ignore zips/ src/server.js"
   },
   "keywords": [],
   "author": "",
@@ -30,6 +30,7 @@
     "mongoose": "^9.3.1",
     "multer": "^2.1.1",
     "node-cron": "^4.2.1",
+    "node-input-validator": "^4.6.0",
     "nodemon": "^3.1.14",
     "paseto": "^3.1.4",
     "paseto-ts": "^2.0.6",

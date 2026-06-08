@@ -26,7 +26,7 @@ const authMiddleware = async (req, res, next) => {
 
 
         //  her instant logged out here when admin deactive the user
-        if(!req.user.isActive){
+        if(!req.user.is_active){
             return res.status(401).json({ message: "Your account has been deactivated"  })
         }
 
