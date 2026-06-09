@@ -6,19 +6,21 @@ import { useUpload } from "../../context/UploadContext";
 import { useFileExplorer } from "../../context/FileExplorerContext";
 import InteractiveIcon from "../layout/InteractiveIcon";
 import DragAndDropIcon from "@images/drag-and-drop-icon.svg";
+import { useSearch } from "../../context/SearchContext";
 
 function DragAndDrop({ isModalOpen = false }) {
     const { addFiles, checkAndUpload } = useUpload();
     const { currentFolderId, items } = useFileExplorer();
+    const { isSearchMode } = useSearch();
     const [isDragging, setIsDragging] = useState(false);
 
     useEffect(() => {
-        if (isModalOpen) return;
+        if (isModalOpen || isSearchMode) return;
 
         const handleDragOver = (e) => {
             e.preventDefault();
 
-            if (isModalOpen) return;
+            if (isModalOpen || isSearchMode) return;
 
             if (!isDragging) {
                 setIsDragging(true);
@@ -28,7 +30,7 @@ function DragAndDrop({ isModalOpen = false }) {
         const handleDrop = async (e) => {
             e.preventDefault();
 
-            if (isModalOpen) return;
+            if (isModalOpen || isSearchMode) return;
 
             setIsDragging(false);
 
@@ -92,7 +94,7 @@ function DragAndDrop({ isModalOpen = false }) {
             window.removeEventListener("dragover", handleDragOver);
             window.removeEventListener("drop", handleDrop);
         };
-    }, [addFiles, currentFolderId, isDragging, isModalOpen]);
+    }, [addFiles, currentFolderId, isDragging, isModalOpen, isSearchMode]);
 
     useEffect(() => {
         if (isModalOpen) {
@@ -102,7 +104,7 @@ function DragAndDrop({ isModalOpen = false }) {
 
     return (
         <>
-            {isDragging && !isModalOpen && (
+            {isDragging && !isModalOpen && !isSearchMode && (
                 <div className="drag-and-drop-single-box">
                     <div className="drag-and-drop-img">
                         <InteractiveIcon defaultIcon={DragAndDropIcon} />

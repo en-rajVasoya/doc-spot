@@ -426,7 +426,7 @@ export function DownloadProvider({ children }) {
                             pollingIntervalsRef.current.delete(folderId)
                             reject(err)
                         }
-                    }, 100)
+                    }, 2000)
 
                     pollingIntervalsRef.current.set(folderId, interval)
                 })

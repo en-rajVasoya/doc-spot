@@ -50,7 +50,7 @@ export default function ModifiedContent({ displayItems }) {
 
     //  select the checkbox here
     const handleCheckBoxSelected = () => {
-        if(selectedIds.size === displayItems.length){
+        if (selectedIds.size === displayItems.length) {
             setSelectedIds(new Set())
         } else {
             setSelectedIds(new Set(displayItems.map(item => item._id.toString())))
@@ -67,9 +67,9 @@ export default function ModifiedContent({ displayItems }) {
                     <label htmlFor="myCheckbox">
                         <InteractiveIcon defaultIcon={checkboxIcon} alt="" />
                     </label>
-                    <input 
-                        id="myCheckbox" 
-                        type="checkbox" 
+                    <input
+                        id="myCheckbox"
+                        type="checkbox"
                         className="checkbox"
                         checked={displayItems.length > 0 && selectedIds.size === displayItems.length}
                         onChange={handleCheckBoxSelected} />

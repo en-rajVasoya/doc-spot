@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Modal, Form, Dropdown  } from "react-bootstrap";
+import { Modal, Form, Dropdown } from "react-bootstrap";
 import InteractiveIcon from "../layout/InteractiveIcon";
 import userProfileIcon from "@images/svgs/user-profile.svg"
 import { useFileExplorer } from "../../context/FileExplorerContext";
@@ -10,7 +10,7 @@ import { useAuth } from "../../context/AuthContext";
 import passwordIcon from "@images/icon/password.svg";
 import publicLinkIcon from "@images/icon/public-link.svg";
 import arrowDownIcon from "@images/icon/arrow-down.svg";
-
+import checkboxIcon from "@images/icon/checkbox-check.svg";
 
 const BASE_URL = import.meta.env.VITE_API_URL?.replace(/\/api\/?$/, "") || "";
 
@@ -43,6 +43,8 @@ function ShareUserModal({ data, onClose }) {
 
     //  permission for newer added user default viewr
     const [permission, setPermission] = useState("viewer")
+
+    const [accessType, setAccessType] = useState("restricted") // "restricted" | "public"
 
 
 
@@ -439,50 +441,98 @@ function ShareUserModal({ data, onClose }) {
                         )}
 
 
-                        <div className="Create-Link-section">
-                            <div className="access-single-box">
-                                <div className="access-single-wrapper">
-                                    <div className="access-single-icon">
-                                        <InteractiveIcon
-                                            defaultIcon={passwordIcon}
-                                            width={24}
-                                            alt=""                                        
-                                        />
+                        <div className="create-link-section">
+                            <div className="create-link-section-header">
+                                <h3 className="modal-title-sub">Create Link</h3>
+                            </div>
+                            <div className="create-link-items">
+                                <div className="access-single-box">
+                                    <div className="access-single-wrapper">
+                                        <div className={`access-single-icon ${accessType === "public" ? "public-link" : ""}`}>
+                                            <InteractiveIcon
+                                                defaultIcon={accessType === "public" ? publicLinkIcon : passwordIcon}
+                                                width={24}
+                                                alt=""
+                                            />
+                                        </div>
+                                        <div className="access-single-contetn">
+                                            <div className="access-single-dropdown-box">
+                                                <span className="access-single-name">
+                                                    {accessType === "restricted" ? "People with access" : "Public link"}
+                                                </span>
+                                                {/* dropdown - select sort field */}
+                                                <Dropdown className="magic-dropdown dropdown-no-arrow">
+                                                    <Dropdown.Toggle as="div" className="magic-dropdown__toggle">
+                                                        <span className="magic-dropdown__chevron-wrapper">
+                                                            <InteractiveIcon
+                                                                defaultIcon={arrowDownIcon}
+                                                                width={20}
+                                                                alt=""
+                                                                className="magic-dropdown__chevron-icon"
+                                                            />
+                                                        </span>
+                                                    </Dropdown.Toggle>
+
+                                                    <Dropdown.Menu align="start" className="magic-dropdown__menu">
+                                                        {accessType !== "restricted" && (
+                                                            <Dropdown.Item
+                                                                className="magic-dropdown__item"
+                                                                onClick={() => setAccessType("restricted")}
+                                                            >
+                                                                People with access
+                                                            </Dropdown.Item>
+                                                        )}
+                                                        {accessType !== "public" && (
+                                                            <Dropdown.Item
+                                                                className="magic-dropdown__item"
+                                                                onClick={() => setAccessType("public")}
+                                                            >
+                                                                Public link
+                                                            </Dropdown.Item>
+                                                        )}
+                                                    </Dropdown.Menu>
+                                                </Dropdown>
+                                            </div>
+                                            <span className="access-single-sun-name">
+                                                {accessType === "restricted"
+                                                    ? "People listed above have access."
+                                                    : "Anyone with the link."}
+                                            </span>
+                                        </div>
                                     </div>
-                                    <div className="access-single-contetn">
-                                        <span className="access-single-name"></span>
-                                        <span className="access-single-sun -name"></span>
-                                    </div>
+                                    <p className="modal-tag">View & Download</p>
                                 </div>
                             </div>
-                            {/* dropdown - select sort field */}
-                            <Dropdown className="magic-dropdown dropdown-no-arrow">
-                                <Dropdown.Toggle as="div" className="magic-dropdown__toggle">
-                                    <span className="magic-dropdown__chevron-wrapper">
-                                        <InteractiveIcon
-                                            defaultIcon={arrowDownIcon}
-                                            width={20}
-                                            alt=""
-                                            className="magic-dropdown__chevron-icon"
+                            <div className="create-link-items">
+                                <div className="create-link-items-content">
+                                    <div className="form-check-group m-0">
+                                        <label htmlFor="Link-expirtation">
+                                            <InteractiveIcon
+                                                defaultIcon={checkboxIcon}
+                                                alt=""
+                                            />
+                                        </label>
+                                        <input type="checkbox" className="checkbox" name="" id="Link-expirtation"
+
                                         />
-                                    </span>
-                                </Dropdown.Toggle>
+                                        <span className='form-label m-0 ' >Link expirtation</span>
+                                    </div>
+                                    <div className="link-expirtation-day">
+                                        <Form.Group className="mb-3">
+                                        <Form.Label>Owner</Form.Label>
+                                        <CustomSelect
+                                          options={fileTypeOptions}
+                                            value={fileType}
+                                            onChange={setFileType}
+                                            placeholder="No expiration"
+                                            showIndicatorSeparator={false}
+                                            isSearchable={false}
+                                        />
+                                    </Form.Group>
+                                    </div>
+                                </div>
 
-                                <Dropdown.Menu align="start" className="magic-dropdown__menu">
-
-                                    <Dropdown.Item
-                                       
-                                        className="magic-dropdown__item "
-
-                                    >
-                                        <span className="me-1">kkjh</span>
-
-                                        
-                                       
-                                    </Dropdown.Item>
-
-                                </Dropdown.Menu>
-                            </Dropdown>
+                            </div>
                         </div>
 
 
@@ -507,3 +557,5 @@ function ShareUserModal({ data, onClose }) {
 }
 
 export default ShareUserModal
+
+

@@ -13,10 +13,12 @@ import { useUpload } from "../../context/UploadContext";
 import { useFileExplorer } from "../../context/FileExplorerContext";
 import { useNavigate, useLocation } from "react-router-dom";
 import homeIcon from "@images/icon/home-icon.svg";
+import { useSearch } from "../../context/SearchContext";
 
 function GlobalContextMenu({ setModal, disableContextMenu = false }) {
 
     const { currentFolderId, items, isViewerOnly } = useFileExplorer()
+    const { isSearchMode } = useSearch()
     const navigate = useNavigate()
     const location = useLocation()
     const isTrashPage = location.pathname.startsWith("/trash")
@@ -76,46 +78,42 @@ function GlobalContextMenu({ setModal, disableContextMenu = false }) {
     };
 
     useEffect(() => {
-        if (disableContextMenu) return;
+    const handleRightClick = (e) => {
+        e.preventDefault()
 
-        const handleRightClick = (e) => {
-            e.preventDefault();
+        if (disableContextMenu || isSearchMode) return;
 
-            //  when user click right on the item so this menu will close here
-            if (e.target.closest(".table-row")) {
-                setMenu((prev => ({ ...prev, visible: false })))
-                return
-            }
+        if (e.target.closest(".table-row")) {
+            setMenu((prev => ({ ...prev, visible: false })))
+            return
+        }
 
-            if (!e.target.closest(".content-view-wrapper")) {
-                setMenu((prev) => ({ ...prev, visible: false }));
-                return;
-            }
+        if (!e.target.closest(".content-view-wrapper")) {
+            setMenu((prev) => ({ ...prev, visible: false }));
+            return;
+        }
 
+        openMenu({
+            x: e.clientX,
+            y: e.clientY
+        });
+    };
 
+    const handleClick = () => {
+        setMenu((prev) => ({
+            ...prev,
+            visible: false
+        }));
+    };
 
-            //Open menu at cursor
-            openMenu({
-                x: e.clientX,
-                y: e.clientY
-            });
-        };
+    window.addEventListener("contextmenu", handleRightClick);
+    window.addEventListener("click", handleClick);
 
-        const handleClick = () => {
-            setMenu((prev) => ({
-                ...prev,
-                visible: false
-            }));
-        };
-
-        window.addEventListener("contextmenu", handleRightClick);
-        window.addEventListener("click", handleClick);
-
-        return () => {
-            window.removeEventListener("contextmenu", handleRightClick);
-            window.removeEventListener("click", handleClick);
-        };
-    }, []);
+    return () => {
+        window.removeEventListener("contextmenu", handleRightClick);
+        window.removeEventListener("click", handleClick);
+    };
+}, [disableContextMenu, isSearchMode]);
 
     const handleNewButtonClick = (e) => {
         e.stopPropagation();
@@ -312,7 +310,7 @@ function GlobalContextMenu({ setModal, disableContextMenu = false }) {
             )}
 
             {/*  Floating New Button */}
-            {!disableContextMenu && (
+            {!disableContextMenu && !isSearchMode && (
                 <button className="new-btn" onClick={handleNewButtonClick}>
                     <InteractiveIcon
                         defaultIcon={plusIcon}

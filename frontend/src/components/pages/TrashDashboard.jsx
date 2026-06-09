@@ -43,7 +43,7 @@ function TrashDashboard() {
                         isTrash={true} 
                         onMobileSidebarNavclick={() => setIsSidebarNavOpen(prev => !prev)}
                     />
-                    <TrashSubHeader view={view} setView={setView} setModal={setModal} />
+                    {/* <TrashSubHeader view={view} setView={setView} setModal={setModal} /> */}
                     {/* <ModifiedContent /> */}
                     </div>
                     

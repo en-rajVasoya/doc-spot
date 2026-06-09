@@ -1164,7 +1164,7 @@ export function FileExplorerProvider({ children }) {
             if (isSearchMode) {
                 setSearchResults(prev =>
                     prev.map(item =>
-                        item._id === id ? { ...item, name: newName } : item
+                        item._id === id ? { ...item, name: newName, updatedAt: data.item?.updatedAt || new Date().toISOString() } : item
                     )
                 )
             }

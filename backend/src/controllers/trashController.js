@@ -349,7 +349,7 @@ export const getTrashedItems = async (req, res) => {
                 owner: userId,
                 $or: [{ type: "folder" }, { type: "file", uploadStatus: "completed" }]
             })
-                .select("name type fileSize fileType createdAt parent color owner storagePath isTrashed trashedAt")
+                .select("name type fileSize fileType createdAt updatedAt parent color owner storagePath isTrashed trashedAt")
                 .populate("owner", "_id name")
                 .sort({ createdAt: -1 })
                 .skip(skip)
@@ -375,7 +375,7 @@ export const getTrashedItems = async (req, res) => {
             isTrashed: true,
             $or: [{ type: "folder" }, { type: "file", uploadStatus: "completed" }]
         })
-            .select("name type fileSize fileType createdAt parent color owner storagePath isTrashed trashedAt")
+            .select("name type fileSize fileType createdAt updatedAt parent color owner storagePath isTrashed trashedAt")
             .populate("owner", "_id name")
             .sort({ trashedAt: -1 })
             .skip(skip)
