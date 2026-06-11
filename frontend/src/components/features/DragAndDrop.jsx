@@ -87,12 +87,32 @@ function DragAndDrop({ isModalOpen = false }) {
             }
         };
 
+        const handleDragLeave = (e) => {
+            e.preventDefault();
+            // If relatedTarget is null, the mouse has physically left the browser window
+            if (!e.relatedTarget) {
+                setIsDragging(false);
+            }
+        };
+
+        const handleMouseMove = () => {
+            // mousemove ONLY fires when the user is NOT dragging a file.
+            // If this fires while isDragging is true, it means they hit ESC or canceled the drag!
+            if (isDragging) {
+                setIsDragging(false);
+            }
+        };
+
         window.addEventListener("dragover", handleDragOver);
         window.addEventListener("drop", handleDrop);
+        window.addEventListener("dragleave", handleDragLeave);
+        window.addEventListener("mousemove", handleMouseMove);
 
         return () => {
             window.removeEventListener("dragover", handleDragOver);
             window.removeEventListener("drop", handleDrop);
+            window.removeEventListener("dragleave", handleDragLeave);
+            window.removeEventListener("mousemove", handleMouseMove);
         };
     }, [addFiles, currentFolderId, isDragging, isModalOpen, isSearchMode]);
 

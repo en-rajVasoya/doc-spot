@@ -50,7 +50,7 @@ function TrashHeaderToolbar({ setModal, searchBarOpen }) {
                         <ul className="mb-0 tools">
 
                             {/* DOWNLOAD */}
-                            <li className="d-flex align-items-center justify-content-center">
+                            {/* <li className="d-flex align-items-center justify-content-center">
                                 <Tooltip text="Download" placement="bottom" theme={`${isDisabled ? "disabled" : ""}`}>
                                     <InteractiveIcon
                                         defaultIcon={downloadIcon}
@@ -78,7 +78,7 @@ function TrashHeaderToolbar({ setModal, searchBarOpen }) {
 
                             <li className="d-flex align-items-center justify-content-center">
                                 <div className="divider" />
-                            </li>
+                            </li> */}
 
                             {/* RESTORE */}
                             <li className="d-flex align-items-center justify-content-center">

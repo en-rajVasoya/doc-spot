@@ -37,8 +37,34 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
     const { downloadFile, downloadFolder, downloadMultiple } = useDownload()
 
     //  here this state is used for when user right click on the item box so diffrent menu willopen here
-    const [itemContextMenu, setItemContextMenu] = useState({ visible: false, x: 0, y: 0 })
+    const [itemContextMenu, setItemContextMenu] = useState({ visible: false, x: 0, y: 0, isViewerItem: false })
     const [showColorMenu, setShowColorMenu] = useState(false)
+
+    //  here this state will be used for right click on item so it will no go beyond screen 
+    const contextMenuRef = useRef(null)
+
+    // Dynamic Context Menu Positioning
+    useEffect(() => {
+        if (!itemContextMenu.visible || !contextMenuRef.current) return
+
+        const menu = contextMenuRef.current
+        const menuRect = menu.getBoundingClientRect()
+
+        let posX = itemContextMenu.x
+        let posY = itemContextMenu.y
+
+        if (posX + menuRect.width > window.innerWidth) {
+            posX = window.innerWidth - menuRect.width - 10
+        }
+        if (posY + menuRect.height > window.innerHeight) {
+            posY = window.innerHeight - menuRect.height - 10
+        }
+
+        menu.style.left = `${posX}px`
+        menu.style.top = `${Math.max(10, posY)}px`
+        menu.style.opacity = "1"
+        menu.style.pointerEvents = "auto"
+    }, [itemContextMenu.visible, itemContextMenu.x, itemContextMenu.y])
 
     //  hee chich file was last clicked here to see 
     const lastClick = useRef({});
@@ -450,7 +476,7 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
                                 {isSearchMode ? "No results found" : ""}
                             </div>
                         )}
-
+                        {(() => { console.log("rendering items count:", displayItems.length, "loading:", displayLoading); return null })()}
                         {displayItems.map((item) => (
                             <div
                                 key={item._id}
@@ -459,13 +485,25 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
                                 onClick={() => handleItemClick(item)}
                                 onContextMenu={(e) => {
                                     e.preventDefault()
-                                    // e.stopPropagation()
 
-                                    if (!selectedIds.has(item._id.toString())) {
-                                        setSelectedIds(new Set([item._id.toString()]))
+                                    if (!selectedIds.has(item._id)) {
+                                        setSelectedIds(new Set([item._id]))
                                     }
-                                    setShowColorMenu(false)
-                                    setItemContextMenu({ visible: true, x: e.clientX, y: e.clientY })
+                                    // 1. Check if the current user is a viewer on this specific item
+                                    const currentUserId = user?._id || user?.id;
+                                    const isSharedWithMe = item.owner?._id?.toString() !== currentUserId?.toString()
+                                    const hasViewerRole = item.sharedWith?.some(share =>
+                                        (share.userId?._id?.toString() === currentUserId?.toString() || share.user === currentUserId) && share.permission === "viewer"
+                                    );
+
+                                    // 2. It is restricted if the folder is restricted OR the item itself is restricted
+                                    const itemIsRestricted = isViewerOnly || (isSharedWithMe && hasViewerRole);
+                                    setItemContextMenu({
+                                        visible: true,
+                                        x: e.clientX,
+                                        y: e.clientY,
+                                        isViewerItem: itemIsRestricted // Save the result into the state!
+                                    })
                                 }}
                             >
                                 <div
@@ -553,14 +591,19 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
 
 
                                     <div className="table-cell">
-                                        {isSearchMode ? item.locationPath : (() => {
+                                        {(() => {
                                             if (!item.sharedWith || item.sharedWith.length === 0) return "—"
+
                                             const names = item.sharedWith.map(s => s.userId?.name).filter(Boolean)
                                             if (names.length === 0) return "—"
+
                                             if (names.length <= 2) return names.join(", ")
+
                                             const visible = names.slice(0, 2).join(", ")
                                             const remaining = names.length - 2
-                                            return `${visible} and ${remaining} other${remaining > 1 ? "s" : ""}`
+
+                                            // This now prints "Mihir, Raj +1"
+                                            return `${visible} +${remaining}`
                                         })()}
                                     </div>
 
@@ -597,7 +640,18 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
 
             {/*  when user click right so this menu will open here */}
             {itemContextMenu.visible && (
-                <div className="custom-context-menu" style={{ position: "fixed", top: itemContextMenu.y, left: itemContextMenu.x, overflow: "visible", zIndex: 99999 }}
+                <div
+                    ref={contextMenuRef}
+                    className="custom-context-menu"
+                    style={{
+                        position: "fixed",
+                        top: itemContextMenu.y,
+                        left: itemContextMenu.x,
+                        overflow: "visible",
+                        zIndex: 99999,
+                        opacity: 0,
+                        pointerEvents: "none"
+                    }}
                     onClick={() => {
                         setItemContextMenu({ visible: false })
                         setShowColorMenu(false)
@@ -608,8 +662,9 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
 
                         {/* share */}
                         <li
-                            style={{ opacity: isViewerOnly ? 0.6 : 1, cursor: isViewerOnly ? "not-allowed" : "pointer" }}
+                            style={{ opacity: itemContextMenu.isViewerItem ? 0.6 : 1, cursor: itemContextMenu.isViewerItem ? "not-allowed" : "pointer" }}
                             onClick={(e) => {
+                                if (itemContextMenu.isViewerItem) { e.stopPropagation(); return }
                                 if (isViewerOnly) { e.stopPropagation(); return }
                                 const item = items.find(i => i._id === Array.from(selectedIds)[0])
                                 setModal({ type: "shareUser", data: item })
@@ -648,8 +703,9 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
 
                         {/* rename */}
                         <li
-                            style={{ opacity: isViewerOnly || selectedIds.size > 1 ? 0.6 : 1, cursor: isViewerOnly || selectedIds.size > 1 ? "not-allowed" : "pointer" }}
+                            style={{ opacity: itemContextMenu.isViewerItem || selectedIds.size > 1 ? 0.6 : 1, cursor: itemContextMenu.isViewerItem || selectedIds.size > 1 ? "not-allowed" : "pointer" }}
                             onClick={(e) => {
+                                if (itemContextMenu.isViewerItem || selectedIds.size > 1) { e.stopPropagation(); return }
                                 if (isViewerOnly || selectedIds.size > 1) { e.stopPropagation(); return }
                                 const selectedItem = displayItems.find(i => i._id === Array.from(selectedIds)[0])
                                 if (!selectedItem) return
@@ -665,8 +721,9 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
 
                         {/* change color */}
                         <li
-                            style={{ position: "relative", opacity: isViewerOnly || !hasFolder ? 0.6 : 1, cursor: isViewerOnly || !hasFolder ? "not-allowed" : "pointer" }}
+                            style={{ position: "relative", opacity: itemContextMenu.isViewerItem || !hasFolder ? 0.6 : 1, cursor: itemContextMenu.isViewerItem || !hasFolder ? "not-allowed" : "pointer" }}
                             onClick={(e) => {
+                                if (itemContextMenu.isViewerItem || !hasFolder) { e.stopPropagation(); return }
                                 if (isViewerOnly || !hasFolder) { e.stopPropagation(); return }
                                 e.stopPropagation()
                                 setShowColorMenu(prev => !prev)
@@ -739,8 +796,9 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
 
                         {/* move */}
                         <li
-                            style={{ opacity: isViewerOnly ? 0.6 : 1, cursor: isViewerOnly ? "not-allowed" : "pointer" }}
+                            style={{ opacity: itemContextMenu.isViewerItem ? 0.6 : 1, cursor: itemContextMenu.isViewerItem ? "not-allowed" : "pointer" }}
                             onClick={(e) => {
+                                if (itemContextMenu.isViewerItem) { e.stopPropagation(); return }
                                 if (isViewerOnly) { e.stopPropagation(); return }
                                 setModal({ type: "MoveModal", data: Array.from(selectedIds) })
                             }}>
@@ -754,8 +812,9 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
 
                         {/*  trash */}
                         <li
-                            style={{ opacity: isViewerOnly ? 0.6 : 1, cursor: isViewerOnly ? "not-allowed" : "pointer" }}
+                            style={{ opacity: itemContextMenu.isViewerItem ? 0.6 : 1, cursor: itemContextMenu.isViewerItem ? "not-allowed" : "pointer" }}
                             onClick={(e) => {
+                                if (itemContextMenu.isViewerItem) { e.stopPropagation(); return }
                                 if (isViewerOnly) { e.stopPropagation(); return }
                                 setModal({ type: "DeleteModal", data: Array.from(selectedIds) })
                             }}>

@@ -328,22 +328,63 @@ export const restoreItem = async (req, res) => {
 //  here in trash page get all trashed item here only root level here 
 export const getTrashedItems = async (req, res) => {
     try {
+        // ------------------------------------------
+        // --- STEP - 1 - get user ID and parent folder from request
+        // -----------------------------------------
+        // userId: get the current logged in user
         const userId = req.user._id;
+        // parent: get the folder id if user is inside a folder, otherwise null
         const parent = req.query.parent || null
-        const limit = parseInt(req.query.limit) || 50
-        const skip = parseInt(req.query.skip) || 0
+        
+        // ------------------------------------------
+        // --- STEP - 2 - setup sorting parameters
+        // -----------------------------------------
+        // get sorting field (name, size, modified) from frontend
+        const sortBy = req.query.sortBy || "modified"
+        // get sort order (asc or desc) from frontend
+        const sortOrder = req.query.sortOrder || "desc"
+        // convert desc to -1 and asc to 1 for database sorting
+        const order = sortOrder === "asc" ? 1 : -1
 
+        // default sorting field in the database
+        let sortField = "trashedAt"
+
+        // map the frontend sorting string to actual database columns
+        if (sortBy === "name") {
+            sortField = "name"
+        } else if (sortBy === "size") {
+            sortField = "fileSize"
+        } else if (sortBy === "modified") {
+            sortField = "updatedAt"
+        }
+
+        // create the sort array: folders always first, then requested sort, then fallback to createdAt
+        const sortArray = [
+            ["type", -1],
+            [sortField, order],
+            ["createdAt", -1]
+        ]
+
+        // ------------------------------------------
+        // --- STEP - 3 - helper function to fix file paths
+        // -----------------------------------------
+        // remove the base storage directory from the file path for frontend display
         const fixPath = (item) => ({
             ...item,
             storagePath: item.storagePath ? item.storagePath.split("files")[1].replace(/\\/g, "/") : null
         })
 
+        // ------------------------------------------
+        // --- STEP - 4 - fetch items if user is inside a trashed folder
+        // -----------------------------------------
         if (parent) {
+            // make sure the parent folder actually exists and belongs to the user
             const parentFolder = await uploadModel.findOne({ _id: parent, owner: userId })
             if (!parentFolder) {
                 return res.status(404).json({ success: false, message: "Folder not found" });
             }
 
+            // fetch all files and folders inside this parent folder
             const items = await uploadModel.find({
                 parent,
                 owner: userId,
@@ -351,25 +392,22 @@ export const getTrashedItems = async (req, res) => {
             })
                 .select("name type fileSize fileType createdAt updatedAt parent color owner storagePath isTrashed trashedAt")
                 .populate("owner", "_id name")
-                .sort({ createdAt: -1 })
-                .skip(skip)
-                .limit(limit)
+                .sort(sortArray)
+                .collation({ locale: "en", strength: 2 }) // makes alphabetical sorting case-insensitive
                 .lean()
 
-            const total = await uploadModel.countDocuments({
-                parent,
-                owner: userId,
-                $or: [{ type: "folder" }, { type: "file", uploadStatus: "completed" }]
-            })
-
+            // return the items found inside the folder
             return res.json({
                 success: true,
                 items: items.map(fixPath),
-                hasMore: skip + items.length < total,
-                total
+                total: items.length
             });
         }
 
+        // ------------------------------------------
+        // --- STEP - 5 - fetch root level trashed items
+        // -----------------------------------------
+        // fetch all items that are trashed and have no parent (root level of trash)
         const items = await uploadModel.find({
             owner: userId,
             isTrashed: true,
@@ -377,22 +415,15 @@ export const getTrashedItems = async (req, res) => {
         })
             .select("name type fileSize fileType createdAt updatedAt parent color owner storagePath isTrashed trashedAt")
             .populate("owner", "_id name")
-            .sort({ trashedAt: -1 })
-            .skip(skip)
-            .limit(limit)
+            .sort(sortArray)
+            .collation({ locale: "en", strength: 2 }) // makes alphabetical sorting case-insensitive
             .lean()
 
-        const total = await uploadModel.countDocuments({
-            owner: userId,
-            isTrashed: true,
-            $or: [{ type: "folder" }, { type: "file", uploadStatus: "completed" }]
-        })
-
+        // return the root trashed items
         return res.json({
             success: true,
             items: items.map(fixPath),
-            hasMore: skip + items.length < total,
-            total
+            total: items.length
         });
 
     } catch (error) {

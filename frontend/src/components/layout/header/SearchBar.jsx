@@ -68,7 +68,6 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
     // this is when search bar is not open then clear all input
     useEffect(() => {
         if (!searchBarOpen) {
-            setSearchText("")
             setFileType(null)
             setOwner(null)
             setDate(null)
@@ -211,6 +210,18 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
     const locationPath = useLocation().pathname;
 
     const handleSearch = () => {
+        
+        //  when user have empty input boxed and press enter here so search won happens here 
+        const hasText = searchText.trim().length > 0;
+        const hasFileType = fileType && fileType.value !== "Any";
+        const hasOwner = owner && owner.value !== "Any";
+        const hasLocation = location && location.value !== "Any";
+        const hasDate = date && date.value !== "Any";
+        // If the box is empty AND they haven't picked any advanced filters, do nothing!
+        if (!hasText && !hasFileType && !hasOwner && !hasLocation && !hasDate) {
+            return;
+        }
+        // --------------------------------
 
         setSuggestionResults([]);
         setShowSuggestions(false);
@@ -267,6 +278,7 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
 
         setIsOpen(false);
         setShowSuggestions(false);
+        setSearchBarOpen(false);
 
         // Redirect to dashboard so results are actually visible!
         if (locationPath !== "/dashboard") {
@@ -314,9 +326,9 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
 
     const ownerOptions = [
         { value: "Anyone", label: "Anyone" },
-        { value: "Owner-by-me", label: "Owner by me" },
-        { value: "Not-owner-by-me", label: "Not owner by me" },
-        { value: "Specific-person", label: "Specific person" },
+        { value: "owner-by-me", label: "Owner by me" },
+        { value: "not-owner-by-me", label: "Not owner by me" },
+        { value: "specific-person", label: "Specific person" },
     ];
 
     const dateOptions = [
@@ -328,10 +340,10 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
     ];
 
     const locationOptions = [
-        { value: "My-Docspot", label: "My Docspot" },
+        { value: "my-docspot", label: "My Docspot" },
         { value: "Shared", label: "Shared" },
         { value: "Shared-with-me", label: "Shared with me" },
-        { value: "Trash", label: "Trash" },
+        { value: "trash", label: "Trash" },
     ];
 
     return (
@@ -382,7 +394,6 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
                                                     setSearchText("");
                                                     setShowSuggestions(false);
                                                     setSuggestionResults([]);
-                                                    clearSearch();
                                                 }}
                                             >
                                                 <InteractiveIcon
@@ -545,8 +556,8 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
                                                 options={userOptions}
                                                 value={selectedPersons}
                                                 onChange={(val) => {
-                                                    if (val && val.length > 1) return;
-                                                    setSelectedPersons(val || []);
+                                                    // Wrap the single object in an array so .map() works later!
+                                                    setSelectedPersons(val ? [val] : []);
                                                 }}
                                                 isMulti={false}
                                                 isProfile={true}

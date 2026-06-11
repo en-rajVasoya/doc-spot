@@ -60,12 +60,12 @@ export const searchFiles = async (req, res) => {
         // ##################################################
         // ---- STEP 3: Add folders owned by the user to the list
         // ##################################################
-        const ownedFolders = await uploadModel.find({
-            owner: userId,
-            type: "folder",
-            isTrashed: { $ne: true }
-        }).select("_id").lean();
-        ownedFolders.forEach(f => allSharedFolderIds.add(f._id.toString()));
+        // const ownedFolders = await uploadModel.find({
+        //     owner: userId,
+        //     type: "folder",
+        //     isTrashed: { $ne: true }
+        // }).select("_id").lean();
+        // ownedFolders.forEach(f => allSharedFolderIds.add(f._id.toString()));
 
 
         // ##################################################
@@ -85,7 +85,7 @@ export const searchFiles = async (req, res) => {
         // ##################################################
         // ---- STEP 5: Filter by search location -----------
         // ##################################################
-        if (location === "my-drive") {
+        if (location === "my-docspot") {
             // search only inside user's own drive
             filter.owner = userId
         } else if (location === "trash") {
@@ -286,6 +286,7 @@ export const searchFiles = async (req, res) => {
             uploadModel.find(filter)
                 .select("name type fileSize fileType updatedAt createdAt parent owner storagePath color isShared")
                 .populate("owner", "_id name profilePic")
+                .populate("sharedWith.userId", "_id name")
                 .sort({ type: -1, createdAt: -1 })
                 .skip(skip)
                 .limit(limit)
@@ -343,7 +344,7 @@ export const searchFiles = async (req, res) => {
             if (item.owner?._id?.toString() !== userId.toString() || isInsideSharedFolder) {
                 path.unshift("Shared with me")
             } else {
-                path.unshift("My Drive")
+                path.unshift("My Docspot")
             }
             return {
                 ...item,

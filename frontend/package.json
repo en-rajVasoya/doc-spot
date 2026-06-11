@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@cyntler/react-doc-viewer": "^1.17.1",
     "@fortune-sheet/react": "^1.0.4",
     "axios": "^1.13.6",
     "bootstrap": "5.3",

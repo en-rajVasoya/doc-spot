@@ -136,8 +136,10 @@ const TrashSubHeader = memo(function TrashSubHeader({ view, setView, setModal })
 
             <header className="header header-trash">
                 <div className="header-view d-flex align-items-center justify-content-between">
+
+                    {/*  bread crumb and the back icon */}
                     <div className="d-flex align-itmes-cnter">
-                         <Tooltip text="Back" placement="bottom" >
+                        {/* <Tooltip text="Back" placement="bottom" >
                         <button className="btn-hover-gray me-3"
                             onClick={() => navigate('/dashboard')}
                         >
@@ -147,12 +149,12 @@ const TrashSubHeader = memo(function TrashSubHeader({ view, setView, setModal })
                                 height={20}
                             />
                         </button>
-                        </Tooltip>
+                        </Tooltip> */}
                         <Breadcrumbs
                             trail={trail}
                             onNavigate={navigateTo}
                             onHomeClick={() => navigate("/trash-dashboard")}
-                            maxVisible={5}
+                            maxVisible={2}
                             rootLabel="Trash"
                             actions={["download", "restore", "deleteForever"]}
                             selectedIds={selectedIds}
@@ -193,16 +195,16 @@ const TrashSubHeader = memo(function TrashSubHeader({ view, setView, setModal })
                 </div>
             </header>
             {/* full width notice bar */}
-            {items.length > 0 && (
-                <div className="empty-bin-section">
-                    <span>
-                        Items in trash are deleted forever after 30 days
-                    </span>
+            <div className="empty-bin-section ">
+                <span>
+                    Items in trash are deleted forever after 30 days
+                </span>
+                {/* {items.length > 0 && (
                     <button className=" btn" onClick={handleEmptyBin}>
                         Empty Bin
                     </button>
-                </div>
-            )}
+                )} */}
+            </div>
         </>
     );
 })

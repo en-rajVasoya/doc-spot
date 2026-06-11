@@ -1,7 +1,7 @@
 
 
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import MainHeader from '../layout/header/MainHeader'
 import TrashSubHeader from '../features/trash/TrashSubHeader '
 import TrashContentView from '../features/trash/TrashContentView '
@@ -13,11 +13,16 @@ import { useTrash } from '../../context/TrashContext'
 import ModifiedContent from '../layout/header/ModifiedContent';
 
 function TrashDashboard() {
-    const { clearSelection } = useTrash()
+    const { clearSelection, sortedItems, sortBy, setSortBy, sortOrder, setSortOrder, selectedIds, setSelectedIds } = useTrash()
     const [view, setView] = useState("grid")
     const [modal, setModal] = useState(null)
     const [searchBarOpen, setSearchBarOpen] = useState(false)
     const [isSidebarNavOpen, setIsSidebarNavOpen] = useState(false)
+
+    // Drag and select refs
+    const itemRefsFromContent = useRef({})
+    const dragRootRef = useRef(null)
+    const dragAndSelectRef = useRef(null)
 
     useEffect(() => {
         const handleKeyDown = (e) => {
@@ -36,23 +41,37 @@ function TrashDashboard() {
 
                     {/* Same main header */}
                     <div className="max-width-base-header">
-                    <MainHeader 
-                        setModal={setModal} 
-                        searchBarOpen={searchBarOpen} 
-                        setSearchBarOpen={setSearchBarOpen} 
-                        isTrash={true} 
-                        onMobileSidebarNavclick={() => setIsSidebarNavOpen(prev => !prev)}
-                    />
-                    {/* <TrashSubHeader view={view} setView={setView} setModal={setModal} /> */}
-                    {/* <ModifiedContent /> */}
+                        <MainHeader
+                            setModal={setModal}
+                            searchBarOpen={searchBarOpen}
+                            setSearchBarOpen={setSearchBarOpen}
+                            isTrash={true}
+                            onMobileSidebarNavclick={() => setIsSidebarNavOpen(prev => !prev)}
+                        />
+                        <TrashSubHeader view={view} setView={setView} setModal={setModal} />
+                        <ModifiedContent 
+                            displayItems={sortedItems} 
+                            sortBy={sortBy} 
+                            setSortBy={setSortBy} 
+                            sortOrder={sortOrder} 
+                            setSortOrder={setSortOrder} 
+                            selectedIds={selectedIds} 
+                            setSelectedIds={setSelectedIds} 
+                        />
                     </div>
-                    
-                    
-                    <div className="max-width-base"
-                        >
-                        <GlobalContextMenu disableContextMenu={true} />
-                        
-                        <TrashContentView view={view} setModal={setModal} />
+
+
+                    <div className='content-view-wrapper' ref={dragAndSelectRef}>
+                        <div className="max-width-base" ref={dragRootRef}>
+                            <GlobalContextMenu disableContextMenu={true} />
+
+                            <TrashContentView 
+                                view={view} 
+                                setModal={setModal} 
+                                onItemRefsReady={(refs) => { itemRefsFromContent.current = refs }}
+                                dragRootRef={dragAndSelectRef}
+                            />
+                        </div>
                     </div>
 
                 </div>

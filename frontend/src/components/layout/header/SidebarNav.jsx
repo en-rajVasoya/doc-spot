@@ -1,4 +1,5 @@
 import { NavLink } from "react-router-dom";
+import { useSearch } from "../../../context/SearchContext";
 import enterIcon from "@images/icon/enter-icon.svg";
 import navFolderIcon from "@images/icon/nav-folder-icon.svg";
 import userPlusIcon from "@images/icon/user-plus.svg";
@@ -13,6 +14,8 @@ const navItems = [
 ];
 
 export default function SidebarNav({isSidebarNavOpen }) {
+    const { isSearchMode, clearSearch } = useSearch();
+
     return (
          <nav className={`sidebar2 ${isSidebarNavOpen ? "sidebar2-Mobile" : ""}`}>
             <div className="sidebar2-sub">
@@ -23,8 +26,12 @@ export default function SidebarNav({isSidebarNavOpen }) {
                     className={({ isActive }) =>
                         `sidebar2Item ${isActive ? "sidebar2ItemActive" : ""}`
                     }
+                    onClick={() => {
+                        if (isSearchMode) clearSearch();
+                    }}
+                    draggable="false"
                 >
-                    <img src={icon} width={24} alt="" />
+                    <img src={icon} width={24} alt="" draggable="false" />
 
                     <div className="sidebar2LabelWrapper">{label}</div>
                 </NavLink>

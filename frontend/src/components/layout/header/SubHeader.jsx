@@ -14,7 +14,7 @@ import { getRoute } from "../../../utils/getRoutes.js";
 
 
 const SubHeader = memo(function SubHeader({ view, setView, setModal, isSearchMode }) {
-    const { trail, selectedIds, items, currentFolderId, navigateTo, changeColorApi, isViewerOnly, currentFolderMeta  } = useFileExplorer();
+    const { trail, selectedIds, items, currentFolderId, navigateTo, changeColorApi, isViewerOnly, currentFolderMeta } = useFileExplorer();
     const { addFiles, checkAndUpload, openScanningPanel } = useUpload();
     const { downloadFile, downloadFolder, downloadMultiple } = useDownload();
     const navigate = useNavigate()
@@ -29,8 +29,23 @@ const SubHeader = memo(function SubHeader({ view, setView, setModal, isSearchMod
     const getRootLabel = () => {
         if (location.pathname.startsWith(getRoute.SHARED_WITH_ME)) return "Shared with me";
         if (location.pathname.startsWith(getRoute.SHARED)) return "Shared";
-        return "Home";
+        return "My Docspot";
     };
+    //  here when user is in the roor of the shared and shared-with-me so no breadcrumb menu will open here
+    const isSharedRoot = (location.pathname.startsWith(getRoute.SHARED_WITH_ME) || location.pathname.startsWith(getRoute.SHARED)) && trail.length === 0;
+    
+    let actionsList = [];
+
+    if (isSharedRoot) {
+        // 1. Shared Root -> Keep it exactly as you had it (No menu opens)
+        actionsList = []; 
+    } else if (trail.length === 0) {
+        // 2. My Docspot Root -> Only show the 3 creation actions
+        actionsList = ["newFolder", "uploadFolder", "addFiles"]; 
+    } else {
+        // 3. Inside ANY Folder -> Show all actions
+        actionsList = ["newFolder", "uploadFolder", "addFiles", "share", "download", "rename", "changeColor", "copy", "move", "trash"];
+    }
 
     return (
         <>
@@ -46,7 +61,7 @@ const SubHeader = memo(function SubHeader({ view, setView, setModal, isSearchMod
                             onHomeClick={() => navigate(getPathPrefix())}
                             maxVisible={2}
                             rootLabel={getRootLabel()}
-                            actions={["newFolder", "uploadFolder", "addFiles", "share", "download", "rename", "changeColor", "copy", "move", "trash", ]}
+                            actions={actionsList}
                             setModal={setModal}
                             selectedIds={selectedIds}
                             items={items}

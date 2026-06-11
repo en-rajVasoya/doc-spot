@@ -1059,6 +1059,7 @@ export function FileExplorerProvider({ children }) {
     // when URL changes (browser back/forward) → sync trail
     useEffect(() => {
         clearSelection()
+        setItems([]) // Clear old items immediately to prevent UI flicker
         if (!folderId) {
             setTrail([])
             setCurrentFolderPermission(null)
@@ -1095,6 +1096,8 @@ export function FileExplorerProvider({ children }) {
     // when user open folder fetch that items
     const openFolder = useCallback((folder) => {
         clearSelection()
+        setItems([])           // clear old items immediately so no flicker
+        setLoading(true)       // show loading spinner right away
         setCurrentFolderMeta(folder)
         // store the permission of current fodler 
         setCurrentFolderPermission(folder.permission || null)
@@ -1110,6 +1113,8 @@ export function FileExplorerProvider({ children }) {
 
     //  when user navigate to some folder change url
     const navigateTo = useCallback((depth) => {
+        setItems([])           // clear old items immediately so no flicker
+        setLoading(true)       // show loading spinner right away
         setTrail(prev => {
             clearSelection()
             const newTrail = prev.slice(0, depth)

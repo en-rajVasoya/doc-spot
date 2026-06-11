@@ -3,8 +3,11 @@ import { useSearch } from "../../../context/SearchContext";
 import InteractiveIcon from "../InteractiveIcon";
 import searchIcon from "@images/icon/search.svg";
 import closeIcon from "@images/icon/close-icon.svg";
+import Tooltip from "../Tooltip";
+import menuIcon from "@images/icon/menu.svg";
+import gridIcon from "@images/icon/grid.svg";
 
-function SearchResults({ setSearchBarOpen }) {
+function SearchResults({ setSearchBarOpen, showViewButtons, view, setView }) {
     const { isSearchMode, searchResults, clearSearch, searchFilters, searchApi } = useSearch();
     const { selectedIds } = useFileExplorer();
 
@@ -55,7 +58,7 @@ function SearchResults({ setSearchBarOpen }) {
     if (!isSearchMode) return null;
     return (
         <>
-            <div className="header d-flex align-items-center m-0">
+            <div className="header d-flex align-items-center justify-content-between m-0">
                 <h2 className="page-title-name">
                     <InteractiveIcon
                         defaultIcon={searchIcon}
@@ -65,11 +68,38 @@ function SearchResults({ setSearchBarOpen }) {
                     />
                     Search results
                 </h2>
+
+                {showViewButtons && (
+                    <div className="header-view d-flex align-items-center">
+                        <ul className="mb-0 d-flex view-btn">
+                            <li>
+                                <Tooltip text="List View">
+                                    <button
+                                        className={`btn btn-icon rounded-end-0 ${view === "list" ? "view-active" : ""}`}
+                                        onClick={() => setView("list")}
+                                    >
+                                        <InteractiveIcon defaultIcon={menuIcon} width={20} />
+                                    </button>
+                                </Tooltip>
+                            </li>
+                            <li>
+                                <Tooltip text="Grid View">
+                                    <button
+                                        className={`btn btn-icon rounded-start-0  ${view === "grid" ? "view-active" : ""}`}
+                                        onClick={() => setView("grid")}
+                                    >
+                                        <InteractiveIcon defaultIcon={gridIcon} width={20} />
+                                    </button>
+                                </Tooltip>
+                            </li>
+                        </ul>
+                    </div>
+                )}
             </div>
             <div className="search-suggestion-filter-chips">
                 {searchFilters.query && (
                     <div className="search-suggestion-filter-content">
-                        <span className="search-suggestion-label">Query</span>
+                        <span className="search-suggestion-label">Keyword</span>
                         <button className="search-suggestion-chip">
                             {searchFilters.query}
                             <span className="btn-only-icon" onClick={(e) => { e.stopPropagation(); handleRemoveFilter("query"); }} >
@@ -116,7 +146,7 @@ function SearchResults({ setSearchBarOpen }) {
                     <div className="search-suggestion-filter-content" key={i}>
                         <span className="search-suggestion-label">Owner</span>
                         <button className="search-suggestion-chip">
-                            Owner: {name}
+                            {name}
                             <span className="btn-only-icon" onClick={(e) => { e.stopPropagation(); handleRemoveFilter("specific-person", i); }} >
                                 <InteractiveIcon
                                     defaultIcon={closeIcon}

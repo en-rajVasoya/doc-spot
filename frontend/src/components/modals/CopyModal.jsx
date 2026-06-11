@@ -28,6 +28,17 @@ function CopyModal({ data, onClose }) {
     const [folderCreated, setFolderCreated] = useState(false);
     const [newFolderMode, setNewFolderMode] = useState(false);
     const [newFolderName, setNewFolderName] = useState("");
+    const inputRef = useRef(null);
+
+    // Auto-select text when new folder mode opens
+    useEffect(() => {
+        if (newFolderMode) {
+            setTimeout(() => {
+                inputRef.current?.focus();
+                inputRef.current?.select();
+            }, 100);
+        }
+    }, [newFolderMode]);
 
     const browseFolderId = trail.length ? trail[trail.length - 1].id : null;
 
@@ -185,7 +196,7 @@ function CopyModal({ data, onClose }) {
                                     return (
                                         <ul className="folder-single-list" key={folder._id}>
                                             <li
-                                                className={`folder-items
+                                                className={`folder-items user-select-none
                                                 ${isBeingCopied ? "opacity-50" : "cursor-pointer"}
                                                 ${isSelected ? "selected" : ""}
                                             `}
@@ -236,7 +247,13 @@ function CopyModal({ data, onClose }) {
 
                     {/* SAME FIXED FOOTER */}
                     <Modal.Footer >
-                        <button className="modal-add-new-btn">
+                        <button 
+                            className="modal-add-new-btn" 
+                            onClick={() => {
+                                setNewFolderName("Untitled Folder");
+                                setNewFolderMode(true);
+                            }}
+                        >
                             <InteractiveIcon defaultIcon={addFileIcon} width={24} alt="add" />
                             New Folder
                         </button>
@@ -263,6 +280,7 @@ function CopyModal({ data, onClose }) {
                             <Form.Group controlId="formName" className="mb-4">
                                 <Form.Label>New Folder</Form.Label>
                                 <Form.Control
+                                    ref={inputRef}
                                     type="text"
                                     className="custom-form-control form-control mb-2"
                                     placeholder="Folder name"

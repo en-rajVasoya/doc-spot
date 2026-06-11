@@ -22,6 +22,7 @@ function GlobalContextMenu({ setModal, disableContextMenu = false }) {
     const navigate = useNavigate()
     const location = useLocation()
     const isTrashPage = location.pathname.startsWith("/trash")
+    const isSharedPage = location.pathname === "/shared" || location.pathname === "/shared-with-me"
 
     // using uploadContext
     const { addFiles, checkAndUpload, openScanningPanel, cancelScanning, isScanningCancelled } = useUpload()
@@ -81,7 +82,7 @@ function GlobalContextMenu({ setModal, disableContextMenu = false }) {
     const handleRightClick = (e) => {
         e.preventDefault()
 
-        if (disableContextMenu || isSearchMode) return;
+        if (disableContextMenu || isSearchMode || isSharedPage) return;
 
         if (e.target.closest(".table-row")) {
             setMenu((prev => ({ ...prev, visible: false })))
@@ -113,7 +114,9 @@ function GlobalContextMenu({ setModal, disableContextMenu = false }) {
         window.removeEventListener("contextmenu", handleRightClick);
         window.removeEventListener("click", handleClick);
     };
-}, [disableContextMenu, isSearchMode]);
+}, [disableContextMenu, isSearchMode, isSharedPage]);
+
+    const isActionDisabled = isViewerOnly || isSharedPage;
 
     const handleNewButtonClick = (e) => {
         e.stopPropagation();
@@ -239,22 +242,22 @@ function GlobalContextMenu({ setModal, disableContextMenu = false }) {
                     <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
                         {/*  new folder create in shared fodler viewer can not create a new folder so disbaled all there  */}
                         <li onClick={(e) => {
-                            if (isViewerOnly) {
+                            if (isActionDisabled) {
                                 e.stopPropagation()
                                 return
                             }
                             handleNewFolder()
                         }}
-                            style={{ opacity: isViewerOnly ? 0.7 : 1, cursor: isViewerOnly ? "not-allowed" : "pointer" }}>
+                            style={{ opacity: isActionDisabled ? 0.7 : 1, cursor: isActionDisabled ? "not-allowed" : "pointer" }}>
                             <button className="dropdown-item">
-                                <span className="d-flex align-items-center" style={{ opacity: isViewerOnly ? 0.7 : 1, cursor: isViewerOnly ? "not-allowed" : "pointer" }}>
+                                <span className="d-flex align-items-center" style={{ opacity: isActionDisabled ? 0.7 : 1, cursor: isActionDisabled ? "not-allowed" : "pointer" }}>
                                     <InteractiveIcon
                                         defaultIcon={folderPlusIcon}
                                         className="me-2"
                                         width={20}
                                         height={20}
                                         alt=""
-                                        style={{ opacity: isViewerOnly ? 0.7 : 1, cursor: isViewerOnly ? "not-allowed" : "pointer" }}
+                                        style={{ opacity: isActionDisabled ? 0.7 : 1, cursor: isActionDisabled ? "not-allowed" : "pointer" }}
                                     />
                                     New Folder
                                 </span>
@@ -263,13 +266,13 @@ function GlobalContextMenu({ setModal, disableContextMenu = false }) {
 
                         {/*  folder uplaod in shared folder viewer can not uplaod a folder so disabled it  */}
                         <li onClick={(e) => {
-                            if (isViewerOnly) {
+                            if (isActionDisabled) {
                                 e.stopPropagation()
                                 return
                             }
-                            handleUploadFolder
-                        }} style={{ opacity: isViewerOnly ? 0.7 : 1, cursor: isViewerOnly ? "not-allowed" : "pointer" }} >
-                            <button className="dropdown-item" style={{ opacity: isViewerOnly ? 0.7 : 1, cursor: isViewerOnly ? "not-allowed" : "pointer" }}>
+                            handleUploadFolder()
+                        }} style={{ opacity: isActionDisabled ? 0.7 : 1, cursor: isActionDisabled ? "not-allowed" : "pointer" }} >
+                            <button className="dropdown-item" style={{ opacity: isActionDisabled ? 0.7 : 1, cursor: isActionDisabled ? "not-allowed" : "pointer" }}>
                                 <span className="d-flex align-items-center">
                                     <InteractiveIcon
                                         defaultIcon={folderUploadIcon}
@@ -277,7 +280,7 @@ function GlobalContextMenu({ setModal, disableContextMenu = false }) {
                                         width={20}
                                         height={20}
                                         alt=""
-                                        style={{ opacity: isViewerOnly ? 0.7 : 1, cursor: isViewerOnly ? "not-allowed" : "pointer" }}
+                                        style={{ opacity: isActionDisabled ? 0.7 : 1, cursor: isActionDisabled ? "not-allowed" : "pointer" }}
                                     />
                                     Upload Folder
                                 </span>
@@ -285,13 +288,13 @@ function GlobalContextMenu({ setModal, disableContextMenu = false }) {
                         </li>
 
                         <li  onClick={(e) => {
-                            if (isViewerOnly) {
+                            if (isActionDisabled) {
                                 e.stopPropagation()
                                 return
                             }
                             handleAddFile()
-                        }} style={{ opacity: isViewerOnly ? 0.7 : 1, cursor: isViewerOnly ? "not-allowed" : "pointer" }}>
-                            <button className="dropdown-item" style={{ opacity: isViewerOnly ? 0.7 : 1, cursor: isViewerOnly ? "not-allowed" : "pointer" }}>
+                        }} style={{ opacity: isActionDisabled ? 0.7 : 1, cursor: isActionDisabled ? "not-allowed" : "pointer" }}>
+                            <button className="dropdown-item" style={{ opacity: isActionDisabled ? 0.7 : 1, cursor: isActionDisabled ? "not-allowed" : "pointer" }}>
                                 <span className="d-flex align-items-center">
                                     <InteractiveIcon
                                         defaultIcon={addFileIcon}
@@ -299,7 +302,7 @@ function GlobalContextMenu({ setModal, disableContextMenu = false }) {
                                         width={20}
                                         height={20}
                                         alt=""
-                                        style={{ opacity: isViewerOnly ? 0.7 : 1, cursor: isViewerOnly ? "not-allowed" : "pointer" }}
+                                        style={{ opacity: isActionDisabled ? 0.7 : 1, cursor: isActionDisabled ? "not-allowed" : "pointer" }}
                                     />
                                     Add Files
                                 </span>

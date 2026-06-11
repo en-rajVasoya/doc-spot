@@ -232,7 +232,7 @@ function HeaderToolbar({ setModal, searchBarOpen, setSearchBarOpen}) {
 
                                      {/*  File info */}
                                     <li className="d-flex align-items-center justify-content-center">
-                                        <Tooltip text="Delete" placement="bottom" theme={`${isDisabled || isViewerOnly ? "disabled" : ""}`}>
+                                        <Tooltip text="Item Info" placement="bottom" theme={`${isDisabled || isViewerOnly ? "disabled" : ""}`}>
                                             <InteractiveIcon
                                                 defaultIcon={fileInfoIcon}
                                                 className={`${selectedIds.size === 0  || isViewerOnly? "disabled" : ""}`}

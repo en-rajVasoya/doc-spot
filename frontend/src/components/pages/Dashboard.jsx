@@ -20,7 +20,7 @@ import SearchResults from '../layout/header/SearchResults';
 function Dashboard() {
   const [searchBarOpen, setSearchBarOpen] = useState(false)
   const { isSearchMode, searchResults, searchLoading, searchError, clearSearch } = useSearch()
-  const { clearSelection, items, sortBy, sortOrder,  loading, error } = useFileExplorer()
+  const { clearSelection, items, sortBy, setSortBy, sortOrder, setSortOrder, selectedIds, setSelectedIds, loading, error } = useFileExplorer()
   const [isSidebarNavOpen, setIsSidebarNavOpen] = useState(false);
 
 
@@ -28,27 +28,30 @@ function Dashboard() {
   const sortedSearchResults = useMemo(() => {
     if (!isSearchMode) return []
     return [...searchResults].sort((a, b) => {
-        if (a.type !== b.type) return a.type === "folder" ? -1 : 1
-        let valA, valB
-        if (sortBy === "name") {
-            valA = a.name.toLowerCase()
-            valB = b.name.toLowerCase()
-        } else if (sortBy === "size") {
-            valA = a.fileSize || 0
-            valB = b.fileSize || 0
-        } else {
-            valA = new Date(a.updatedAt || a.createdAt).getTime()
-            valB = new Date(b.updatedAt || b.createdAt).getTime()
-        }
-        if (valA < valB) return sortOrder === "asc" ? -1 : 1
-        if (valA > valB) return sortOrder === "asc" ? 1 : -1
-        return 0
+      if (a.type !== b.type) return a.type === "folder" ? -1 : 1
+      let valA, valB
+      if (sortBy === "name") {
+        valA = a.name.toLowerCase()
+        valB = b.name.toLowerCase()
+      } else if (sortBy === "size") {
+        valA = a.fileSize || 0
+        valB = b.fileSize || 0
+      } else {
+        valA = new Date(a.updatedAt || a.createdAt).getTime()
+        valB = new Date(b.updatedAt || b.createdAt).getTime()
+      }
+      if (valA < valB) return sortOrder === "asc" ? -1 : 1
+      if (valA > valB) return sortOrder === "asc" ? 1 : -1
+      return 0
     })
-}, [isSearchMode, searchResults, sortBy, sortOrder])
+  }, [isSearchMode, searchResults, sortBy, sortOrder])
 
-const displayItems = isSearchMode ? sortedSearchResults : items
-const displayLoading = isSearchMode ? searchLoading : loading
-const displayError = isSearchMode ? searchError : error
+
+  //  sending the dispaly items error and loading to the all component where it is used here
+  // const displayItems = isSearchMode ? sortedSearchResults : items
+  const displayItems = isSearchMode ? sortedSearchResults : (loading ? [] : items)
+  const displayLoading = isSearchMode ? searchLoading : loading
+  const displayError = isSearchMode ? searchError : error
 
   //  drag and select item state 
   const itemRefsFromContent = useRef({})
@@ -70,6 +73,9 @@ const displayError = isSearchMode ? searchError : error
     document.addEventListener("keydown", handleKeyDown)
     return () => document.removeEventListener("keydown", handleKeyDown)
   }, [])
+
+
+  
   return (
     <>
       <div className="page-wrapper" >
@@ -78,13 +84,28 @@ const displayError = isSearchMode ? searchError : error
           {/* Main header top */}
           <div className="max-width-base-header">
             <MainHeader setModal={setModal} searchBarOpen={searchBarOpen} setSearchBarOpen={setSearchBarOpen}
-            onMobileSidebarNavclick={() => setIsSidebarNavOpen(prev => !prev)}
-             />
+              onMobileSidebarNavclick={() => setIsSidebarNavOpen(prev => !prev)}
+            />
             <SubHeader view={view} setView={setView} setModal={setModal} isSearchMode={isSearchMode} />
 
-            {isSearchMode && <SearchResults setSearchBarOpen={setSearchBarOpen} />}
-            
-            <ModifiedContent displayItems={displayItems}  />
+            {isSearchMode && (
+              <SearchResults
+                setSearchBarOpen={setSearchBarOpen}
+                showViewButtons={true}
+                view={view}
+                setView={setView}
+              />
+            )}
+
+            <ModifiedContent
+              displayItems={displayItems}
+              sortBy={sortBy}
+              setSortBy={setSortBy}
+              sortOrder={sortOrder}
+              setSortOrder={setSortOrder}
+              selectedIds={selectedIds}
+              setSelectedIds={setSelectedIds}
+            />
           </div>
 
           {/* Main content view dashboard and subheader  */}
@@ -104,7 +125,7 @@ const displayError = isSearchMode ? searchError : error
                 dragRootRef={dragAndSelectRef}
                 displayItems={displayItems}
                 displayLoading={displayLoading}
-                displayError ={displayError}
+                displayError={displayError}
               />
             </div>
           </div>
@@ -115,7 +136,7 @@ const displayError = isSearchMode ? searchError : error
         <ModalManager modal={modal} setModal={setModal} />
         <UploadPanel setModal={setModal} />
         <DownloadPanel />
-       <SidebarNav isSidebarNavOpen={isSidebarNavOpen} />
+        <SidebarNav isSidebarNavOpen={isSidebarNavOpen} />
         {/* <TransferPanel /> */}
       </div>
     </>

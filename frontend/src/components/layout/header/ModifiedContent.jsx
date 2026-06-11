@@ -2,7 +2,6 @@ import { Dropdown } from "react-bootstrap";
 import InteractiveIcon from "../InteractiveIcon";
 import arrowDownIcon from "@images/icon/arrow-down.svg";
 import squareArrowDownLinearIcon from "@images/icon/square-arrow-down-linear.svg";
-import { useFileExplorer } from "../../../context/FileExplorerContext";
 import checkboxIcon from "@images/icon/checkbox-check.svg";
 
 const sortOptions = ["Name", "Modified", "Size"];
@@ -21,13 +20,15 @@ const reverseSortMap = {
     "size": "Size"
 }
 
-export default function ModifiedContent({ displayItems }) {
-
-
-    // ##################################################
-    // ---- get sort state from context
-    // ##################################################
-    const { sortBy, setSortBy, sortOrder, setSortOrder, selectedIds, setSelectedIds } = useFileExplorer()
+export default function ModifiedContent({ 
+    displayItems, 
+    sortBy, 
+    setSortBy, 
+    sortOrder, 
+    setSortOrder, 
+    selectedIds, 
+    setSelectedIds 
+}) {
 
 
     // ##################################################

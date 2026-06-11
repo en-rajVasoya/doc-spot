@@ -518,17 +518,7 @@ function ShareUserModal({ data, onClose }) {
                                         <span className='form-label m-0 ' >Link expirtation</span>
                                     </div>
                                     <div className="link-expirtation-day">
-                                        <Form.Group className="mb-3">
-                                        <Form.Label>Owner</Form.Label>
-                                        <CustomSelect
-                                          options={fileTypeOptions}
-                                            value={fileType}
-                                            onChange={setFileType}
-                                            placeholder="No expiration"
-                                            showIndicatorSeparator={false}
-                                            isSearchable={false}
-                                        />
-                                    </Form.Group>
+                                       
                                     </div>
                                 </div>
 

@@ -1,5 +1,5 @@
 
-import { createContext, useContext, useState, useEffect, useRef, useCallback } from "react";
+import { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from "react";
 import axiosApi from "../utils/api.js";
 import { useNotification } from "./NotificationContext.jsx";
 import { useAuth } from "./AuthContext";
@@ -30,49 +30,80 @@ export function TrashProvider({ children }) {
     const currentFolderId = trail.length ? trail[trail.length - 1].id : null;
 
 
-    //  scroll pagination here 
-    const [hasMoreItems, setHasMoreItems] = useState(false)
-    const [loadingMoreItems, setLoadingMoreItems] = useState(false)
-    const itemsLengthRef = useRef(0)
+
+
+
+    // Sorting state
+    const [sortBy, setSortBy] = useState(() => localStorage.getItem("docspot_trash_sortBy") || "modified")
+    const [sortOrder, setSortOrder] = useState(() => localStorage.getItem("docspot_trash_sortOrder") || "desc")
+
+    //  sorting ref here
+    const sortByRef = useRef(sortBy)
+    const sortOrderRef = useRef(sortOrder)
 
     useEffect(() => {
-        itemsLengthRef.current = items.length
-    }, [items])
+        sortByRef.current = sortBy
+        sortOrderRef.current = sortOrder
+    }, [sortBy, sortOrder])
 
-    //  fetch all trashed items here
-    const fetchTrashedItems = useCallback(async (isAppend = false) => {
-        if (!isAppend) {
-            setError(null)
-            setLoading(true)
-        } else {
-            setLoadingMoreItems(true)
-        }
-        try {
-            const skip = isAppend ? itemsLengthRef.current : 0
-            const { data } = await axiosApi.get("/trash/trash-items", {
-                params: { parent: currentFolderId ?? undefined, limit: 50, skip }
-            })
-            if (isAppend) {
-                setItems(prev => {
-                    const existingIds = new Set(prev.map(i => i._id.toString()))
-                    return [...prev, ...data.items.filter(i => !existingIds.has(i._id.toString()))]
-                })
-            } else {
-                setItems(data.items)
+    // In-memory sorting hook specifically for Trash
+    const sortedItems = useMemo(() => {
+        const itemsCopy = [...items]
+        
+        itemsCopy.sort((a, b) => {
+            if (a.type !== b.type) {
+                return a.type === "folder" ? -1 : 1
             }
-            setHasMoreItems(data.hasMore || false)
+
+            let valA, valB
+            if (sortBy === "name") {
+                valA = a.name.toLowerCase()
+                valB = b.name.toLowerCase()
+            } else if (sortBy === "size") {
+                valA = a.fileSize || 0;
+                valB = b.fileSize || 0;
+            } else {
+                valA = new Date(a.trashedAt || a.updatedAt).getTime()
+                valB = new Date(b.trashedAt || b.updatedAt).getTime()
+            }
+
+            if (valA < valB) return sortOrder === "asc" ? -1 : 1
+            if (valA > valB) return sortOrder === "asc" ? 1 : -1
+
+            return new Date(b.createdAt) - new Date(a.createdAt)
+        })
+        
+        return itemsCopy
+    }, [items, sortBy, sortOrder])
+
+
+
+    // fetch all trashed items here
+    const fetchTrashedItems = useCallback(async () => {
+        setError(null)
+        setLoading(true)
+
+        try {
+            const { data } = await axiosApi.get("/trash/trash-items", {
+                params: {
+                    parent: currentFolderId ?? undefined,
+                    sortBy: sortByRef.current,
+                    sortOrder: sortOrderRef.current
+                }
+            })
+
+            // just set items directly (no more pagination logic)
+            setItems(data.items)
+
         } catch (error) {
             setError(error.response?.data?.message || "Failed to fetch trash items")
         } finally {
             setLoading(false)
-            setLoadingMoreItems(false)
         }
     }, [currentFolderId])
 
-    const loadMoreItems = useCallback(() => {
-        if (loadingMoreItems || !hasMoreItems) return
-        fetchTrashedItems(true)
-    }, [loadingMoreItems, hasMoreItems, fetchTrashedItems])
+
+
 
     useEffect(() => {
         fetchTrashedItems()
@@ -221,9 +252,11 @@ export function TrashProvider({ children }) {
             navigateTo,
             restoreItemApi,
             deleteForeverApi,
-            hasMoreItems,
-            loadingMoreItems,
-            loadMoreItems,
+            sortedItems,
+            sortBy,
+            setSortBy,
+            sortOrder,
+            setSortOrder
         }}>
             {children}
         </TrashContext.Provider>

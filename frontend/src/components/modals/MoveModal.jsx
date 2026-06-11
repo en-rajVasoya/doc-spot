@@ -19,6 +19,7 @@ function MoveModal({ data, onClose }) {
     const [shake, setShake] = useState(false);
     const modalRef = useRef(null);
     const lastClick = useRef({});
+    const inputRef = useRef(null)
 
     const [trail, setTrail] = useState([]);
     const [folders, setFolders] = useState([]);
@@ -31,6 +32,19 @@ function MoveModal({ data, onClose }) {
 
     const browseFolderId = trail.length ? trail[trail.length - 1].id : null;
 
+
+
+    //  here use Effect for already iput "Untitle Folder" when user create new fodler inside the modal
+    useEffect(() => {
+        if(newFolderMode){
+            setTimeout(() => {
+                inputRef.current?.focus()
+                inputRef.current?.select()
+            }, 100)
+        }
+    }, [newFolderMode])
+
+    // here for the when user click on outside 
     const handleOutsideClick = (e) => {
         if (modalRef.current && !modalRef.current.contains(e.target)) {
             setShake(true);
@@ -38,6 +52,7 @@ function MoveModal({ data, onClose }) {
         }
     };
 
+    //  when user goes to the inside fodler so that data i need to fetch here
     const fetchFolders = useCallback(async () => {
         setLoading(true);
         try {
@@ -148,8 +163,8 @@ function MoveModal({ data, onClose }) {
                                 onNavigate={handleNavigate}
                                 onHomeClick={() => setTrail([])}
                                 maxVisible={3}
-                                rootLabel="Home"
-                                actions={["newFolder"]}
+                                rootLabel="My Docspot"
+
                                 onNewFolder={() => setNewFolderMode(true)}
                             />
                         </div>
@@ -180,7 +195,7 @@ function MoveModal({ data, onClose }) {
                                     return (
                                         <ul className="folder-single-list" key={folder._id}>
                                             <li
-                                                className={`folder-items
+                                                className={`folder-items user-select-none
                                                 ${isBeingMoved ? "opacity-50" : "cursor-pointer"}
                                                 ${isSelected ? "selected" : ""}
                                             `}
@@ -229,7 +244,12 @@ function MoveModal({ data, onClose }) {
 
                     {/* FIXED FOOTER */}
                     <Modal.Footer>
-                        <button className="modal-add-new-btn">
+                        <button className="modal-add-new-btn" 
+                            onClick={() => {
+                                setNewFolderName("Untitled Folder")
+                                setNewFolderMode(true)
+                            }}>
+                            
                             <InteractiveIcon defaultIcon={addFileIcon} width={24} alt="add" />
                             New Folder
                         </button>
@@ -250,6 +270,7 @@ function MoveModal({ data, onClose }) {
                             <Form.Group controlId="formName" className="mb-4">
                                 <Form.Label>New Folder</Form.Label>
                                 <Form.Control
+                                    ref={inputRef}
                                     type="text"
                                     className="custom-form-control form-control mb-2"
                                     placeholder="Folder name"

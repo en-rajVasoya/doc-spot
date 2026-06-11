@@ -4,13 +4,27 @@ import { useFileExplorer } from "../../context/FileExplorerContext";
 
 
 function DeleteModal({ data, onClose }) {
-    const { deleteItemApi, items } = useFileExplorer()
+    const { deleteItemApi, items, currentFolderId, currentFolderMeta } = useFileExplorer()
     // Shake animation
     const [shake, setShake] = useState(false);
     const modalRef = useRef(null);
 
     //  get item name here 
     const selectedItems = items.filter(i => data.includes(i._id))
+
+
+    //  here if one item then display name here 
+    // if two item then dispaly 2 items will be move  
+    // if this action is from the breadcrumb then show here current folder name
+    let deleteMessage = `${data.length} items will be moved to trash and deleted forever after 30 days.`;
+    if (selectedItems.length === 1) {
+        deleteMessage = `"${selectedItems[0].name}" will be moved to trash and deleted forever after 30 days.`;
+    } else if (selectedItems.length > 1) {
+        deleteMessage = `${selectedItems.length} items will be moved to trash and deleted forever after 30 days.`;
+    } else if (data.length === 1 && data[0] === currentFolderId && currentFolderMeta) {
+        // Fallback for when deleting the parent breadcrumb folder itself
+        deleteMessage = `"${currentFolderMeta.name}" will be moved to trash and deleted forever after 30 days.`;
+    }
 
     const handleOutsideClick = (e) => {
         if (modalRef.current && !modalRef.current.contains(e.target)) {
@@ -41,15 +55,9 @@ function DeleteModal({ data, onClose }) {
                         <Modal.Title>Move to trash?</Modal.Title>
                     </Modal.Header>
                     <Modal.Body>
-                        {selectedItems.length === 1 ? (
-                            <p className="m-0 message">
-                                "{selectedItems[0].name}" will be moved to trash and deleted forever after 30 days.
-                            </p>
-                        ) : (
-                            <p className="m-0 message">
-                                {selectedItems.length} items will be moved to trash and deleted forever after 30 days.
-                            </p>
-                        )}
+                        <p className="m-0 message">
+                            {deleteMessage}
+                        </p>
                     </Modal.Body>
                     <Modal.Footer className="d-flex align-items-center justify-content-between border-0">
                         <button className="btn-secondary btn-lg m-0" onClick={onClose}>Cancel</button>

@@ -5382,3 +5382,395 @@ button.btn.move-btn {
 .create-link-section .form-label{
     margin-left: 14px !important;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* Pdf preview start */
+
+@keyframes pdf-skeleton-shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+@keyframes pdf-spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}
+
+.pdf-preview {
+    display: flex;
+    flex-direction: row;
+    height: 100%;
+    width: 100%;
+    position: relative;
+    overflow: hidden;
+    padding-top: 60px;
+}
+.pdf-preview__sidebar {
+    width: 200px;
+    min-width: 200px;
+    height: 100%;
+    background-color: var(--transparent);
+    display: flex;
+    flex-direction: column;
+    z-index: 100;
+}
+
+.pdf-preview__sidebar-scroll {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    height: 0;
+    min-height: 100%;
+}
+.pdf-preview__thumb-item {
+    padding: 10px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background-color: transparent;
+    transition: background-color 0.2s;
+}
+
+.pdf-preview__thumb-item--active .pdf-preview__thumb-box {
+    outline: 1px solid var(--primary);
+    outline-offset: 0px;
+    border-color: var(--transparent);
+}
+
+.pdf-preview__thumb-box {
+    width: 120px;
+    background:var(--white);
+    border-radius: 4px;
+    box-shadow: 0px 1px 2px 0px rgba(10, 41, 55, 0.16);
+    outline: 1px solid hsla(0, 0%, 0%, 16%);
+    outline-offset: 0px;
+}
+
+.pdf-preview__thumb-label {
+    font-size: 11px;
+    color: var(--dark-50);
+    margin-top: 6px;
+}
+
+.pdf-preview__thumb-label--active {
+    color: var(--dark-100);
+}
+
+.pdf-preview__thumb-canvas-wrap {
+    position: relative;
+    width: 100%;
+    background-color: var(--dark-03);
+    overflow: hidden;
+}
+
+.pdf-preview__thumb-canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+.pdf-preview__main {
+    flex: 1;
+    height: 100%;
+    background-color: var(--transparent);
+    position: relative;
+    overflow: hidden;
+    min-width: 0;
+}
+
+.pdf-preview__page-wrap {
+    display: flex;
+    justify-content: center;
+    padding: 20px 0;
+    min-height: 500px;
+}
+
+.pdf-preview__page-shadow {
+    background-color: var(--white);
+    box-shadow: 0px 1px 2px 0px rgba(10, 41, 55, 0.16) ;
+    outline: 1px solid hsla(0, 0%, 0%, 16%);
+    outline-offset: 0px;
+}
+
+.pdf-preview__page {
+    position: relative;
+    display: inline-block;
+    background-color: var(--white);
+}
+
+.pdf-preview__page-canvas {
+    display: block;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    position: relative;
+    z-index: 2;
+}
+
+.pdf-preview__canvas--rendered {
+    opacity: 1;
+}
+
+.pdf-preview__text-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: auto;
+    user-select: text;
+    line-height: 1;
+    overflow: hidden;
+    z-index: 3;
+}
+.pdf-preview__skeleton {
+    background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 45%, #f0f0f0 65%);
+    background-size: 200% 100%;
+    animation: pdf-skeleton-shimmer 1.4s infinite;
+}
+
+.pdf-preview__skeleton-wrap {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+}
+.image-preview-bar {
+    z-index: 1001;
+}
+
+.pdf-preview__page-input-wrap {
+    padding: 0 10px;
+    gap: 4px;
+    align-items: center;
+}
+
+.new-preview-pagination-pdf-single-box {
+    min-width: 122px;
+    height: 36px;
+    padding: 0 4px 0 12px;
+    display: flex;
+    align-items: center;
+    background-color: #EFF1F2;
+    border-radius: 5px;
+    position: fixed;
+    bottom: 30px;
+    left: 30px;
+    gap: 12px;
+    z-index: 10;
+}
+
+.new-preview-pagination-pdf-page {
+    font-size: 12px;
+    font-weight: 400;
+}
+
+
+span.pdf-page-of {
+    color: rgb(0 0 0 / 50%);
+}
+
+.pdf-page-total {
+    color: rgb(0 0 0 / 66%);
+}
+
+.new-preview-pagination input {
+    border-radius: 6px;
+    background: var(--white);
+    padding: 4px 30px 4px 6px !important;
+    max-width: 62px;
+    height: 28px;
+    font-size: 12px;
+}
+
+.new-preview-pagination button {
+    border: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 5px;
+    position: absolute;
+    top: 50%;
+    right: 4px;
+    background-color: transparent;
+    transform: translate(0%, -50%);
+}
+.pdf-preview__loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    width: 100%;
+    color: var(--dark-100);
+}
+
+
+.pdf-preview__text-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: auto;
+    overflow: hidden;
+    line-height: 1;
+    opacity: 0.25;
+}
+
+.pdf-preview__text-layer span,
+.pdf-preview__text-layer br {
+    color: transparent;
+    position: absolute;
+    white-space: pre;
+    cursor: text;
+    transform-origin: 0% 0%;
+}
+
+.pdf-preview__text-layer ::selection {
+    background: rgba(0, 0, 255, 0.3);
+    color: transparent;
+}
+
+.pdf-preview__text-layer .highlight {
+    margin: -1px;
+    padding: 1px;
+    background-color: rgba(180, 0, 170, 0.2);
+    border-radius: 4px;
+}
+
+.pdf-preview__text-layer .highlight.appended {
+    position: initial;
+}
+
+.pdf-preview__text-layer .highlight.begin {
+    border-radius: 4px 0 0 4px;
+}
+
+.pdf-preview__text-layer .highlight.end {
+    border-radius: 0 4px 4px 0;
+}
+
+.pdf-preview__text-layer .highlight.middle {
+    border-radius: 0;
+}
+
+.pdf-preview__text-layer .highlight.selected {
+    background-color: rgba(0, 100, 0, 0.2);
+}
+/* Pdf preview end */
+
+
+
+/* Minimal PDF.js Text Layer CSS */
+.textLayer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  opacity: 1; /* Keep it 1 so we can select it, the text itself is transparent */
+  line-height: 1.0;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  cursor: text;
+}
+
+.textLayer > span {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+
+.textLayer .endOfContent {
+  display: block;
+  position: absolute;
+  left: 0px;
+  top: 100%;
+  right: 0px;
+  bottom: 0px;
+  z-index: -1;
+  cursor: default;
+  user-select: none;
+}
+
+/* ======================================= */
+/* FIX: ONLY highlight the actual text spans */
+/* ======================================= */
+.textLayer > span::selection {
+  background: rgba(0, 100, 255, 0.25) !important; /* Soft, transparent blue */
+  color: transparent !important;
+}
+
+.textLayer > span::-moz-selection {
+  background: rgba(0, 100, 255, 0.25) !important;
+  color: transparent !important;
+}
+
+/* Create an invisible bridge to close the vertical gaps between lines */
+.textLayer > span::after {
+  content: '';
+  position: absolute;
+  top: -20%;    /* Stretch upwards to touch the line above */
+  bottom: -20%; /* Stretch downwards to touch the line below */
+  left: 0;
+  right: 0;
+  z-index: -1;
+}
+
+/* Force the line-breaks and container edges to remain invisible */
+.textLayer::selection,
+.textLayer br::selection,
+.textLayer .endOfContent::selection {
+  background: transparent !important;
+  color: transparent !important;
+}
+
+/* Remove the blue focus outline from the PDF pages */
+.textLayer, 
+.pdf-preview__page,
+.pdf-preview__page-canvas {
+  outline: none !important;
+  border: none !important;
+}
+
+
+
+/* 1. Force the mouse to STAY as a text-selector everywhere on the page */
+.pdf-preview__page, 
+.textLayer {
+  cursor: text !important;
+}
+/* 2. Force text to be selectable, ignoring any global locks */
+.textLayer {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+}
+/* 3. Hide the ugly blue side-lines */
+.textLayer br::selection,
+.textLayer .endOfContent::selection {
+  background: transparent !important;
+  color: transparent !important;
+}
+/* 4. Ensure the blue focus outline is hidden */
+.pdf-preview__page,
+.pdf-preview__page-canvas,
+.textLayer {
+  outline: none !important;
+  border: none !important;
+}
