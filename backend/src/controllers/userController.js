@@ -7,7 +7,6 @@ import User from "../models/userModel.js";
 import { logger } from "#utils/logger";
 import { generateToken } from "../utils/generateLoginToken.js";
 
-
 //  User Register Controller
 export const registerUser = async (req, res) => {
     try {
@@ -27,7 +26,6 @@ export const registerUser = async (req, res) => {
         if (!emailRegex.test(normalizedEmail)) {
             return res.status(400).json({ success: false, message: "Email is invalid" })
         }
-
 
         //  validation for password - password must contains one upper case one special charcter and must 8 char long
         const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
@@ -61,8 +59,6 @@ export const registerUser = async (req, res) => {
         res.status(500).json({ success: false, message: error.message })
     }
 }
-
-
 
 //  for user Login
 export const userLogin = async (req, res) => {
@@ -147,7 +143,6 @@ export const userLogout = async (req, res) => {
         res.status(500).json({ success: false, message: error.message })
     }
 }
-
 
 //  get current user here 
 export const currentUser = async (req, res) => {

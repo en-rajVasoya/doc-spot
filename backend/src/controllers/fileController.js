@@ -1,11 +1,3 @@
-
-
-
-
-
-
-
-
 import fs from "fs";
 
 //  models - schema
@@ -18,12 +10,7 @@ import { logger } from "#utils/logger";
 import { notifySharedUsers } from "#utils/userNotification";
 import { updateParentFolderTimestamps } from "#utils/parentFolderTimestamp";
 
-
-
-
 //  helper function for socket notify all user that some change made
-
-
 
 // ------------------- CONTROLERS FOR FILE MANAGEMENT ----------------------------
 
@@ -314,17 +301,16 @@ export const getUserFiles = async (req, res) => {
     // --------------------------------------------------------------
 
     // 1) if front end sends a parent here so user is isnde a specific folder or parent is null so user is in the main Root leel 
-    const parentId =
+    const parentID =
       !req.query.parent || req.query.parent === "null" ? null : req.query.parent
 
     // 2) getting current logged in user
-    const currentUserId = req.user._id
+    const currentUserID = req.user._id
 
     // 3) get sorting parament from front end
     const sortBy = req.query.sortBy || "modified"     // default sorting by the modified
     const sortOrder = req.query.sortOrder || "desc"   // default is descending order
     const order = sortOrder === "asc" ? 1 : -1
-
 
     // --------------------------------------------------------------
     // ---- STEP 2: Build sort object
@@ -341,7 +327,6 @@ export const getUserFiles = async (req, res) => {
       sortField = "updatedAt"
     }
 
-
     // creating array of sort and type -1 folder always comes first then file
     const sortArray = [
       ["type", -1],
@@ -349,14 +334,12 @@ export const getUserFiles = async (req, res) => {
       ["createdAt", -1]    // if we have two same name item so newest one will appear first 
     ]
 
-
-
     // --------------------------------------------------------------
     // ---- STEP 3: User is browesing inside the folder so validation
     // ---------------------------------------------------------------
-    if (parentId) {
+    if (parentID) {
       // 1) check permission can user will have permission to view 
-      const permission = await getUserPermission(currentUserId, parentId)
+      const permission = await getUserPermission(currentUserID, parentID)
       if (!permission) {
         return res.status(403).json({
           success: false,
@@ -366,7 +349,7 @@ export const getUserFiles = async (req, res) => {
 
       // 2) if user have permission so fetch all items inside folder where paent is this folder and not trashed one
       const items = await uploadModel.find({
-        parent: parentId,
+        parent: parentID,
         isTrashed: { $ne: true },
         //  get the both folder or the file 
         $or: [
@@ -374,7 +357,7 @@ export const getUserFiles = async (req, res) => {
           { type: "file", uploadStatus: "completed" }
         ]
       })
-      .select("name type fileSize fileType createdAt updatedAt parent color isShared owner storagePath sharedWith")
+        .select("name type fileSize fileType createdAt updatedAt parent color isShared owner storagePath sharedWith")
         .populate("owner", "_id name profilePic")
         .sort(sortArray)
         .collation({ locale: "en", strength: 2 })   /// this is for sorting the case insensitive
@@ -406,7 +389,6 @@ export const getUserFiles = async (req, res) => {
       })
     }
 
-
     // ---------------------------------------------------------------
     // ---- STEP 4: Root level - fetch owned + shared together
     // ---------------------------------------------------------------
@@ -417,8 +399,8 @@ export const getUserFiles = async (req, res) => {
       $and: [
         {
           $or: [
-            { owner: currentUserId },    // current user owned items
-            { "sharedWith.userId": currentUserId }   // items shared with me
+            { owner: currentUserID },    // current user owned items
+            { "sharedWith.userId": currentUserID }   // items shared with me
           ]
         },
         {
@@ -431,8 +413,8 @@ export const getUserFiles = async (req, res) => {
           //  only root level item that i owned
           //  and shared items with me 
           $or: [
-            { owner: currentUserId, parent: null },
-            { "sharedWith.userId": currentUserId }
+            { owner: currentUserID, parent: null },
+            { "sharedWith.userId": currentUserID }
           ]
         }
       ]
@@ -443,7 +425,6 @@ export const getUserFiles = async (req, res) => {
       .sort(sortArray)
       .collation({ locale: "en", strength: 2 })     /// this is for sorting the case insensitive
       .lean()
-
 
     // ---------------------------------------------------------------
     // ---- STEP 5: Fix storage path and mark shared items
@@ -459,11 +440,11 @@ export const getUserFiles = async (req, res) => {
 
     // 2) in front end shared folder icon is diffrent so we mark them so rotned know to change this icon here
     const markedItems = allItems.map(item => {
-      const isSharedWithMe = item.owner?._id?.toString() !== currentUserId.toString()
+      const isSharedWithMe = item.owner?._id?.toString() !== currentUserID.toString()
 
       // find permission in shared folder current user is editor or the viewer
       const sharedEntry = item.sharedWith?.find(
-        s => s.userId?._id?.toString() === currentUserId.toString()
+        s => s.userId?._id?.toString() === currentUserID.toString()
       )
 
       return {
@@ -473,26 +454,17 @@ export const getUserFiles = async (req, res) => {
       }
     })
 
-
     // ---------------------------------------------------------
     // ---- STEP 6: Send response
     // ---------------------------------------------------------
-    return res.status(200).json({
-      success: true,
-      items: markedItems,
-      total: markedItems.length
-    })
+    return res.status(200).json({ success: true, items: markedItems, total: markedItems.length })
 
   } catch (error) {
     logger.error(error)
-    return res.status(500).json({
-      success: false,
-      message: error.message
-    })
+    return res.status(500).json({ success: false, message: error.message })
   }
 
 }
-
 
 // get current folder when user double cliks on the folder
 export const getFolderPath = async (req, res) => {
@@ -503,7 +475,7 @@ export const getFolderPath = async (req, res) => {
     // id: folder ID from URL
     const { id } = req.params;
     // userId: current logged in user
-    const userId = req.user._id
+    const userID = req.user._id
 
     // ------------------------------------------
     // --- STEP - 2 - build breadcrumb trail loop
@@ -512,18 +484,18 @@ export const getFolderPath = async (req, res) => {
     let currentId = id;
 
     while (currentId) {
-      const folder = await uploadModel.findOne({
+      const folderData = await uploadModel.findOne({
         _id: currentId,
         type: "folder"
       }).select("_id name parent owner sharedWith").lean();
 
-      if (!folder) break;
+      if (!folderData) break;
 
-      const permission = await getUserPermission(userId, folder._id)
+      const permission = await getUserPermission(userID, folderData._id)
       if (!permission) break;
 
-      trail.unshift({ id: folder._id, name: folder.name })
-      currentId = folder.parent
+      trail.unshift({ id: folderData._id, name: folderData.name })
+      currentId = folderData.parent
     }
 
     if (!trail.length) {
@@ -534,8 +506,7 @@ export const getFolderPath = async (req, res) => {
     // --- STEP - 3 - get user permissions for folder
     // -----------------------------------------
     // get the permission of the current folder so viewer or editore here 
-    const currentPermission = await getUserPermission(userId, id)
-
+    const currentPermission = await getUserPermission(userID, id)
 
     // ------------------------------------------
     // --- STEP - 4 - fetch current folder details and send response
@@ -551,11 +522,6 @@ export const getFolderPath = async (req, res) => {
   }
 }
 
-
-
-
-
-
 //  rename file and folders
 export const renameItem = async (req, res) => {
   try {
@@ -565,6 +531,7 @@ export const renameItem = async (req, res) => {
     // id: item ID
     // newName: new name to set
     const { id, newName } = req.body;
+    const userID = req.user._id;
 
     if (!newName || !newName.trim()) {
       return res.status(400).json({ message: "Name is required" });
@@ -574,7 +541,7 @@ export const renameItem = async (req, res) => {
     // --- STEP - 2 - check permissions
     // -----------------------------------------
     // here for shared folder or file check if owner or editor other wise permission denied
-    const permission = await getUserPermission(req.user._id, id)
+    const permission = await getUserPermission(userID, id)
     if (!permission || !["owner", "editor"].includes(permission)) {
       return res.status(403).json({ success: false, message: "Access denied" })
     }
@@ -583,11 +550,9 @@ export const renameItem = async (req, res) => {
     // --- STEP - 3 - find the item in database
     // -----------------------------------------
     //  first find the exact item here
-    const item = await uploadModel.findOne({
-      _id: id
-    })
+    const itemData = await uploadModel.findOne({ _id: id })
 
-    if (!item) {
+    if (!itemData) {
       return res.status(400).json({ success: false, message: "Not Found" })
     }
 
@@ -597,8 +562,8 @@ export const renameItem = async (req, res) => {
     //  prevent same name inside current folder
     const exists = await uploadModel.findOne({
       name: newName.trim(),
-      parent: item.parent,
-      owner: req.user._id,
+      parent: itemData.parent,
+      owner: userID,
       _id: { $ne: id },
       isTrashed: { $ne: true }
     })
@@ -611,27 +576,23 @@ export const renameItem = async (req, res) => {
     // --- STEP - 5 - update name and save
     // -----------------------------------------
     //  rename it
-    item.name = newName.trim()
-    await item.save()
+    itemData.name = newName.trim()
+    await itemData.save()
 
     // ------------------------------------------
     // --- STEP - 6 - notify others and send response
     // -----------------------------------------
     // tell other users about the renamed item so their screen updates automatically
-    await notifySharedUsers(id, "item_renamed", { itemId: id, parentId: item.parent, newName: item.name }, req.emitToUser)
+    await notifySharedUsers(id, "item_renamed", { itemId: id, parentId: itemData.parent, newName: itemData.name }, req.emitToUser)
 
 
-    res.json({ success: true, item });
+    res.json({ success: true, item: itemData });
 
   } catch (error) {
     logger.error(error);
     res.status(500).json({ message: error.message });
   }
 }
-
-
-
-
 
 //  For delete files and folders
 export const deleteItem = async (req, res) => {
@@ -640,49 +601,46 @@ export const deleteItem = async (req, res) => {
     // --- STEP - 1 - get item ID from body
     // -----------------------------------------
     const { id } = req.body;
-
+    const userID = req.user._id;
 
     // ------------------------------------------
     // --- STEP - 2 - verify user is owner
     // -----------------------------------------
     //  here for shared folder or file only owner can delete them
-    const permission = await getUserPermission(req.user._id, id)
+    const permission = await getUserPermission(userID, id)
     if (permission !== "owner") {
       return res.status(403).json({ success: false, message: "Access denied" })
     }
 
-    const item = await uploadModel.findOne({
-      _id: id
-    });
+    const itemData = await uploadModel.findOne({ _id: id });
 
-    if (!item) {
+    if (!itemData) {
       return res.status(404).json({ message: "Not Found" });
     }
-
 
     // ------------------------------------------
     // --- STEP - 3 - notify users via socket
     // -----------------------------------------
     // tell other users about the deleted item so it disappears from their screen
-    await notifySharedUsers(item.parent || id, "item_deleted", { itemId: id, parentId: item.parent }, req.emitToUser)
+    await notifySharedUsers(itemData.parent || id, "item_deleted", { itemId: id, parentId: itemData.parent }, req.emitToUser)
 
 
     // ------------------------------------------
     // --- STEP - 4 - delete the item from disk and database
     // -----------------------------------------
     // FILE check here for storage count before deleting from disk
-    if (item.type === "file") {
-      const count = await uploadModel.countDocuments({ storagePath: item.storagePath })
-      if (count === 1 && item.storagePath && fs.existsSync(item.storagePath)) {
-        fs.unlinkSync(item.storagePath)
+    if (itemData.type === "file") {
+      const count = await uploadModel.countDocuments({ storagePath: itemData.storagePath })
+      if (count === 1 && itemData.storagePath && fs.existsSync(itemData.storagePath)) {
+        fs.unlinkSync(itemData.storagePath)
       }
       await uploadModel.deleteOne({ _id: id });
       return res.status(200).json({ success: true, message: "Deleted" });
     }
 
     // if delete folder delete also nested children recursive delete
-    const deleteRecursive = async (parentId) => {
-      const children = await uploadModel.find({ parent: parentId });
+    const deleteRecursive = async (parentID) => {
+      const children = await uploadModel.find({ parent: parentID });
 
       for (const child of children) {
         if (child.type === "folder") {
@@ -708,10 +666,6 @@ export const deleteItem = async (req, res) => {
   }
 };
 
-
-
-
-
 //  here user can change folder color like red green yellow
 export const changeItemColor = async (req, res) => {
   try {
@@ -719,6 +673,7 @@ export const changeItemColor = async (req, res) => {
     // --- STEP - 1 - get folder IDs and color from body
     // -----------------------------------------
     const { ids, color } = req.body;
+    const userID = req.user._id;
 
     //  validation - if no folder selection
     if (!ids || !Array.isArray(ids) || ids.length === 0) {
@@ -730,13 +685,12 @@ export const changeItemColor = async (req, res) => {
       return res.status(400).json({ success: false, message: "Please select color" })
     }
 
-
     // ------------------------------------------
     // --- STEP - 2 - verify permissions for all items
     // -----------------------------------------
     //  check here permission here only owner and editor have 
     for (const id of ids) {
-      const permission = await getUserPermission(req.user._id, id)
+      const permission = await getUserPermission(userID, id)
       if (!permission || !["owner", "editor"].includes(permission)) {
         return res.status(403).json({ success: false, message: "Access denied" })
       }
@@ -753,8 +707,7 @@ export const changeItemColor = async (req, res) => {
       {
         $set: { color }
       }
-    )
-
+    );
 
     // ------------------------------------------
     // --- STEP - 4 - notify users via socket
@@ -764,7 +717,6 @@ export const changeItemColor = async (req, res) => {
       await notifySharedUsers(id, "item_color_changed", { itemId: id, color }, req.emitToUser)
     }
 
-
     return res.status(200).json({ success: true, message: "Color Changed" })
 
   } catch (error) {
@@ -773,54 +725,46 @@ export const changeItemColor = async (req, res) => {
   }
 }
 
-
-
-
-
-
 //  movine folder or file here 
 export const moveItem = async (req, res) => {
   try {
     // ------------------------------------------
     // --- STEP - 1 - get item ID and destination ID
     // -----------------------------------------
-    const { itemId, destinationId } = req.body;
-
+    const { itemId: itemID, destinationId: destinationID } = req.body;
 
     // ------------------------------------------
     // --- STEP - 2 - verify permissions on item
     // -----------------------------------------
     //  checking here permission if owner or editor
-    const permission = await getUserPermission(req.user._id, itemId)
-    console.log("permission", permission)
+    const permission = await getUserPermission(req.user._id, itemID)
+
     if (!permission || !["owner", "editor"].includes(permission)) {
       return res.status(403).json({ success: false, message: "Access denied" })
     }
 
-    const item = await uploadModel.findOne({ _id: itemId })
-    if (!item) {
+    const itemData = await uploadModel.findOne({ _id: itemID })
+    if (!itemData) {
       return res.status(404).json({ success: false, message: "Item not found" })
     }
 
     // editor can only move their own items not owenr items 
-    if (permission === "editor" && item.owner.toString() !== req.user._id.toString()) {
+    if (permission === "editor" && itemData.owner.toString() !== req.user._id.toString()) {
       return res.status(403).json({ success: false, message: "You can only move items you uploaded" })
     }
-
-
 
     // ------------------------------------------
     // --- STEP - 3 - check if moving to same folder or itself
     // -----------------------------------------
     // if folder or file already in that location
-    const destIdStr = destinationId ? destinationId.toString() : null
-    const currentParentStr = item.parent ? item.parent.toString() : null
+    const destIdStr = destinationID ? destinationID.toString() : null
+    const currentParentStr = itemData.parent ? itemData.parent.toString() : null
     if (currentParentStr === destIdStr) {
       return res.status(400).json({ success: false, message: "item is already in this folder" })
     }
 
     // can't move into itself
-    if (destinationId && item._id.toString() === destinationId.toString()) {
+    if (destinationID && itemData._id.toString() === destinationID.toString()) {
       return res.status(400).json({ success: false, message: "Cannot move a folder into itself" });
     }
 
@@ -828,14 +772,14 @@ export const moveItem = async (req, res) => {
     // --- STEP - 4 - verify destination permissions and status
     // -----------------------------------------
     // validation destination folder exists or not
-    if (destinationId) {
-      const destPermission = await getUserPermission(req.user._id, destinationId)
+    if (destinationID) {
+      const destPermission = await getUserPermission(req.user._id, destinationID)
       if (!destPermission || !["owner", "editor"].includes(destPermission)) {
         return res.status(403).json({ success: false, message: "Access denied" })
       }
 
       const destination = await uploadModel.findOne({
-        _id: destinationId,
+        _id: destinationID,
         type: "folder"
       })
       if (!destination) {
@@ -850,10 +794,10 @@ export const moveItem = async (req, res) => {
     // --- STEP - 5 - prevent moving folder into its own subfolder
     // -----------------------------------------
     // circular reference check
-    if (item.type === "folder" && destinationId) {
-      let currentId = destinationId;
+    if (itemData.type === "folder" && destinationID) {
+      let currentId = destinationID;
       while (currentId) {
-        if (currentId.toString() === item._id.toString()) {
+        if (currentId.toString() === itemData._id.toString()) {
           return res.status(400).json({
             message: "Cannot move a folder into its own subfolder"
           });
@@ -869,35 +813,35 @@ export const moveItem = async (req, res) => {
     // -----------------------------------------
     // shared folder: editor-uploaded items keep editor as owner until someone else moves them
     const targetOwnerId =
-      item.owner.toString() !== req.user._id.toString()
+      itemData.owner.toString() !== req.user._id.toString()
         ? req.user._id
-        : item.owner
+        : itemData.owner
 
     // name conflict check (scoped to target owner)
     const conflict = await uploadModel.findOne({
-      name: item.name,
-      parent: destinationId || null,
+      name: itemData.name,
+      parent: destinationID || null,
       owner: targetOwnerId,
-      _id: { $ne: itemId },
+      _id: { $ne: itemID },
       isTrashed: { $ne: true }
     })
     if (conflict) {
       return res.status(400).json({
-        message: `A ${conflict.type} named "${item.name}" already exists in the destination`
+        message: `A ${conflict.type} named "${itemData.name}" already exists in the destination`
       });
     }
 
-    const oldParent = item.parent
-    item.parent = destinationId || null
+    const oldParent = itemData.parent
+    itemData.parent = destinationID || null
 
     // ------------------------------------------
     // --- STEP - 7 - transfer ownership if needed and save
     // -----------------------------------------
     // transfer ownership only in shared-folder case (e.g. main owner moving editor upload)
-    if (item.owner.toString() !== req.user._id.toString()) {
-      item.owner = req.user._id
+    if (itemData.owner.toString() !== req.user._id.toString()) {
+      itemData.owner = req.user._id
 
-      if (item.type === "folder") {
+      if (itemData.type === "folder") {
         const updateOwnerRecursive = async (parentId, newOwnerId) => {
           const children = await uploadModel.find({ parent: parentId })
           for (const child of children) {
@@ -908,15 +852,15 @@ export const moveItem = async (req, res) => {
             }
           }
         }
-        await updateOwnerRecursive(item._id, req.user._id)
+        await updateOwnerRecursive(itemData._id, req.user._id)
       }
     }
 
-    await item.save()
+    await itemData.save()
 
     const movedItem = {
-      ...item.toObject(),
-      storagePath: item.storagePath ? item.storagePath.split("/files")[1]?.replace(/\\/g, "/") : null,
+      ...itemData.toObject(),
+      storagePath: itemData.storagePath ? itemData.storagePath.split("/files")[1]?.replace(/\\/g, "/") : null,
       owner: {
         _id: req.user._id,
         name: req.user.name,
@@ -924,19 +868,18 @@ export const moveItem = async (req, res) => {
       }
     }
 
-
     // ------------------------------------------
     // --- STEP - 8 - notify users and send response
     // -----------------------------------------
     // tell users in the old folder to remove the item from their screen
     if (oldParent) {
-      await notifySharedUsers(oldParent, "item_moved", { itemId, oldParent, newParent: destinationId || null, movedItem }, req.emitToUser)
+      await notifySharedUsers(oldParent, "item_moved", { itemId: itemID, oldParent, newParent: destinationID || null, movedItem }, req.emitToUser)
     }
-    // await notifySharedUsers(itemId, "item_moved", { itemId, oldParent, newParent: destinationId || null, movedItem }, req.emitToUser)
+    // await notifySharedUsers(itemId, "item_moved", { itemId, oldParent, newParent: destinationID || null, movedItem }, req.emitToUser)
 
     // tell users in the new folder to show the new item on their screen
-    if (destinationId) {
-      await notifySharedUsers(destinationId, "item_moved", { itemId, oldParent, newParent: destinationId || null, movedItem }, req.emitToUser)
+    if (destinationID) {
+      await notifySharedUsers(destinationID, "item_moved", { itemId: itemID, oldParent, newParent: destinationID || null, movedItem }, req.emitToUser)
     }
 
     res.json({ success: true, item: movedItem });
@@ -947,10 +890,6 @@ export const moveItem = async (req, res) => {
   }
 }
 
-
-
-
-
 //  copy item here 
 export const copyItem = async (req, res) => {
   try {
@@ -958,13 +897,15 @@ export const copyItem = async (req, res) => {
     // --- STEP - 1 - get item ID and destination ID
     // -----------------------------------------
     const { itemId, destinationId } = req.body;
-
+    const userID = req.user._id;
+    const userName = req.user.name;
+    const userProfilePic = req.user.profilePic;
 
     // ------------------------------------------
     // --- STEP - 2 - verify permissions to copy
     // -----------------------------------------
     //  for shared folder and file only owenr and editor
-    const permission = await getUserPermission(req.user._id, itemId)
+    const permission = await getUserPermission(userID, itemId)
     if (!permission || permission === "viewer") {
       return res.status(403).json({ success: false, message: "Viewers cannot copy items" })
     }
@@ -973,8 +914,8 @@ export const copyItem = async (req, res) => {
     // --- STEP - 3 - fetch item being copied
     // -----------------------------------------
     // ── 1. Fetch item being copied ──────────────────────────────────
-    const item = await uploadModel.findOne({ _id: itemId });
-    if (!item) {
+    const itemData = await uploadModel.findOne({ _id: itemId });
+    if (!itemData) {
       return res.status(404).json({ message: "Item not found" });
     }
 
@@ -983,7 +924,7 @@ export const copyItem = async (req, res) => {
     // -----------------------------------------
     // ── 2. Validate destination exists ─────────────────────────────
     if (destinationId) {
-      const destPermission = await getUserPermission(req.user._id, destinationId)
+      const destPermission = await getUserPermission(userID, destinationId)
       if (!destPermission || !["owner", "editor"].includes(destPermission)) {
         return res.status(403).json({ success: false, message: "Access denied" })
       }
@@ -1004,7 +945,7 @@ export const copyItem = async (req, res) => {
     // --- STEP - 5 - handle name conflicts
     // -----------------------------------------
     // ── 3. Name conflict check ──────────────────────────────────────
-    let copyName = item.name;
+    let copyName = itemData.name;
     const conflict = await uploadModel.findOne({
       name: copyName,
       parent: destinationId || null,
@@ -1030,7 +971,7 @@ export const copyItem = async (req, res) => {
         name: newName || sourceItem.name,
         type: sourceItem.type,
         parent: newParentId,
-        owner: req.user._id,
+        owner: userID,
         fingerprint: sourceItem.fingerprint,
         fileSize: sourceItem.fileSize,
         fileType: sourceItem.fileType,
@@ -1062,7 +1003,7 @@ export const copyItem = async (req, res) => {
     // --- STEP - 7 - execute copy, notify users, send response
     // -----------------------------------------
     // ── 5. Do the copy ──────────────────────────────────────────────
-    const newItem = await copyRecursive(item, destinationId || null, copyName);
+    const newItem = await copyRecursive(itemData, destinationId || null, copyName);
 
     const fixedItem = {
       ...newItem.toObject(),
@@ -1070,12 +1011,11 @@ export const copyItem = async (req, res) => {
         ? newItem.storagePath.split("files")[1]?.replace(/\\/g, "/")
         : null,
       owner: {
-        _id: req.user._id,
-        name: req.user.name,
-        profilePic: req.user.profilePic
+        _id: userID,
+        name: userName,
+        profilePic: userProfilePic
       }
     }
-
 
     // tell other users about the copied item so it shows on their screen
     await notifySharedUsers(destinationId || null, "item_copied", {
@@ -1091,11 +1031,6 @@ export const copyItem = async (req, res) => {
   }
 };
 
-
-
-
-
-
 //  for creating new empty folde here
 export const createFolder = async (req, res) => {
   try {
@@ -1105,8 +1040,11 @@ export const createFolder = async (req, res) => {
     // name: name for the new folder
     // parentId: parent directory ID of new folder
     const { name, parentId } = req.body;
+
     // userId: authorized user ID from auth middleware
-    const userId = req.user._id
+    const userID = req.user._id;
+    const userName = req.user.name;
+    const userProfilePic = req.user.profilePic;
 
     if (!name || !name.trim()) {
       return res.status(400).json({ message: "Folder name is required" })
@@ -1127,7 +1065,7 @@ export const createFolder = async (req, res) => {
       }
 
       // permission: permission level of current user on parent folder
-      const permission = await getUserPermission(userId, parentId)
+      const permission = await getUserPermission(userID, parentId)
       if (!permission || !["owner", "editor"].includes(permission)) {
         return res.status(403).json({
           success: false,
@@ -1144,7 +1082,7 @@ export const createFolder = async (req, res) => {
     const exists = await uploadModel.findOne({
       name,
       parent: parentId || null,
-      owner: userId,
+      owner: userID,
       type: "folder",
       isTrashed: { $ne: true }
     })
@@ -1161,7 +1099,7 @@ export const createFolder = async (req, res) => {
     const folder = await uploadModel.create({
       name,
       parent: parentId || null,
-      owner: userId,
+      owner: userID,
       type: "folder"
     })
 
@@ -1171,9 +1109,9 @@ export const createFolder = async (req, res) => {
     const folderWithOwner = {
       ...folder.toObject(),
       owner: {
-        _id: req.user._id,
-        name: req.user.name,
-        profilePic: req.user.profilePic
+        _id: userID,
+        name: userName,
+        profilePic: userProfilePic
       }
     }
 

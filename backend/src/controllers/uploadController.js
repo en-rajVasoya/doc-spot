@@ -4,7 +4,6 @@ import path from "path"
 import multer from "multer"
 import { v4 as uuidv4 } from "uuid";
 
-
 //  mongodb Schemas
 import mongoose from "mongoose";
 import uploadModel from "#models/uploadModel";
@@ -20,13 +19,9 @@ import { addToScanQueue } from "../virusTotal/scanQueue.js";
 import { scanFileWithVirusTotal } from "../virusTotal/virusTotalWorker.js";
 import { scanFileWithClamAV } from "../virusTotal/clamAVWorker.js";
 
-
 //  utils - helper
 import { logger } from "#utils/logger";
 import { updateParentFolderTimestamps } from "#utils/parentFolderTimestamp";
-
-
-
 
 
 //  first create out /file folder if not exist here
@@ -34,7 +29,6 @@ import { updateParentFolderTimestamps } from "#utils/parentFolderTimestamp";
 // if (!fs.existsSync(FILES_DIR)) {
 //   fs.mkdirSync(FILES_DIR, { recursive: true })
 // }
-
 
 
 // small files still use memory - fine for small files under 1MB
@@ -46,8 +40,6 @@ if (!fs.existsSync(TEMP_DIR)) {
   fs.mkdirSync(TEMP_DIR, { recursive: true })
 }
 
-
-
 // here helper function of getting first 2 char of upload id to make folder here
 const getBucketPath = (uploadId) => {
   const bucket = uploadId.substring(0, 2)
@@ -58,14 +50,10 @@ const getBucketPath = (uploadId) => {
   return bucketDir
 }
 
-
-
-
 // Init Uplaod controller
 // Note - it will only runs when file size is greter then 1MB - otherwise uploadSmallBAtch will run 
 export const initUpload = async (req, res) => {
   try {
-
     //  ---------------------------------------------
     // --- STEP -1 - get infor from body
     // ---------------------------------------------
@@ -76,7 +64,6 @@ export const initUpload = async (req, res) => {
     if (req.body.fileName === ".keep") {
       return res.json({ success: true, status: "skipped" });
     }
-
 
     //  ---------------------------------------------------------------------
     // --- STEP - 2 - Chck permission if user is uploading item inside folder
@@ -109,8 +96,6 @@ export const initUpload = async (req, res) => {
       }
     }
 
-
-
     //  --------------------------------------------------------------------------
     // --- STEP - 3 - Check security .exe adn mime type block with helper function
     // ---------------------------------------------------------------------------
@@ -118,7 +103,6 @@ export const initUpload = async (req, res) => {
     if (!security.safe) {
       return res.status(400).json({ success: false, message: security.reason, blocked: true })
     }
-
 
     //  -----------------------------------------------
     // --- STEP - 4 - Item status check already uploded or not
@@ -144,7 +128,6 @@ export const initUpload = async (req, res) => {
         await uploadModel.deleteOne({ _id: existing._id })
         await chunkModel.deleteMany({ uploadId: existing.uploadId })   // chunk schema all dleete that chunks here
         //  below we are creating new uplaod fresh
-
       } else {
         //  if item is resumeble - send uplaodId and already uplaoded chunk in resposne
         const uploadedChunks = await chunkModel.find({ uploadId: existing.uploadId }).select("chunkIndex -_id")
@@ -156,8 +139,6 @@ export const initUpload = async (req, res) => {
         })
       }
     }
-
-
 
     //  --------------------------------------------------------------------------
     // --- STEP - 5 - Item is a new upload so fresh start
@@ -183,8 +164,6 @@ export const initUpload = async (req, res) => {
     fs.ftruncateSync(fd, fileSize)
     fs.closeSync(fd)    //after allocation file close that file
 
-
-
     //  --------------------------------------------------------------------------
     // --- STEP - 6 - Create new fresh record in mongo db with all field
     // ---------------------------------------------------------------------------
@@ -205,7 +184,6 @@ export const initUpload = async (req, res) => {
       // uploadedChunks removed — using chunkModel collection now
     })
 
-
     //  here we are saving  the item id in the database liek with sahred ids if file is shared or not 
     const result = await uploadModel.updateOne(
       {
@@ -219,8 +197,6 @@ export const initUpload = async (req, res) => {
       }
     )
 
-
-
     //  --------------------------------------------------------------------------
     // --- STEP - 7 - Send response
     // ---------------------------------------------------------------------------
@@ -232,10 +208,6 @@ export const initUpload = async (req, res) => {
 
   }
 }
-
-
-
-
 
 // POST - upload/chunk
 //  here we are using indexes and starts becuase if we recive multiple random batch at same time so this will help us to write any chunk at correct position
@@ -249,11 +221,6 @@ export const uploadChunk = async (req, res) => {
   }
 }
 
-
-
-
-
-
 //  STEP - 3 after uploading all chunk save it
 export const completeUpload = async (req, res) => {
   try {
@@ -263,13 +230,11 @@ export const completeUpload = async (req, res) => {
     const { uploadId } = req.body;
     const owner = req.user._id
 
-
     //  --------------------------------------------------------------------------
     // --- STEP - 2 - Check the item record in DB
     // ---------------------------------------------------------------------------
     const record = await uploadModel.findOne({ uploadId, owner })
     if (!record) return res.status(404).json({ success: false, message: "uploadModel not found" })
-
 
     //  --------------------------------------------------------------------------
     // --- STEP - 3 - Get all chunk uplaoded count with uplaod id and match with original count 
@@ -284,13 +249,11 @@ export const completeUpload = async (req, res) => {
       missingCount: record.totalChunks - uploadedCount
     })
 
-
     //  here we are finding the totoal chunks from the main Upload Modal and total chunks uplaoded in chunks modal 
     if (uploadedCount !== record.totalChunks) {
       console.error(`[COMPLETE ERROR] Mismatch for ${record.name}. id: ...${uploadId.slice(-6)} | Found: ${uploadedCount}, Expected: ${record.totalChunks}`);
       return res.status(400).json({ success: false, message: "Missing chunks" })
     }
-
 
     //  --------------------------------------------------------------------------
     // --- STEP - 3 - Chunk middleware clear caching after uplaod complete 
@@ -300,8 +263,6 @@ export const completeUpload = async (req, res) => {
     // releaseFd(uploadId)
     // clearUploadCache(uploadId)
     // clearWriteQueue(uploadId)
-
-
 
     //  --------------------------------------------------------------------------
     // --- STEP - 4 - FIle Renaming replace .tmp with actual item extension
@@ -316,7 +277,6 @@ export const completeUpload = async (req, res) => {
       fs.renameSync(oldPath, newPath)
     }
 
-
     //  --------------------------------------------------------------------------
     // --- STEP - 5 - Update mongo record for item form uploading to completed
     // ---------------------------------------------------------------------------
@@ -330,7 +290,6 @@ export const completeUpload = async (req, res) => {
         lastActivity: new Date()
       }
     )
-
 
     //  --------------------------------------------------------------------------
     // --- STEP - 6 - Replace Old item data with new item 
@@ -371,8 +330,6 @@ export const completeUpload = async (req, res) => {
       }
     }
 
-
-
     //  --------------------------------------------------------------------------
     // --- STEP - 7 - send socket to users owner + shared people
     // ---------------------------------------------------------------------------
@@ -408,14 +365,11 @@ export const completeUpload = async (req, res) => {
       }
     }
 
-
     //  --------------------------------------------------------------------------
     // --- STEP - 7 - After item uplaoded completed so delete that specific item chunk schema
     // ---------------------------------------------------------------------------
     await chunkModel.deleteMany({ uploadId })
     res.json({ success: true, id: record._id })
-
-
 
     //  --------------------------------------------------------------------------
     // --- STEP - 8 - Scanning the file with CalmAv and virus total
@@ -436,8 +390,6 @@ export const completeUpload = async (req, res) => {
     res.status(500).json({ success: false, message: error.message })
   }
 }
-
-
 
 
 // NOTE - not using this function now 
@@ -466,24 +418,16 @@ export const completeUpload = async (req, res) => {
 // }
 
 
-
-
-
-
-
-
 // NOTE - this function will run when user will upload a sall files like under 1-MB
 // For small files we are not using busboy we directly saving file to disk here 
 export const uploadSmallBatch = async (req, res) => {
   try {
-
     //  --------------------------------------------------------------------------
     // --- STEP - 1 - Getting input from the body and current useer
     // ---------------------------------------------------------------------------
     const owner = req.user._id;
     const metadata = JSON.parse(req.body.metadata);
     const parentId = metadata[0]?.parentId || null;
-
 
     //  ---------------------------------------------------------------------
     // --- STEP - 2 - Chck permission if user is uploading item inside folder
@@ -511,14 +455,10 @@ export const uploadSmallBatch = async (req, res) => {
 
     const results = [];
 
-
-
     //  ---------------------------------------------------------------------
     // --- STEP - 3 - Getting fingerprint 
     // ---------------------------------------------------------------------
     const fingerprints = metadata.map(m => m.fingerprint);
-
-
 
     //  ---------------------------------------------------------------------
     // --- STEP - 4 - DB check current user_id have already this fingerprints in db 
@@ -530,8 +470,6 @@ export const uploadSmallBatch = async (req, res) => {
       isTrashed: { $ne: true }
     }).select("fingerprint parent uploadStatus _id");
 
-
-
     //  ---------------------------------------------------------------------
     // --- STEP - 5 - saveing all exsiting files unique key into the Map
     // ---------------------------------------------------------------------
@@ -540,9 +478,6 @@ export const uploadSmallBatch = async (req, res) => {
       const key = `${f.fingerprint}_${f.parent || "null"}`;
       existingMap.set(key, f);
     });
-
-
-
 
     //  ---------------------------------------------------------------------
     // --- STEP - 6 - Queues to hold files and database tasks to run in parallel
@@ -553,7 +488,6 @@ export const uploadSmallBatch = async (req, res) => {
     const pendingDbRecords = [];    // file records waiting to be saved to database
     const pendingDiskWrites = [];   // files waiting to be saved to disk
     const pendingReplacements = []; // files that need to replace an existing file
-
 
     //  ---------------------------------------------------------------------
     // --- STEP - 7 - Check small files security and block un secured file liek .exe
@@ -570,9 +504,6 @@ export const uploadSmallBatch = async (req, res) => {
       if (meta.fileName === ".keep") return { safe: true };
       return checkFileSecurity(meta.fileName, file.buffer.slice(0, 4100));
     }));
-
-
-
 
     //  ---------------------------------------------------------------------
     // --- STEP - 8 - Loop through all files and uplaod
@@ -603,7 +534,6 @@ export const uploadSmallBatch = async (req, res) => {
         results.push({ fingerprint: meta.fingerprint, status: "completed", id: existing._id });
         continue;
       }
-
 
       //  ---------------------------------------------------------------------
       // --- STEP - 9 - Write file in disk
@@ -649,8 +579,6 @@ export const uploadSmallBatch = async (req, res) => {
         }
       });
 
-
-
       //  ---------------------------------------------------------------------
       // --- STEP - 10 - If same file is there so we are replacing the original file 
       // ---------------------------------------------------------------------
@@ -668,7 +596,6 @@ export const uploadSmallBatch = async (req, res) => {
       results.push({ fingerprint: meta.fingerprint, status: "completed", id: fileId });
     }
 
-
     //  ---------------------------------------------------------------------
     // --- STEP - 11 - Disk write and mongo record create for 50 files
     // ---------------------------------------------------------------------
@@ -682,7 +609,6 @@ export const uploadSmallBatch = async (req, res) => {
     if (parentId) {
       await updateParentFolderTimestamps(parentId);
     }
-
 
     //  ---------------------------------------------------------------------
     // --- STEP - 12 - if any new item is repalce it with old item so repalce and trasnfer data here
@@ -719,7 +645,6 @@ export const uploadSmallBatch = async (req, res) => {
       await uploadModel.deleteOne({ _id: replaceTask.replacesFileId })
     }
 
-
     //  socket notification moved to frontend — emit once at end of session instead of per batch
     // if (parentId) {
     //   let currentParent = await uploadModel.findById(parentId).select("sharedWith parent owner")
@@ -740,12 +665,10 @@ export const uploadSmallBatch = async (req, res) => {
     //   }
     // }
 
-
     //  ---------------------------------------------------------------------
     // --- STEP - 13 - Send resposne
     // ---------------------------------------------------------------------
     res.json({ success: true, results });
-
 
     //  ---------------------------------------------------------------------
     // --- STEP - 14 - File scanning 
@@ -913,7 +836,6 @@ export const createFoldersBulk = async (req, res) => {
       })
     }
 
-
      // Update parent folder modified timestamps recursively
     if (parentId) {
       await updateParentFolderTimestamps(parentId);
@@ -926,8 +848,6 @@ export const createFoldersBulk = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 }
-
-
 
 export const checkFilesBulk = async (req, res) => {
   try {
@@ -983,11 +903,6 @@ export const checkFilesBulk = async (req, res) => {
   }
 }
 
-
-
-
-
-
 export const cancelUpload = async (req, res) => {
   try {
     const { uploadId } = req.params;
@@ -1031,8 +946,6 @@ export const cancelUpload = async (req, res) => {
     res.status(500).json({ success: false, message: error.message })
   }
 }
-
-
 
 export const cancelFolderUpload = async (req, res) => {
   try {
@@ -1126,18 +1039,12 @@ export const cancelFolderUpload = async (req, res) => {
   }
 }
 
-
-
-
-
-
 //  here this controller here is for the when user upload a same name folder and user select replace this folder with new this will run
 //  and we are moveing all info like shared with and coloer from old folder to new folder here
 export const completeFolderReplace = async (req, res) => {
   try {
     const { newFolderId, replacesFileId } = req.body;
     const owner = req.user._id;
-
 
     //  first find the older folder here
     const oldFolder = await uploadModel.findOne({ _id: replacesFileId, owner });
@@ -1151,7 +1058,6 @@ export const completeFolderReplace = async (req, res) => {
       return res.status(404).json({ success: false, message: "New folder not found" })
     }
 
-
     //  now trasnfer all shared data from old folder to new folder here
     await uploadModel.updateOne(
       { _id: newFolderId },
@@ -1162,12 +1068,10 @@ export const completeFolderReplace = async (req, res) => {
       }
     )
 
-
     // Update parent folder modified timestamps recursively
     if (newFolder.parent) {
       await updateParentFolderTimestamps(newFolder.parent);
     }
-
 
     // now after upload done of new folder delete whole old folder here
     const deleteRecursive = async (parentId) => {
@@ -1203,9 +1107,6 @@ export const completeFolderReplace = async (req, res) => {
     res.status(500).json({ success: false, message: error.message })
   }
 }
-
-
-
 
 export const notifyUploadComplete = async (req, res) => {
   try {

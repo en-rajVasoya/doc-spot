@@ -5,12 +5,10 @@ import uploadModel from "#models/uploadModel"
 import { getUserPermission } from "#utils/userPermissionUtil";
 import { logger } from "#utils/logger"
 
-
 //  helper functino when user sarc (), [] something here 
 const escapeRegex = (string) => {
     return string.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
 };
-
 
 export const searchFiles = async (req, res) => {
     try {
@@ -20,7 +18,7 @@ export const searchFiles = async (req, res) => {
         // ---- STEP 1: Get query and filter details from request
         // ##################################################
         const { query, fileType, dateFrom, dateTo, ownerFilter, location, folderId, personIds } = req.query
-        const userId = req.user._id;
+        const userID = req.user._id;
 
         console.time("⏱️ Shared Folders BFS");
 
@@ -29,7 +27,7 @@ export const searchFiles = async (req, res) => {
         // ##################################################
         // get folders shared with this user from database
         const sharedFolders = await uploadModel.find({
-            "sharedWith.userId": userId,
+            "sharedWith.userId": userID,
             type: "folder",
             isTrashed: { $ne: true }
         }).select("_id").lean()
@@ -67,7 +65,6 @@ export const searchFiles = async (req, res) => {
         // }).select("_id").lean();
         // ownedFolders.forEach(f => allSharedFolderIds.add(f._id.toString()));
 
-
         // ##################################################
         // ---- STEP 4: Start building the search query filter
         // ##################################################
@@ -87,13 +84,13 @@ export const searchFiles = async (req, res) => {
         // ##################################################
         if (location === "my-docspot") {
             // search only inside user's own drive
-            filter.owner = userId
+            filter.owner = userID
         } else if (location === "trash") {
             // search only inside user's trash
-            filter.owner = userId
+            filter.owner = userID
         } else if (location === "specific-folder" && folderId) {
             // search inside a specific folder and check permission
-            const permission = await getUserPermission(userId, folderId)
+            const permission = await getUserPermission(userID, folderId)
             if (!permission) {
                 return res.status(403).json({ success: false, message: "Access denied" })
             }
@@ -117,23 +114,21 @@ export const searchFiles = async (req, res) => {
             filter.parent = { $in: allFolderIds }
             filter.$and.push({
                 $or: [
-                    { owner: userId },
-                    { "sharedWith.userId": userId },
+                    { owner: userID },
+                    { "sharedWith.userId": userID },
                     { parent: { $in: allFolderIds } }
                 ]
             })
-
         } else {
             // search everywhere (my drive, shared files, or inside shared folders)
             filter.$and.push({
                 $or: [
-                    { owner: userId },
-                    { "sharedWith.userId": userId },
+                    { owner: userID },
+                    { "sharedWith.userId": userID },
                     { parent: { $in: Array.from(allSharedFolderIds) } }
                 ]
             })
         }
-
 
         // ##################################################
         // ---- STEP 6: Filter by text search query ---------
@@ -141,7 +136,6 @@ export const searchFiles = async (req, res) => {
         if (query && query.trim() !== "") {
             filter.name = { $regex: escapeRegex(query.trim()), $options: "i" }
         }
-
 
         // ##################################################
         // ---- STEP 7: Filter by type of file --------------
@@ -164,7 +158,6 @@ export const searchFiles = async (req, res) => {
 
         }
 
-
         // ##################################################
         // ---- STEP 8: Filter by date created --------------
         // ##################################################
@@ -184,28 +177,25 @@ export const searchFiles = async (req, res) => {
             console.log("should be between:", filter.createdAt.$gte, "and", filter.createdAt.$lte)
         }
 
-
         // ##################################################
         // ---- STEP 9: Filter by owner --------------------
         // ##################################################
         if (ownerFilter === "owner-by-me") {
-            filter.owner = userId
+            filter.owner = userID
             filter.$and = filter.$and.filter(
                 cond => !cond.$or?.some(o => o["sharedWith.userId"])
             )
-
         } else if (ownerFilter === "not-owner-by-me") {
-            filter.owner = { $ne: userId }
+            filter.owner = { $ne: userID }
             filter.$and = filter.$and.filter(
                 cond => !cond.$or?.some(o => o["sharedWith.userId"])
             )
             filter.$and.push({
                 $or: [
-                    { "sharedWith.userId": userId },
+                    { "sharedWith.userId": userID },
                     { parent: { $in: Array.from(allSharedFolderIds) } }
                 ]
             })
-
         } else if (ownerFilter === "specific-person" && personIds) {
             const ids = JSON.parse(personIds)
             filter.owner = { $in: ids }
@@ -214,7 +204,7 @@ export const searchFiles = async (req, res) => {
             )
             filter.$and.push({
                 $or: [
-                    { "sharedWith.userId": userId },
+                    { "sharedWith.userId": userID },
                     { parent: { $in: Array.from(allSharedFolderIds) } }
                 ]
             })
@@ -225,7 +215,7 @@ export const searchFiles = async (req, res) => {
         // ---- STEP 10: Find all folders that are in trash -
         // ##################################################
         const trashedFolders = await uploadModel.find({
-            owner: userId,
+            owner: userID,
             isTrashed: true,
             type: "folder"
         }).select("_id").lean()
@@ -274,7 +264,6 @@ export const searchFiles = async (req, res) => {
             }
         }
 
-
         // ##################################################
         // ---- STEP 12: Get paginated files and total count -
         // ##################################################
@@ -308,6 +297,7 @@ export const searchFiles = async (req, res) => {
                 parentIdsToFetch.add(item.parent.toString())
             }
         })
+
         let queue = Array.from(parentIdsToFetch)
         while (queue.length > 0) {
             const folders = await uploadModel.find({
@@ -341,7 +331,7 @@ export const searchFiles = async (req, res) => {
                 path.unshift(folderCache[currentParent].name)
                 currentParent = folderCache[currentParent].parent?.toString()
             }
-            if (item.owner?._id?.toString() !== userId.toString() || isInsideSharedFolder) {
+            if (item.owner?._id?.toString() !== userID.toString() || isInsideSharedFolder) {
                 path.unshift("Shared with me")
             } else {
                 path.unshift("My Docspot")
@@ -360,11 +350,8 @@ export const searchFiles = async (req, res) => {
         // ---- STEP 15: Send the results response ----------
         // ##################################################
         res.json({ success: true, results: resultsWithPath, totalCount, page, limit })
-
     } catch (error) {
         logger.error(error)
         res.status(500).json({ success: false, message: error.message })
     }
 }
-
-

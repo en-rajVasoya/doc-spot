@@ -6,16 +6,10 @@ import userModel from "#models/userModel";
 import { logger } from "#utils/logger";
 import { getUserPermission } from "#utils/userPermissionUtil";
 
-
-
 // ------------------------- SHARE FILE AND FOLDER CONTROLLER -------------------------------------
-
 
 //  1) checking here if user have this current folder or file permsioon t oaccess it or not
 // helper function
-
-
-
 
 // 2)  remove user from share 
 //  here if owner remove user from shared then all nested files and folder permission will be revoke here
@@ -44,13 +38,6 @@ const removeUserFromSubtree = async (parentId, owner, userId) => {
     }
 }
 
-
-
-
-
-
-
-
 // 3) share folder or file with other users (Bulk Supported)
 export const shareItem = async (req, res) => {
     try {
@@ -69,7 +56,6 @@ export const shareItem = async (req, res) => {
         const itemIdList = Array.isArray(incomingItemIds) ? incomingItemIds : (incomingItemIds ? [incomingItemIds] : []);
         const userIdList = Array.isArray(userIds) ? userIds : [userIds];
 
-
         // #####################################
         //  ---- STEP - 2 - validation inputs
         // #####################################
@@ -83,7 +69,6 @@ export const shareItem = async (req, res) => {
         if (!["viewer", "editor"].includes(permission)) {
             return res.status(400).json({ success: false, message: "Invalid permission" })
         }
-
 
         // ########################################
         //  ------- STEP - 3 - Verify item ownership and verify targeted usr
@@ -103,7 +88,6 @@ export const shareItem = async (req, res) => {
             return res.status(404).json({ success: false, message: "No valid items found or you are not the owner" })
         }
 
-
         //  exclude current user form sharing 
         const targetUsers = await userModel.find({
             _id: { $in: userIdList, $ne: currentUserId }
@@ -116,8 +100,6 @@ export const shareItem = async (req, res) => {
         if (targetUserIds.length === 0) {
             return res.status(400).json({ success: false, message: "No valid users" })
         }
-
-
 
         // ##########################################################
         //  --- STEP - 4 - logic for sharing
@@ -132,7 +114,6 @@ export const shareItem = async (req, res) => {
                 }
             }
         )
-
 
         //  add user with selected permission and mark item as shared
         await uploadModel.updateMany(
@@ -169,12 +150,6 @@ export const shareItem = async (req, res) => {
     }
 }
 
-
-
-
-
-
-
 //  4) remove item share acces from users (Bulk Supported)
 export const unshareItem = async (req, res) => {
     try {
@@ -190,14 +165,12 @@ export const unshareItem = async (req, res) => {
         const normalizedItemIds = Array.isArray(incomingItemIds) ? incomingItemIds : (incomingItemIds ? [incomingItemIds] : []);
         const normalizedUserIds = Array.isArray(userIds) ? userIds : [userIds];
 
-
         // #########################################################
         // ── STEP 2: Validate inputs ─────────────────────────────
         // #######################################################
         if (normalizedItemIds.length === 0) {
             return res.status(400).json({ success: false, message: "No items selected" })
         }
-
 
         // #########################################################
         // ── STEP 3: Verify ownership ────────────────────────────
@@ -215,7 +188,6 @@ export const unshareItem = async (req, res) => {
 
         //  conver document object into the array 
         const ownedItemIds = ownedItems.map(i => i._id)
-
 
         // ########################################################
         // ── STEP 4: Business logic ──────────────────────────
@@ -314,7 +286,6 @@ export const unshareItem = async (req, res) => {
             }
         }
 
-
         // ##########################################################
         // ── STEP 5: Send each editor socket event ────────────────────────
         // ######################################################### 
@@ -336,7 +307,6 @@ export const unshareItem = async (req, res) => {
             req.emitToUser(uid.toString(), "share_removed", { itemIds: ownedItemIds })
         })
 
-
         // ── STEP 6: Response ────────────────────────────────────
         res.json({ success: true, message: "Access removed" });
 
@@ -345,9 +315,6 @@ export const unshareItem = async (req, res) => {
         res.status(500).json({ success: false, message: error.message });
     }
 }
-
-
-
 
 //  5) owner can see all user with file and folder access in modal
 export const getSharedUsers = async (req, res) => {
@@ -397,9 +364,6 @@ export const getSharedUsers = async (req, res) => {
     }
 }
 
-
-
-
 //  in forntend share modal search user here
 export const searchUsers = async (req, res) => {
     try {
@@ -426,9 +390,6 @@ export const searchUsers = async (req, res) => {
     }
 }
 
-
-
-
 //  permissino check middleware here
 export const checkPermission = (...allowedRoles) => {
     return async (req, res, next) => {
@@ -449,11 +410,5 @@ export const checkPermission = (...allowedRoles) => {
             logger.error(err);
             res.status(500).json({ success: false, message: err.message })
         }
-
-
-
-
-
-
     }
 }

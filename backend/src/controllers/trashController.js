@@ -81,8 +81,6 @@ import { notifySharedUsers } from "#utils/userNotification";
 //     }
 // }
 
-
-
 //  item's move to trash 
 export const trashItem = async (req, res) => {
     try {
@@ -106,6 +104,7 @@ export const trashItem = async (req, res) => {
 
             // Populate owner to ensure info is ready for socket payload
             const item = await uploadModel.findOne({ _id: id, isTrashed: { $ne: true } }).populate("owner", "_id name profilePic");
+            
             if (!item || item.isTrashed) continue;
 
             const itemOwnerId = item.owner._id ? item.owner._id.toString() : item.owner.toString();
@@ -120,7 +119,7 @@ export const trashItem = async (req, res) => {
                 if (!editorItemsMap.has(editorId)) {
                     editorItemsMap.set(editorId, []);
                 }
-                console.log("115 -->", editorItemsMap);
+
                 editorItemsMap.get(editorId).push({
                     itemId: item._id,
                     oldParent: item.parent,
@@ -181,7 +180,7 @@ export const trashItem = async (req, res) => {
                         if (!editorItemsMap.has(editorId)) {
                             editorItemsMap.set(editorId, []);
                         }
-                        console.log("174 -->", editorItemsMap);
+
                         editorItemsMap.get(editorId).push({
                             itemId: child._id,
                             oldParent: child.parent,
@@ -235,10 +234,6 @@ export const trashItem = async (req, res) => {
         res.status(500).json({ success: false, message: error.message });
     }
 }
-
-
-
-
 
 //  here when user restore item so it need to restore it to original location here
 export const restoreItem = async (req, res) => {
@@ -320,10 +315,6 @@ export const restoreItem = async (req, res) => {
         res.status(500).json({ success: false, message: error.message });
     }
 }
-
-
-
-
 
 //  here in trash page get all trashed item here only root level here 
 export const getTrashedItems = async (req, res) => {
@@ -431,10 +422,6 @@ export const getTrashedItems = async (req, res) => {
         res.status(500).json({ success: false, message: error.message });
     }
 }
-
-
-
-
 
 //  here delete files and folder forever
 export const deleteForver = async (req, res) => {
@@ -551,9 +538,3 @@ export const deleteForver = async (req, res) => {
         res.status(500).json({ success: false, message: error.message });
     }
 }
-
-
-
-
-
-
