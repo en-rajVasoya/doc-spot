@@ -5,7 +5,10 @@
   "main": "server.js",
   "imports": {
     "#models/*": "./src/models/*.js",
-    "#utils/*": "./src/utils/*.js"
+    "#utils/*": "./src/utils/*.js",
+    "#controllers/*": "./src/controllers/*.js",
+    "#routes/*": "./src/routes/*.js",
+    "#middleware/*": "./src/middleware/*.js"
   },
   "type": "module",
   "scripts": {

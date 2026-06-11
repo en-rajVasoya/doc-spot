@@ -17,6 +17,7 @@ import trashRouter from "./routes/trashRoute.js"
 import fileRouter from "./routes/fileRoute.js"
 import { startTrashCleanup } from "./utils/trashCleanup.js"
 import adminRouter from "./routes/adminRoute.js"
+import sharedLinksRouter from "./routes/sharedLinks.js"
 // import { initClamAV } from "./virusTotal/clamAVWorker.js"
 
 // ===================================
@@ -141,6 +142,9 @@ app.use("/api/search", searchRouter)
 
 // Trash management routes
 app.use("/api/trash", trashRouter)
+
+// Share Links routes
+app.use("/api/links", sharedLinksRouter)
 
 // Admin routes
 app.use("/api/admin", adminRouter)
