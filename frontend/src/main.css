@@ -335,8 +335,8 @@ img { -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; 
 /* ============================================================
    FORM CONTROLS
    ============================================================ */
-.custom-form-control { border-radius: 6px; border: 1px solid var(--secondary); background: var(--white); box-shadow: 0px 2px 4px 0px rgba(0, 0, 0, 0.08) inset; padding: 8px 12px; line-height: normal; font-size: 14px; color: var(--dark-87); width: 100%; }
-.custom-form-control:hover, .custom-form-control:focus, .custom-form-control:active { border-radius: 8px; border: 1px solid var(--border-2) !important; background: var(--white); box-shadow: 0 0 0 0 rgba(0, 0, 0, 0.08) inset !important; padding: 8px 12px; line-height: normal; font-size: 14px; color: var(--dark-87); width: 100%; }
+.custom-form-control { border-radius: 8px; border: 1px solid var(--secondary); background: var(--white); box-shadow: 0px 2px 4px 0px rgba(0, 0, 0, 0.08) inset; padding: 8px 12px; line-height: normal; font-size: 14px; color: var(--dark-87); width: 100%; }
+.custom-form-control:hover, .custom-form-control:focus, .custom-form-control:active { border-radius: 8px; border: 1px solid var(--secondary) !important; background: var(--white);  padding: 8px 12px; line-height: normal; font-size: 14px; color: var(--dark-87); width: 100%; }
 .custom-form-control:focus { outline: 5px solid var(--dark-16); outline-offset: -1px; border: 1px solid var(--border-2) !important; }
 /* Size variants */
 .custom-form-control.h-30 { min-height: 30px !important; height: 30px !important; }
@@ -913,7 +913,8 @@ button.btn.move-btn { padding: 2px 8px; font-size: 13px; line-height: 22px; bord
 .top-search-single-box .custom-form-control { border-color: var(--secondary); }
 .top-search-single-box .search-area-box .form-control-single-icon .custom-form-control { border: 0 !important; box-shadow: none !important; padding: 10px 88px 10px 43px; }
 .top-search-single-box .search-area-box .form-control-single-icon .custom-form-control:focus { outline: none !important; }
-.top-search-single-box .multi-select2 .customSelect2__control:has(.customSelect2__value-container--has-value) { min-height: 36px; padding: 0 4px; }
+.top-search-single-box .multi-select2 .customSelect2__control{min-height: 36px;}
+.top-search-single-box .multi-select2 .customSelect2__control:has(.customSelect2__value-container--has-value) { padding: 0 4px; }
 .top-search-single-box .multi-select2 .customSelect2__control:has(.add-tag-box) { box-shadow: none; }
 .top-search-single-box .add-user-gradient-box .multi-select-profile-contact-box { position: relative; }
 .top-search-single-box .add-user-gradient-box .multi-select-profile-contact-box::after { content: ""; width: 30px; height: 16px; background: linear-gradient(90deg, rgb(0 0 0 / 0%), rgb(235 235 235)); position: absolute; right: 0; }
