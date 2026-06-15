@@ -1,6 +1,7 @@
 
 import { createContext, useContext, useState, useCallback } from "react";
 import axiosApi from "../utils/api.js";
+import { useNavigate } from "react-router-dom";
 
 const SearchContext = createContext()
 
@@ -27,6 +28,8 @@ export function SearchProvider({ children }) {
     const [totalCount, setTotalCount] = useState(0)
     const [currentPage, setCurrentPage] = useState(1)
     const [loadingMore, setLoadingMore] = useState(false)
+
+    const navigate = useNavigate();
 
 
     //  search api
@@ -99,6 +102,7 @@ export function SearchProvider({ children }) {
             dateFrom: null,
             dateTo: null
         })
+        navigate(`/dashboard`);
     }, [])
 
 

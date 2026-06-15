@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useMemo } from 'react'
+import { useLocation } from "react-router-dom";
 import MainHeader from '../layout/header/MainHeader'
 import SubHeader from '../layout/header/SubHeader'
 import ContentView from '../layout/mainScreen/ContentView';
@@ -19,7 +20,8 @@ import SearchResults from '../layout/header/SearchResults';
 
 function Dashboard() {
   const [searchBarOpen, setSearchBarOpen] = useState(false)
-  const { isSearchMode, searchResults, searchLoading, searchError, clearSearch } = useSearch()
+  const { search: urlSearch } = useLocation();  
+  const { isSearchMode, searchResults, searchLoading, searchError, clearSearch, searchApi  } = useSearch()
   const { clearSelection, items, sortBy, setSortBy, sortOrder, setSortOrder, selectedIds, setSelectedIds, loading, error } = useFileExplorer()
   const [isSidebarNavOpen, setIsSidebarNavOpen] = useState(false);
 
@@ -100,6 +102,26 @@ function Dashboard() {
     // Clean up the listener when the Dashboard unmounts
     return () => document.removeEventListener("keydown", handleKeyDown)
   }, [])
+
+  useEffect(() => {
+    const params = new URLSearchParams(urlSearch);
+    const query = params.get("search");
+    const fileType = params.get("fileType");
+
+    // Only trigger if URL actually has search params
+    if (!query && !fileType) return;
+
+    searchApi({
+      query:       query || null,
+      fileType:    fileType || null,
+      ownerFilter: params.get("owner") || null,
+      location:    params.get("location") || null,
+      dateFrom:    params.get("dateFrom") || null,
+      dateTo:      params.get("dateTo") || null,
+      personIds:   params.get("personIds") ? params.get("personIds").split(",") : null,
+      folderId:    null,
+    });
+  }, [urlSearch]); 
 
 
   

@@ -28,9 +28,10 @@ const storage = multer.diskStorage({
 
 // File config - cheking file MIME type and allowwd only some of files
 const fileFilter = (req, file, cb) => {
-    const allowedTypes = /jpeg|jpg|png|svg|gif/
+
+    const allowedTypes = /jpeg|jpg|png|svg|csv|gif/
     const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase())
-    const mimeType = allowedTypes.test(file.mimeType)
+    const mimeType = allowedTypes.test(file.mimetype || "text/csv")
 
     if(extname && mimeType){
         cb(null, true)

@@ -10,3 +10,19 @@ export const getBoolVal = (value) => {
 
     return false; // undefined, null, or anything else
 };
+
+export const getFolderContentsRecursive = async (parentId, depth = 0, maxDepth = 10) => {
+    if (depth >= maxDepth) return [];
+
+    const items = await uploadModel.find({ parent: parentId });
+
+    const result = await Promise.all(items.map(async (item) => {
+        if (item.type === "folder") {
+            const children = await getFolderContentsRecursive(item._id, depth + 1, maxDepth);
+            return { ...item.toObject(), children };
+        }
+        return item.toObject();
+    }));
+
+    return result;
+};

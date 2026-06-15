@@ -1,8 +1,11 @@
 //  this file is used for cron job like every day one time checking like if trashed item 30day tme left or not if yes then auto delete this
-import cron from "node-cron"
-import Upload from "../models/uploadModel.js"
 import fs from "fs"
-import { deleteForver } from "../controllers/trashController.js"
+import cron from "node-cron"
+
+import Upload from "#models/uploadModel"
+import SharedLink from "#models/sharedLinksModel";
+
+import { deleteForver } from "#controllers/trashController"
 
 
 
@@ -41,6 +44,37 @@ export const startTrashCleanup = () => {
 
         } catch (error) {
             console.error("[TRASH CLEANUP] Error:", error.message)
+        }
+    })
+}
+
+// cronjob to expired the shared link and runs on evry 5 minutes
+export const startExpiredLinksCleanup = () => {
+    // runs every hour to check expired links
+    cron.schedule("0 * * * *", async () => {
+        console.log("[LINK CLEANUP] Starting expired links check...")
+        try {
+            const now = new Date()
+
+            const result = await SharedLink.updateMany(
+                {
+                    is_expired: false,
+                    expire_date: { $lte: now }  // expire_date has passed
+                },
+                {
+                    $set: { is_expired: true }
+                }
+            )
+
+            if (result.modifiedCount === 0) {
+                console.log("[LINK CLEANUP] No expired links found")
+                return
+            }
+
+            console.log(`[LINK CLEANUP] Done — marked ${result.modifiedCount} links as expired`)
+
+        } catch (error) {
+            console.error("[LINK CLEANUP] Error:", error.message)
         }
     })
 }

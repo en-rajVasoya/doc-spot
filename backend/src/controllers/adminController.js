@@ -1,3 +1,5 @@
+import fs from "fs";
+import csv from "csv-parser";
 import bcrypt from "bcryptjs";
 import { Validator } from "node-input-validator";
 
@@ -124,12 +126,12 @@ export const getUsers = async (req, res) => {
         // ##################################################
         // ---- STEP 1: Extract query params ----------------
         // ##################################################\
-        let { page, limit, search, role, is_active } = req.query;
+        let { page, limit, search, role = "user", is_active } = req.query;
 
         // ##################################################
         // ---- STEP 2: Build filter object -----------------
         // ##################################################
-        const filters = [];
+        const filters = [{ $match: { is_deleted: false } }];
 
         // 1) Search by name, email, user_id
         if (search) {
@@ -319,38 +321,160 @@ export const updateUser = async (req, res) => {
 
 // ----------------------------- UPDATE USER END ------------------------------
 
-// ----------------------------- DEACTIVE USER ------------------------------
-export const updateUserStatus = async (req, res) => {
+// ----------------------------- GET USER ------------------------------
+export const getUserDetails = async (req, res) => {
     try {
-
-        // #################################################
-        // ---- STEP 1: Extract inputs -------------
-        // ###############################################
+        // get user_id from params
         const { user_id } = req.params;
 
-        // #################################################
-        // ---- STEP 2: Check user id exist in DB -------------
-        // ###############################################
-        const existingUser = await userModel.findById(user_id, "-password");
+        const userDetails = await userModel.findOne({ _id: user_id, is_deleted: false }).select("-password");
 
-        if (!existingUser) {
-            return res.status(404).json({ success: false, message: "No user found" })
+        if (!userDetails) {
+            return res.status(400).json({ success: false, message: "User not found" })
         }
 
-        // #################################################
-        // ---- STEP 3: Update isAcive  field -------------
-        // ###############################################
-        existingUser.is_active = !existingUser.is_active
-        await existingUser.save()
-
-        // #################################################
-        // ---- STEP 3: return resposne -------------
-        // ###############################################
-        res.status(200).json({ success: true, user: existingUser })
-
+        res.status(200).json({ success: true, data: userDetails, message: "User fetched successfully" })
     } catch (error) {
         logger.error(error)
         res.status(500).json({ success: false, message: error.message })
     }
 }
-// ----------------------------- DEACTIVE USER END --------------------------
+
+// ----------------------------- GET USER ------------------------------
+export const deleteUser = async (req, res) => {
+    try {
+        const { user_ids } = req.body; // array of IDs from body, not params
+
+        if (!Array.isArray(user_ids) || user_ids.length === 0) {
+            return res.status(400).json({ success: false, message: "user_ids must be a non-empty array" });
+        }
+
+        const result = await userModel.updateMany(
+            { _id: { $in: user_ids }, is_deleted: false },
+            { $set: { is_deleted: true } }
+        );
+
+        if (result.matchedCount === 0) {
+            return res.status(400).json({ success: false, message: "No active users found" });
+        }
+
+        res.status(200).json({
+            success: true,
+            message: `${result.modifiedCount} user(s) deleted successfully`,
+        });
+    } catch (error) {
+        logger.error(error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// ----------------------------- IMPORT USERS ------------------------------
+export const importUsers = async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ message: "CSV file required" });
+        }
+
+        const users = [];
+
+        await new Promise((resolve, reject) => {
+            fs.createReadStream(req.file.path)
+                .pipe(csv({
+                    mapHeaders: ({ header }) => {
+                        const normalized = header.toLowerCase().trim();
+
+                        if (normalized === "fullname" || normalized === "full_name" || normalized === "full name") {
+                            return "name";
+                        }
+                        if (normalized === "user_id" || normalized === "userid" || normalized === "user id") {
+                            return "user_id";
+                        }
+
+                        return normalized;
+                    }
+                }))
+                .on("data", (row) => users.push(row))
+                .on("end", resolve)
+                .on("error", reject);
+        });
+
+        if (!users.length) {
+            fs.unlinkSync(req.file.path);
+            return res.status(400).json({ message: "CSV is empty" });
+        }
+
+        const emails = users.map(u => u.email);
+        const userIDs = users.map(u => u.user_id);
+
+        const existingUsers = await userModel.find({
+            $or: [
+                { email: { $in: emails } },
+                { user_id: { $in: userIDs } }
+            ]
+        });
+
+        const existingEmailSet = new Set(existingUsers.map(u => u.email));
+        const existingUsernameSet = new Set(existingUsers.map(u => u.user_id));
+
+        const bulkOps = [];
+        const skipped = [];
+        const errors = [];
+
+        for (let i = 0; i < users.length; i++) {
+            const user = users[i];
+            console.log("423 -->", user);
+            try {
+                if (!user.name || !user.email || !user.user_id || !user.password) {
+                    errors.push({ row: i + 1, reason: "Missing required fields" });
+                    continue;
+                }
+
+                if (existingEmailSet.has(user.email) || existingUsernameSet.has(user.user_id)) {
+                    skipped.push({ row: i + 1, email: user.email });
+                    continue;
+                }
+
+                const hashedPassword = await bcrypt.hash(user.password, 10);
+
+                bulkOps.push({
+                    insertOne: {
+                        document: {
+                            name: user.name,
+                            user_id: user.user_id,
+                            email: user.email,
+                            password: hashedPassword,
+                            profilePic: ""
+                        }
+                    }
+                });
+
+            } catch (err) {
+                errors.push({ row: i + 1, reason: err.message });
+            }
+        }
+
+        if (bulkOps.length) {
+            await userModel.bulkWrite(bulkOps);
+        }
+
+        fs.unlinkSync(req.file.path);
+
+        return res.status(200).json({
+            message: "Users import completed",
+            inserted: bulkOps.length,
+            skipped: skipped.length,
+            errors: errors.length,
+            skippedDetails: skipped,
+            errorDetails: errors
+        });
+
+    } catch (error) {
+        logger.error("Import Users Error:", error);
+
+        if (req.file?.path && fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+        }
+
+        return res.status(500).json({ message: "Import failed" });
+    }
+};

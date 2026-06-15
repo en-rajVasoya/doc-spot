@@ -5,9 +5,10 @@ const getKey = () => {
     return createSecretKey(Buffer.from(process.env.PASETO_SECRET_KEY, "hex"))
 }
 
-export const optionalAuth = async(req, res, next) => {
+const optionalAuth = async(req, res, next) => {
     try {
         const token = req.cookies.token
+   
         if (token) {
             const payload = await V3.decrypt(token, getKey())
 
@@ -24,3 +25,5 @@ export const optionalAuth = async(req, res, next) => {
     }
     next();
 };
+
+export default optionalAuth

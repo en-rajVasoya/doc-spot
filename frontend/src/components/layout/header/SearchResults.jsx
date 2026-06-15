@@ -6,10 +6,12 @@ import closeIcon from "@images/icon/close-icon.svg";
 import Tooltip from "../Tooltip";
 import menuIcon from "@images/icon/menu.svg";
 import gridIcon from "@images/icon/grid.svg";
+import { useNavigate } from "react-router-dom";
 
 function SearchResults({ setSearchBarOpen, showViewButtons, view, setView }) {
     const { isSearchMode, searchResults, clearSearch, searchFilters, searchApi } = useSearch();
     const { selectedIds } = useFileExplorer();
+    const navigate = useNavigate();
 
     // / Handle removing individual filter tags
     const handleRemoveFilter = (key, personIndex = null) => {
@@ -54,6 +56,8 @@ function SearchResults({ setSearchBarOpen, showViewButtons, view, setView }) {
         } else {
             searchApi(nextFilters);
         }
+
+        navigate(`/dashboard`);
     };
     if (!isSearchMode) return null;
     return (

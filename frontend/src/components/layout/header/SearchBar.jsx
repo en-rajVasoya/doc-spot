@@ -291,14 +291,22 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
             dateTo,
         });
 
+        const params = new URLSearchParams();
+        if (searchText.trim()) params.set("search", searchText.trim());
+        if (selectedFileType) params.set("fileType", selectedFileType);
+        if (owner?.value) params.set("owner", owner.value);
+        if (location?.value) params.set("location", location.value);
+        if (date?.value) params.set("date", date.value);
+        if (dateFrom) params.set("dateFrom", dateFrom);
+        if (dateTo) params.set("dateTo", dateTo);
+        if (selectedPersons.length) params.set("personIds", selectedPersons.map(p => p.value).join(","));
+
         setIsOpen(false);
         setShowSuggestions(false);
         setSearchBarOpen(false);
 
-        // Redirect to dashboard so results are actually visible!
-        if (locationPath !== "/dashboard") {
-            navigate("/dashboard");
-        }
+        // Always navigate with params (replaces the old if-block entirely)
+        navigate(`/dashboard?${params.toString()}`);
     };
 
     // ##################################################

@@ -3,6 +3,7 @@ import SharedLink from "#models/sharedLinksModel";
 import uploadModel from "#models/uploadModel";
 
 import { logger } from "#utils/logger";
+import { getFolderContentsRecursive } from "#utils/index"
 
 import { Validator } from "node-input-validator";
 
@@ -76,19 +77,17 @@ export const accessLink = async (req, res) => {
             return res.status(404).json({ success: false, message: "Link not found" });
         }
 
-        // Check if already marked expired
         if (sharedLink.is_expired) {
             return res.status(410).json({ success: false, message: "Link has expired" });
         }
 
-        // Check expire_date and mark expired if passed
         if (sharedLink.expire_date && new Date() > new Date(sharedLink.expire_date)) {
             await SharedLink.findByIdAndUpdate(sharedLink._id, { is_expired: true });
             return res.status(410).json({ success: false, message: "Link has expired" });
         }
 
-        // If private, check if user has access
         if (!sharedLink.is_public) {
+            console.log("90 -->", req.user);
             if (!req.user) {
                 return res.status(401).json({ success: false, message: "Login required to access this link" });
             }
@@ -100,26 +99,111 @@ export const accessLink = async (req, res) => {
             }
         }
 
-        // If password protected
+        // Password protected — tell frontend to show password prompt
         if (sharedLink.password) {
+            7
             return res.status(200).json({
                 success: true,
-                password_required: true,
+                password_required: true,        //frontend checks this
+                token: token,                   //frontend sends this back with password
                 message: "This link is password protected",
             });
         }
 
-        // All checks passed — handle file or folder
         if (sharedLink.type === "file") {
             const file = await uploadModel.findById(sharedLink.item_id);
             if (!file) {
                 return res.status(404).json({ success: false, message: "File not found" });
             }
-            return res.redirect(`${process.env.APP_URL}/${file.storagePath}`);
+
+            return res.status(200).json({
+                success: true,
+                type: "file",
+                data: file,
+                redirect_url: `${process.env.APP_URL}/${file.storagePath}`
+            });
         }
 
         if (sharedLink.type === "folder") {
-            return res.redirect(`${process.env.WEB_URL}/dashboard/folder/${sharedLink.item_id}`);
+            const folderData = await uploadModel.findById(sharedLink.item_id);
+            if (!folderData) {
+                return res.status(404).json({ success: false, message: "Folder not found" });
+            }
+
+            const folderContents = await getFolderContentsRecursive(sharedLink.item_id);
+
+            return res.status(200).json({
+                success: true,
+                type: "folder",
+                data: folderData,
+                folder_data: folderContents,
+            });
+        }
+
+    } catch (error) {
+        logger.error(error);
+        return res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const verifyLinkPassword = async (req, res) => {
+    try {
+        const { token, password } = req.body;
+
+        if (!token || !password) {
+            return res.status(400).json({ success: false, message: "Token and password are required" });
+        }
+
+        const sharedLink = await SharedLink.findOne({ token });
+        if (!sharedLink) {
+            return res.status(404).json({ success: false, message: "Link not found" });
+        }
+
+        // Check expired
+        if (sharedLink.is_expired) {
+            return res.status(410).json({ success: false, message: "Link has expired" });
+        }
+
+        if (sharedLink.expire_date && new Date() > new Date(sharedLink.expire_date)) {
+            await SharedLink.findByIdAndUpdate(sharedLink._id, { is_expired: true });
+            return res.status(410).json({ success: false, message: "Link has expired" });
+        }
+
+        // Verify password
+        const isMatch = await bcrypt.compare(password, sharedLink.password);
+        if (!isMatch) {
+            return res.status(401).json({ success: false, message: "Incorrect password" });
+        }
+
+        // Password correct — return file or folder data
+        if (sharedLink.type === "file") {
+            const file = await uploadModel.findById(sharedLink.item_id);
+            if (!file) {
+                return res.status(404).json({ success: false, message: "File not found" });
+            }
+
+            return res.status(200).json({
+                success: true,
+                type: "file",
+                data: file,
+                redirect_url: `${process.env.APP_URL}/${file.storagePath}`
+            });
+        }
+
+        if (sharedLink.type === "folder") {
+            const folderData = await uploadModel.findById(sharedLink.item_id);
+            if (!folderData) {
+                return res.status(404).json({ success: false, message: "Folder not found" });
+            }
+
+            const folderContents = await getFolderContentsRecursive(sharedLink.item_id);
+
+            return res.status(200).json({
+                success: true,
+                type: "folder",
+                data: folderData,
+                folder_data: folderContents,
+            });
         }
 
     } catch (error) {

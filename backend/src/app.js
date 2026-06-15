@@ -15,7 +15,7 @@ import downloadRouter from "./routes/downloadRoute.js"
 import searchRouter from "./routes/searchRoute.js"
 import trashRouter from "./routes/trashRoute.js"
 import fileRouter from "./routes/fileRoute.js"
-import { startTrashCleanup } from "./utils/trashCleanup.js"
+import { startTrashCleanup, startExpiredLinksCleanup } from "./utils/cronjob.js"
 import adminRouter from "./routes/adminRoute.js"
 import sharedLinksRouter from "./routes/sharedLinks.js"
 // import { initClamAV } from "./virusTotal/clamAVWorker.js"
@@ -26,6 +26,7 @@ import sharedLinksRouter from "./routes/sharedLinks.js"
 connectDB()
 // initClamAV()
 startTrashCleanup() // Cron job that deletes trash files/folders periodically
+startExpiredLinksCleanup()
 
 // ===================================
 // EXPRESS APP INITIALIZATION

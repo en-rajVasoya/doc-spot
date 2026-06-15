@@ -17,7 +17,7 @@ import downloadRouter from "./routes/downloadRoute.js"
 import searchRouter from "./routes/searchRoute.js"
 import trashRouter from "./routes/trashRoute.js"
 import fileRouter from "./routes/fileRoute.js"
-import { startTrashCleanup } from "./utils/trashCleanup.js"
+import { startTrashCleanup } from "./utils/cronjob.js"
 import adminRouter from "./routes/adminRoute.js"
 // import { initClamAV } from "./virusTotal/clamAVWorker.js"
 

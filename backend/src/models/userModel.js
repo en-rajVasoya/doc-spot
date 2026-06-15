@@ -48,7 +48,12 @@ const userSchema = new mongoose.Schema({
         type: String,
         enum: ["user", "admin"],  // in future we can add super admin
         default: "user"
-    }
+    },
+
+    is_deleted: {
+        type: Boolean,
+        default: false
+    },
 
 }, { timestamps: true });
 
