@@ -16,7 +16,7 @@ export const storeLinks = async (req, res) => {
             "links.*.link": "required|string",
             "links.*.type": "required|in:file,folder",
             "links.*.item_id": "required|string",
-            user_ids: "required|array",
+            user_ids: "array",
             is_public: "required|boolean",
             password: "min:8",
             expire_date: "date"
@@ -25,7 +25,7 @@ export const storeLinks = async (req, res) => {
         const matched = await validations.check();
         if (!matched) {
             const errors = Object.fromEntries(
-                Object.entries(validations.errors.errors).map(([field, error]) => [field, error[0]])
+                Object.entries(validations.errors).map(([field, error]) => [field, error.message])
             );
             return res.status(400).json({ success: false, errors });
         }

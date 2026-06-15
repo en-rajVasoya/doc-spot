@@ -355,7 +355,7 @@ const loadZip = async (zipBlob, pathPrefix = "", mapRef = { "": [] }) => {
 }
 function ZipViewer({ file }) {
     const { downloadFile } = useDownload()
-    const zipUrl = `/files${file.storagePath}`
+    const zipUrl = `${file.storagePath}`
     const [fsMap, setFsMap] = useState({})
     const [currentPath, setCurrentPath] = useState("")
     const [trail, setTrail] = useState([])

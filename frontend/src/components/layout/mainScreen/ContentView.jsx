@@ -24,6 +24,7 @@ import colorIcon from "@images/icon/color.svg";
 import squareArrowDownLinearIcon from "@images/icon/square-arrow-down-linear.svg";
 import searchIcon from "@images/icon/search.svg";
 import closeIcon from "@images/icon/close-icon.svg";
+import fileInfoIcon from "@images/icon/file-info.svg";
 
 
 function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRefsReady, dragRootRef, displayError, displayLoading, displayItems }) {
@@ -36,43 +37,63 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
     const { user } = useAuth()
     const { downloadFile, downloadFolder, downloadMultiple } = useDownload()
 
-    //  here this state is used for when user right click on the item box so diffrent menu willopen here
+    // ##################################################
+    // ---- STEP 1: Context menu state ------------------
+    // ##################################################
     const [itemContextMenu, setItemContextMenu] = useState({ visible: false, x: 0, y: 0, isViewerItem: false })
     const [showColorMenu, setShowColorMenu] = useState(false)
 
-    //  here this state will be used for right click on item so it will no go beyond screen 
+    // ##################################################
+    // ---- STEP 2: Context menu boundary ref -----------
+    // ##################################################
     const contextMenuRef = useRef(null)
 
-    // Dynamic Context Menu Positioning
+    // ##################################################
+    // ---- STEP 3: Dynamic Context Menu Positioning ----
+    // ##################################################
     useEffect(() => {
+        // If the context menu is not meant to be visible or the ref is missing, do nothing
         if (!itemContextMenu.visible || !contextMenuRef.current) return
 
+        // Get the actual HTML element for the context menu
         const menu = contextMenuRef.current
+        // Get the physical dimensions (width, height) of the menu
         const menuRect = menu.getBoundingClientRect()
 
+        // Set the initial intended X and Y positions based on mouse click
         let posX = itemContextMenu.x
         let posY = itemContextMenu.y
 
+        // If the menu would overflow off the right side of the screen, snap it back to the left
         if (posX + menuRect.width > window.innerWidth) {
             posX = window.innerWidth - menuRect.width - 10
         }
+        // If the menu would overflow off the bottom of the screen, snap it upwards
         if (posY + menuRect.height > window.innerHeight) {
             posY = window.innerHeight - menuRect.height - 10
         }
 
+        // Apply the corrected X and Y coordinates to the DOM element
         menu.style.left = `${posX}px`
+        // Ensure the menu never goes off the top edge of the screen
         menu.style.top = `${Math.max(10, posY)}px`
+        // Make the menu visible
         menu.style.opacity = "1"
+        // Allow the user to interact with the menu
         menu.style.pointerEvents = "auto"
     }, [itemContextMenu.visible, itemContextMenu.x, itemContextMenu.y])
 
-    //  hee chich file was last clicked here to see 
+    // ##################################################
+    // ---- STEP 4: Last clicked file reference ---------
+    // ##################################################
     const lastClick = useRef({});
 
     const anchorIndex = useRef(null)
     const lastCtrlSelectedIds = useRef(new Set())
 
-    //  here when user click on back button in the search result so scroll to top here 
+    // ##################################################
+    // ---- STEP 5: Scroll reference --------------------
+    // ##################################################
     const scrollRef = useRef(null)
 
 
@@ -84,7 +105,9 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
 
 
 
-    //  drag and seelct with mouse state 
+    // ##################################################
+    // ---- STEP 6: Drag and select state ---------------
+    // ##################################################
     const [dragStart, setDragStart] = useState(null)
     const [dragRect, setDragRect] = useState(null)
     const isDragSelectingRef = useRef(false)
@@ -101,15 +124,21 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
         if (e.target.closest("button, input, textarea, select, a, .custom-context-menu, .search-suggestion-chip")) return
         if (e.button !== 0) return
 
+        // Mark the drag selection process as currently active
         isDragSelectingRef.current = true
+        // Record the exact starting X and Y coordinates of the mouse click
         setDragStart({ x: e.clientX, y: e.clientY })
+        // Reset any previous drag rectangle shape
         setDragRect(null)
+        // Clear any previously selected items before starting a new drag selection
         setSelectedIds(new Set())
     }
 
     const handleMouseMove = useCallback((e) => {
         if (!isDragSelectingRef.current || !dragStart) return
 
+        // Calculate the dynamic rectangle shape based on mouse movement
+        // Using Math.min and Math.abs allows dragging in any direction (up/down/left/right)
         const rect = {
             x: Math.min(e.clientX, dragStart.x),
             y: Math.min(e.clientY, dragStart.y),
@@ -117,27 +146,38 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
             height: Math.abs(e.clientY - dragStart.y),
         }
 
+        // Update the visual rectangle box on the screen
         setDragRect(rect)
 
         // check which items overlap with drag rectangle
         const newSelected = new Set()
         Object.entries(itemRefs.current).forEach(([id, el]) => {
             if (!el) return
+
+            // Get the bounding box of each individual file/folder item
             const itemRect = el.getBoundingClientRect()
+
+            // Calculate if the item's box intersects with our drag rectangle
             const overlaps =
                 itemRect.left < rect.x + rect.width &&
                 itemRect.right > rect.x &&
                 itemRect.top < rect.y + rect.height &&
                 itemRect.bottom > rect.y
+
+            // If it overlaps, add this item's ID to our new selection set
             if (overlaps) newSelected.add(id)
         })
 
+        // Update the global state with all currently overlapping items
         setSelectedIds(newSelected)
     }, [dragStart])
 
     const handleMouseUp = useCallback(() => {
+        // Stop the drag selection process
         isDragSelectingRef.current = false
+        // Clear the starting coordinates
         setDragStart(null)
+        // Remove the visual rectangle box from the screen
         setDragRect(null)
     }, [])
     useEffect(() => {
@@ -146,9 +186,15 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
 
 
     useEffect(() => {
+        // If dragging hasn't started, don't bind any window events
         if (!dragStart) return
+
+        // Listen for the mouse moving anywhere on the screen to draw the drag rectangle
         window.addEventListener("mousemove", handleMouseMove)
+        // Listen for the mouse button being released to stop dragging
         window.addEventListener("mouseup", handleMouseUp)
+
+        // Cleanup function to remove event listeners when the component unmounts or drag finishes
         return () => {
             window.removeEventListener("mousemove", handleMouseMove)
             window.removeEventListener("mouseup", handleMouseUp)
@@ -156,39 +202,64 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
     }, [dragStart, handleMouseMove, handleMouseUp])
 
     useEffect(() => {
+        // Grab the container element for the main content area
         const root = dragRootRef?.current
+        // If the container doesn't exist yet, do nothing
         if (!root) return
+
+        // Listen for mouse click inside the container to start the drag selection
         root.addEventListener("mousedown", handleMouseDown)
+
+        // Cleanup function to remove the listener when the component unmounts
         return () => {
             root.removeEventListener("mousedown", handleMouseDown)
         }
     }, [dragRootRef, handleMouseDown])
 
 
-    //  here this will de select all checkbox selected when usr will press esc key here
+    // ##################################################
+    // ---- STEP 7: Deselect all on escape key ----------
+    // ##################################################
     useEffect(() => {
         const handleKeyDown = (e) => {
+            // Check if the user specifically pressed the "Escape" key
             if (e.key === "Escape") {
+                // Clear all selected files and folders
                 setSelectedIds(new Set())
+                // Hide any open context menus
                 setItemContextMenu({ visible: false })
+                // Hide the color selection menu if it's open
                 setShowColorMenu(false)
             }
         }
+        // Attach the global keydown listener to the entire window
         window.addEventListener("keydown", handleKeyDown)
+
+        // Cleanup function to remove the listener to prevent memory leaks
         return () => window.removeEventListener("keydown", handleKeyDown)
     }, [setSelectedIds])
 
-    //  here after right click here if user click on outside then close this right click menu here
+    // ##################################################
+    // ---- STEP 8: Close context menu on outside click -
+    // ##################################################
     useEffect(() => {
         const handleCloseRightClickMenu = (e) => {
+            // If the user clicked inside a table row (an actual file/folder item), do nothing
             if (e.target.closest(".table-row")) {
                 return;
             }
+            // Otherwise, they clicked in an empty space, so close the context menu
             setItemContextMenu({ visible: false })
+            // Also close the folder color menu
             setShowColorMenu(false)
         }
+
+        // Listen for normal left clicks anywhere on the window
         window.addEventListener("click", handleCloseRightClickMenu)
+        // Listen for right clicks anywhere on the window
         window.addEventListener("contextmenu", handleCloseRightClickMenu)
+
+        // Cleanup function to remove both listeners when component unmounts
         return () => {
             window.removeEventListener("click", handleCloseRightClickMenu)
             window.removeEventListener("contextmenu", handleCloseRightClickMenu)
@@ -199,9 +270,13 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
 
 
 
-    // Auto-scroll to highlighted item
+    // ##################################################
+    // ---- STEP 9: Auto-scroll to highlighted item -----
+    // ##################################################
     useEffect(() => {
+        // If there is an item to highlight, and we have the DOM reference for it
         if (highlightedId && itemRefs.current[highlightedId]) {
+            // Smoothly scroll the page so the item appears right in the middle
             itemRefs.current[highlightedId].scrollIntoView({
                 behavior: "smooth",
                 block: "center"
@@ -212,59 +287,86 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
 
 
     useEffect(() => {
+        // If the user clears their selection completely
         if (selectedIds.size === 0) {
+            // Reset the internal tracker for CTRL-clicks
             lastCtrlSelectedIds.current = new Set()
+            // Reset the anchor point used for SHIFT-clicks
             anchorIndex.current = null
         }
     }, [selectedIds])
 
     // Clear selected checkboxes when toggling search mode
     useEffect(() => {
+        // Whenever the user enters or leaves search mode, clear all selected items
         setSelectedIds(new Set())
     }, [isSearchMode, setSelectedIds])
 
 
-    //  here if user double click on folder or file then run this 
+    // ##################################################
+    // ---- STEP 10: Double click handler ---------------
+    // ##################################################
     const handleItemClick = (item) => {
+        // Get the current timestamp to detect double clicks
         const now = Date.now()
 
         if (item.type === "folder") {
+            // If clicked within 400ms of the last click, it's a double click!
             if (lastClick.current[item._id] && now - lastClick.current[item._id] < 400) {
+                // Clear any active search before opening the folder
                 clearSearch()
+                // Close the search bar UI
                 setSearchBarOpen(false)
+                // Navigate into the folder
                 openFolder(item)
             }
+            // Update the last click time for this specific item
             lastClick.current[item._id] = now
             return
         } else if (item.type === "file") {
+            // Same double-click logic, but for files to open the preview modal
             if (lastClick.current[item._id] && now - lastClick.current[item._id] < 400) {
+                // Open the file preview modal
                 setFilePreview(item)
             }
+            // Update the last click time for this specific file
             lastClick.current[item._id] = now
             return
         }
     }
 
-    // here when user seelcts a main check box like all files then seelctt all files id here so user can deletet that item here
+    // ##################################################
+    // ---- STEP 11: Select all checkbox handler --------
+    // ##################################################
     const handleCheckBoxSelected = () => {
+        // If every single item is already selected
         if (selectedIds.size === displayItems.length) {
+            // Uncheck everything by creating a new empty Set
             setSelectedIds(new Set())
         } else {
+            // Otherwise, loop through all displayed items and add their IDs to a new Set
             setSelectedIds(new Set(displayItems.map(item => item._id.toString())))
         }
     }
 
 
-    //  if user seeclt some item using check box with mouse click
+    // ##################################################
+    // ---- STEP 12: Checkbox select handler ------------
+    // ##################################################
     const handleCheckboxOnly = (e, itemId) => {
+        // Prevent the click from triggering parent elements
         e.stopPropagation();
 
+        // Close any open context menus when interacting with checkboxes
         setItemContextMenu({ visible: false })
         setShowColorMenu(false)
 
+        // Find where this item is located in the current display array
         const currentIndex = displayItems.findIndex(item => item._id === itemId);
+        // Create a copy of the currently selected IDs
         const newSelected = new Set(selectedIds);
 
+        // Toggle logic: If it's already selected, remove it. Otherwise, add it.
         if (newSelected.has(itemId.toString())) {
             newSelected.delete(itemId.toString());
             lastCtrlSelectedIds.current.delete(itemId.toString());
@@ -273,8 +375,10 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
             lastCtrlSelectedIds.current.add(itemId.toString());
         }
 
+        // Apply the new selection state
         setSelectedIds(newSelected);
 
+        // Reset the anchor if nothing is selected, otherwise set the anchor to this item
         if (newSelected.size === 0) {
             lastCtrlSelectedIds.current = new Set();
             anchorIndex.current = null;
@@ -284,19 +388,28 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
     };
 
 
-    //  here fi user will select some item with control and shift
+    // ##################################################
+    // ---- STEP 13: Checkbox multi-select handler ------
+    // ##################################################
     const handleCheckboxClick = (e, itemId) => {
+        // Prevent click from bubbling up and triggering row click events
         e.stopPropagation();
+
+        // Ensure context menus are closed when making selections
         setItemContextMenu({ visible: false })
         setShowColorMenu(false)
 
+        // Find the precise position of the clicked item in our displayed list
         const currentIndex = displayItems.findIndex(item => item._id === itemId);
 
         // SHIFT → range from anchor, keep ctrl selected items outside range
         if (e.shiftKey && anchorIndex.current !== null) {
+            // Find the lowest index to start the selection range
             const start = Math.min(anchorIndex.current, currentIndex);
+            // Find the highest index to end the selection range
             const end = Math.max(anchorIndex.current, currentIndex);
 
+            // Create a set containing all item IDs between the start and end indices
             const rangeIds = new Set(
                 displayItems
                     .slice(start, end + 1)
@@ -305,46 +418,64 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
 
             // merge ctrl base with new range
             const newSelected = new Set(lastCtrlSelectedIds.current);
+            // Add all newly ranged items to the current selection
             rangeIds.forEach(id => newSelected.add(id));
+
+            // Apply the new combined selection state
             setSelectedIds(newSelected);
 
         } else if (e.ctrlKey || e.metaKey) {
+            // Create a copy of current selections so we can toggle
             const newSelected = new Set(selectedIds);
 
+            // If the item is already selected, unselect it
             if (newSelected.has(itemId.toString())) {
                 newSelected.delete(itemId.toString());
                 lastCtrlSelectedIds.current.delete(itemId.toString());
             } else {
+                // Otherwise, select it
                 newSelected.add(itemId.toString());
                 lastCtrlSelectedIds.current.add(itemId.toString());
             }
 
+            // Apply the new selection state
             setSelectedIds(newSelected);
+            // Set the new anchor index to this item for future shift-clicks
             anchorIndex.current = currentIndex;
 
         } else {
+            // If neither SHIFT nor CTRL is held down, select ONLY this single item
             setSelectedIds(new Set([itemId.toString()]));
+            // Reset the base selection to just this item
             lastCtrlSelectedIds.current = new Set([itemId.toString()]);
+            // Update the anchor index to this item
             anchorIndex.current = currentIndex;
         }
     };
 
 
 
-    //  sorting here 
-    // sorting
+    // ##################################################
+    // ---- STEP 14: Sorting handler --------------------
+    // ##################################################
     const handleColumnSort = (column) => {
+        // If the user clicked the column we are already sorting by
         if (sortBy === column) {
+            // Simply flip the sorting direction between ascending and descending
             setSortOrder(prev => prev === "asc" ? "desc" : "asc")
         } else {
+            // Otherwise, set the new active column for sorting
             setSortBy(column)
+            // Default the new column to sort in ascending order
             setSortOrder("asc")
         }
     }
 
 
 
-    //  checking here if user selected all item is folders or no t
+    // ##################################################
+    // ---- STEP 15: Check if all selected are folders --
+    // ##################################################
     const hasFolder =
         selectedIds.size > 0 &&
         Array.from(selectedIds).every(
@@ -666,8 +797,8 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
                             onClick={(e) => {
                                 if (itemContextMenu.isViewerItem) { e.stopPropagation(); return }
                                 if (isViewerOnly) { e.stopPropagation(); return }
-                                const item = items.find(i => i._id === Array.from(selectedIds)[0])
-                                setModal({ type: "shareUser", data: item })
+                                const selectedItems = displayItems.filter(i => selectedIds.has(i._id.toString()))
+                                setModal({ type: "shareUser", data: selectedItems })
                             }}
                         >
                             <button className="dropdown-item" style={{ cursor: "inherit" }}>
@@ -806,6 +937,23 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
                                 <span className="d-flex align-items-center">
                                     <InteractiveIcon defaultIcon={moveIcon} className="me-2" width={20} height={20} alt="" />
                                     Move
+                                </span>
+                            </button>
+                        </li>
+
+                        {/*  file info */}
+                        <li
+                            style={{ opacity: selectedIds.size > 1 ? 0.6 : 1, cursor: selectedIds.size > 1 ? "not-allowed" : "pointer" }}
+                            onClick={(e) => {
+                                if (selectedIds.size > 1) { e.stopPropagation(); return }
+                                const selectedItem = displayItems.find(i => i._id === Array.from(selectedIds)[0])
+                                if (!selectedItem) return
+                                setModal({ type: "ItemInfoModal", data: selectedItem })
+                            }}>
+                            <button className="dropdown-item" style={{ cursor: "inherit" }}>
+                                <span className="d-flex align-items-center">
+                                    <InteractiveIcon defaultIcon={fileInfoIcon} className="me-2" width={20} height={20} alt="" />
+                                    Info
                                 </span>
                             </button>
                         </li>

@@ -1225,7 +1225,7 @@ function PdfViewer({ file: fileData }) {
                 } else if (typeof fileData === "object" && fileData.url) {
                     source = { url: fileData.url }
                 } else if (typeof fileData === "object" && fileData.storagePath) {
-                    source = { url: `/files${fileData.storagePath}`, withCredentials: true }
+                    source = { url: `${fileData.storagePath}`, withCredentials: true }
                 } else if (typeof fileData === "object" && fileData.data) {
                     source = { data: fileData.data }
                 } else {

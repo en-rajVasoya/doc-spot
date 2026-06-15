@@ -1,6 +1,8 @@
 import Modal from "react-bootstrap/Modal";
 import { useState, useRef } from "react";
 import { useFileExplorer } from "../../context/FileExplorerContext";
+import InteractiveIcon from "../layout/InteractiveIcon";
+import closeIcon from "@images/icon/close-icon.svg"
 
 
 function DeleteModal({ data, onClose }) {
@@ -53,6 +55,12 @@ function DeleteModal({ data, onClose }) {
                 <div ref={modalRef}>
                     <Modal.Header className="border-0">
                         <Modal.Title>Move to trash?</Modal.Title>
+                        <button
+                            className="btn-only-icon"
+                            onClick={onClose}
+                        >
+                            <InteractiveIcon defaultIcon={closeIcon} width={24} alt="close" />
+                        </button>
                     </Modal.Header>
                     <Modal.Body>
                         <p className="m-0 message">

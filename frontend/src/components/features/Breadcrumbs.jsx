@@ -17,7 +17,7 @@ import listFolder9Icon from "@images/svgs/list/SF9.svg";
 import retryIcon from "@images/icon/retry-icon.svg"
 import deleteIcon from "@images/icon/trash.svg"
 import colorIcon from "@images/icon/color.svg";
-
+import fileInfoIcon from "@images/icon/file-info.svg";
 
 
 const Breadcrumbs = memo(function Breadcrumbs({
@@ -44,7 +44,9 @@ const Breadcrumbs = memo(function Breadcrumbs({
     currentFolderMeta
 }) {
 
-    //  here actual function starts
+    // ##################################################
+    // ---- STEP 1: Component State & References --------
+    // ##################################################
     const [showActionDropdown, setShowActionDropdown] = useState(false)
     const [showColorDropdown, setShowColorDropdown] = useState(false)
     const dropdownRef = useRef(null)
@@ -52,7 +54,11 @@ const Breadcrumbs = memo(function Breadcrumbs({
     const folderInputRef = useRef(null)
 
 
-    // how many ids is selected in check box
+    // ##################################################
+    // ---- STEP 2: Logic Checks & Data Preparation -----
+    // ##################################################
+
+    // Convert the Set of selected IDs to an array
     const selectedArray = selectedIds ? Array.from(selectedIds) : [];
     // const selectedItem = items?.find(i => i._id === selectedArray[0])
 
@@ -67,7 +73,13 @@ const Breadcrumbs = memo(function Breadcrumbs({
     const selectedCount = selectedIds?.size ?? selectedIds?.length ?? 0;
     const isDisabled = selectedCount === 0;
 
-    //  when file uploading
+    // ##################################################
+    // ---- STEP 3: Action Handlers ---------------------
+    // These functions fire when a user clicks a button 
+    // inside the breadcrumb's context dropdown.
+    // ##################################################
+
+    // Upload Files
     const handleFileChange = (e) => {
         const files = Array.from(e.target.files);
         if (files.length) {
@@ -181,7 +193,12 @@ const Breadcrumbs = memo(function Breadcrumbs({
     const visibleTrail = shouldCollapse ? trail.slice(trail.length - maxVisible) : trail;
 
 
-    // here all menu items like new folder share move all here 
+    // ##################################################
+    // ---- STEP 4: Render Dropdown Menu Items ----------
+    // Dynamically builds the dropdown menu using the `actions` 
+    // prop (e.g. ['newFolder', 'share', 'info']).
+    // Respects `isViewerOnly` to disable destructive items.
+    // ##################################################
     const menuItems = actions.length > 0 ? (
         <Dropdown.Menu className="custom-breadcrumb-dropdown" style={{ overflow: "visible" }}>
             {actions.includes("newFolder") && (
@@ -303,6 +320,17 @@ const Breadcrumbs = memo(function Breadcrumbs({
                 </Dropdown.Item>
             )}
 
+            {/*  item info */}
+            {actions.includes("info") && (
+                <Dropdown.Item as="button"
+                    onClick={() => {
+                        setModal({ type: "ItemInfoModal", data: targetItem })
+                        setShowActionDropdown(false)
+                    }}>
+                    <InteractiveIcon defaultIcon={fileInfoIcon} className="me-2" width={20} /> Info
+                </Dropdown.Item>
+            )}
+
             {/* trash */}
             {actions.includes("trash") && (
                 <Dropdown.Item as="button"
@@ -335,10 +363,14 @@ const Breadcrumbs = memo(function Breadcrumbs({
     ) : null
 
 
+    // ##################################################
+    // ---- STEP 5: Render Breadcrumb Trail -------------
+    // Renders the visible path (e.g., Home > Folder 1 > Folder 2).
+    // If the path exceeds maxVisible, it collapses the middle items.
+    // ##################################################
     return (
         <>
-            {/*  hidden input for file and folder uploading  */}
-            {/* hidden input for file and folder uploading */}
+            {/* Hidden file inputs used for triggering system upload dialogs via handleAddFiles / handleUploadFolder */}
             {actions.includes("uploadFolder") || actions.includes("addFiles") ? (
                 <>
                     <input type="file" ref={fileInputRef} hidden multiple onChange={handleFileChange} />
@@ -346,11 +378,9 @@ const Breadcrumbs = memo(function Breadcrumbs({
                 </>
             ) : null}
 
-
-            {/*  actual breadCumb here */}
             <ul className="gap-1 breadcrumb mb-0">
 
-                {/*  root */}
+                {/* 1. ROOT ITEM (e.g., "My Docspot") */}
                 <li className="position-relative" ref={trail.length === 0 ? dropdownRef : null}>
                     <a
                         className={`cursor-pointer ${trail.length === 0 ? "highlight" : ""}`}

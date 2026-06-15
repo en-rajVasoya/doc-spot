@@ -653,7 +653,9 @@ import { getRoute } from "../utils/getRoutes.js";
 
 
 
-//  this function is helpfull for copy and move item appear after all folder 
+// ##################################################
+// ---- STEP 1: Helper function for sorting items ---
+// ##################################################
 const insertSorted = (items, newItem) => {
 
     const index = items.findIndex(item => {
@@ -756,18 +758,20 @@ export function FileExplorerProvider({ children }) {
     }, [sortBy, sortOrder])
 
 
-    //  in memory sorting hook
+    // ##################################################
+    // ---- STEP 2: In-memory sorting hook --------------
+    // ##################################################
     const sortedItems = useMemo(() => {
         let filteredList = [...items]
 
         // only filter at root level not inside the fodlers
-        if(!currentFolderId){
+        if (!currentFolderId) {
             // shared-with-me route
-            if(location.pathname.startsWith(getRoute.SHARED_WITH_ME)){
+            if (location.pathname.startsWith(getRoute.SHARED_WITH_ME)) {
                 filteredList = items.filter(item => item.isSharedWithMe)
-            } 
+            }
             // shared route
-            else if (location.pathname.startsWith(getRoute.SHARED)){
+            else if (location.pathname.startsWith(getRoute.SHARED)) {
                 filteredList = items.filter(item => !item.isSharedWithMe && (item.isShared || item.sharedWith?.length > 0))
             }
         }
@@ -804,7 +808,9 @@ export function FileExplorerProvider({ children }) {
     }, [items, sortBy, sortOrder, location.pathname, currentFolderId])
 
 
-    //  fetch all itesm for main screen
+    // ##################################################
+    // ---- STEP 3: Fetch items for main screen ---------
+    // ##################################################
     const fetchItems = useCallback(async () => {
         setError(null)
         setLoading(true)
@@ -852,7 +858,9 @@ export function FileExplorerProvider({ children }) {
     // }, [isSearchMode])
 
 
-    //  socket Event useEffect 
+    // ##################################################
+    // ---- STEP 4: Real-time socket event listeners ----
+    // ##################################################
     useEffect(() => {
         if (!user?._id || !socket) return
 
@@ -1056,7 +1064,9 @@ export function FileExplorerProvider({ children }) {
 
 
 
-    // when URL changes (browser back/forward) → sync trail
+    // ##################################################
+    // ---- STEP 5: Sync breadcrumb trail on URL change -
+    // ##################################################
     useEffect(() => {
         clearSelection()
         setItems([]) // Clear old items immediately to prevent UI flicker
@@ -1093,7 +1103,9 @@ export function FileExplorerProvider({ children }) {
     }, [fetchItems, setOnUploadComplete])
 
 
-    // when user open folder fetch that items
+    // ##################################################
+    // ---- STEP 6: Open Folder Handler -----------------
+    // ##################################################
     const openFolder = useCallback((folder) => {
         clearSelection()
         setItems([])           // clear old items immediately so no flicker
@@ -1107,11 +1119,13 @@ export function FileExplorerProvider({ children }) {
             return [...prev, { id: folder._id, name: folder.name }]
         })
         navigate(`${getPathPrefix()}/folder/${folder._id}`)
-    }, [navigate, getPathPrefix ])
+    }, [navigate, getPathPrefix])
 
 
 
-    //  when user navigate to some folder change url
+    // ##################################################
+    // ---- STEP 7: Navigate Breadcrumb Trail -----------
+    // ##################################################
     const navigateTo = useCallback((depth) => {
         setItems([])           // clear old items immediately so no flicker
         setLoading(true)       // show loading spinner right away
@@ -1131,7 +1145,9 @@ export function FileExplorerProvider({ children }) {
     }, [navigate, getPathPrefix])
 
 
-    // when user select some itesm using check box here
+    // ##################################################
+    // ---- STEP 8: Toggle Item Selection ---------------
+    // ##################################################
     const toggleSelect = (id) => {
         setSelectedIds(prev => {
             const next = new Set(prev);
@@ -1142,7 +1158,9 @@ export function FileExplorerProvider({ children }) {
 
 
 
-    // Highlight an item (e.g. after navigating from upload panel)
+    // ##################################################
+    // ---- STEP 9: Trigger Item Highlight --------------
+    // ##################################################
     const triggerHighlight = useCallback((id) => {
         if (!id) return
         setHighlightedId(id)
@@ -1153,7 +1171,9 @@ export function FileExplorerProvider({ children }) {
 
 
 
-    //  when user rename folder and file
+    // ##################################################
+    // ---- STEP 10: Rename Item API --------------------
+    // ##################################################
     const renameItemApi = async (id, newName) => {
         try {
             const { data } = await axiosApi.patch("/file/rename", { id, newName })
@@ -1183,7 +1203,9 @@ export function FileExplorerProvider({ children }) {
 
 
 
-    //  folder and file delete
+    // ##################################################
+    // ---- STEP 11: Delete Items API -------------------
+    // ##################################################
     const deleteItemApi = async (ids) => {
         try {
             // Optimistically update the UI to feel instant
@@ -1206,7 +1228,9 @@ export function FileExplorerProvider({ children }) {
 
 
 
-    //  change folder color 
+    // ##################################################
+    // ---- STEP 12: Change Folder Color API ------------
+    // ##################################################
     const changeColorApi = async (ids, color) => {
         try {
             await axiosApi.patch("/file/color", { ids, color });
@@ -1238,7 +1262,9 @@ export function FileExplorerProvider({ children }) {
     }
 
 
-    //  move item
+    // ##################################################
+    // ---- STEP 13: Move Item API ----------------------
+    // ##################################################
     const moveItemApi = async (itemId, destinationId, silent = false) => {
         try {
             await axiosApi.patch("/file/move", { itemId, destinationId: destinationId || null })
@@ -1252,7 +1278,9 @@ export function FileExplorerProvider({ children }) {
         }
     }
 
-    //  when user makes a copy 
+    // ##################################################
+    // ---- STEP 14: Copy Item API ----------------------
+    // ##################################################
     const copyItemApi = async (itemId, destinationId, silent = false) => {
         try {
             const { data } = await axiosApi.post("/file/copy", { itemId, destinationId: destinationId || null })
@@ -1266,7 +1294,9 @@ export function FileExplorerProvider({ children }) {
 
 
 
-    // in share modal search api
+    // ##################################################
+    // ---- STEP 15: Search Users API -------------------
+    // ##################################################
     const searchUsersApi = async (query) => {
         try {
             const { data } = await axiosApi.get("/share/search", {
@@ -1280,7 +1310,9 @@ export function FileExplorerProvider({ children }) {
     }
 
 
-    // getting all shared user with specif item
+    // ##################################################
+    // ---- STEP 16: Get Shared Users API ---------------
+    // ##################################################
     const getSharedUsersApi = async (itemId) => {
         try {
             const { data } = await axiosApi.get(`/share/${itemId}`)
@@ -1292,7 +1324,9 @@ export function FileExplorerProvider({ children }) {
     }
 
 
-    //  share item with users
+    // ##################################################
+    // ---- STEP 17: Share Item API ---------------------
+    // ##################################################
     const shareItemApi = async (ids, userIds, permission) => {
         try {
             const idArray = Array.isArray(ids) ? ids : [ids]
@@ -1320,7 +1354,9 @@ export function FileExplorerProvider({ children }) {
 
 
 
-    //  remove user from shared
+    // ##################################################
+    // ---- STEP 18: Unshare Item API -------------------
+    // ##################################################
     const unshareItemApi = async (ids, userIds) => {
         try {
             const idArray = Array.isArray(ids) ? ids : [ids]
@@ -1331,7 +1367,9 @@ export function FileExplorerProvider({ children }) {
     }
 
 
-    //  when user create new empty folder here
+    // ##################################################
+    // ---- STEP 19: Create Folder API ------------------
+    // ##################################################
     const createFolderApi = async (name) => {
         try {
             const { data } = await axiosApi.post("/file/create-folder", {

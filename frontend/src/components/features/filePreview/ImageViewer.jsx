@@ -144,7 +144,7 @@ const MAX_SIZE = 50 * 1024 * 1024; // 50 MB
 export default function ImageViewer({ file }) {
     const src =
         file?.url ||
-        (file?.storagePath ? `/files${file.storagePath}` : "");
+        (file?.storagePath ? `${file.storagePath}` : "");
 
     const { downloadFile } = useDownload();
 

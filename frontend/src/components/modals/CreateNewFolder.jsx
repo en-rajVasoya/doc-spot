@@ -2,6 +2,8 @@ import { Modal, InputGroup, Form } from "react-bootstrap";
 import { useState, useRef } from "react";
 import { useFileExplorer } from "../../context/FileExplorerContext";
 import { useEffect } from "react";
+import InteractiveIcon from "../layout/InteractiveIcon";
+import closeIcon from "@images/icon/close-icon.svg"
 
 function CreateNewFolder({ onClose }) {
     const [name, setName] = useState("Untitled Folder");
@@ -49,6 +51,12 @@ function CreateNewFolder({ onClose }) {
                 <div ref={modalRef}>
                     <Modal.Header className="border-0">
                         <Modal.Title>New Folder</Modal.Title>
+                        <button
+                            className="btn-only-icon"
+                            onClick={onClose}
+                        >
+                            <InteractiveIcon defaultIcon={closeIcon} width={24} alt="close" />
+                        </button>
                     </Modal.Header>
 
                     <Modal.Body>

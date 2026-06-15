@@ -34,7 +34,7 @@ const sharedLinkSchema = new mongoose.Schema({
 
 }, { versionKey: false, timestamps: true });
 
-const User = mongoose.model("sharedLinks", sharedLinkSchema, "shared_links");
+const SharedLink = mongoose.model("sharedLinks", sharedLinkSchema, "shared_links");
 
 
-export default User
+export default SharedLink

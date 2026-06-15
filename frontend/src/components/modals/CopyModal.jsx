@@ -11,6 +11,7 @@ import { useNotification } from "../../context/NotificationContext.jsx";
 import arrowRightIcon from "@images/icon/arrow-right.svg";
 import addFileIcon from "@images/icon/plus.svg";
 import CustomScroll from "../layout/CustomScroll.jsx";
+import closeIcon from "@images/icon/close-icon.svg"
 
 function CopyModal({ data, onClose }) {
     const { copyItemApi, currentFolderId, refetch } = useFileExplorer();
@@ -152,6 +153,12 @@ function CopyModal({ data, onClose }) {
 
                     <Modal.Header className="border-0">
                         <Modal.Title>Copy to</Modal.Title>
+                        <button
+                            className="btn-only-icon"
+                            onClick={onClose}
+                        >
+                            <InteractiveIcon defaultIcon={closeIcon} width={24} alt="close" />
+                        </button>
                     </Modal.Header>
 
                     {/* Breadcrumb */}
@@ -169,8 +176,8 @@ function CopyModal({ data, onClose }) {
                         </div>
                     </div>
 
-                    <Modal.Body className="h-modal-lg p-0">
-                        <CustomScroll className="copy-modal-body" showBottomBlur={false} showTopBlur={false}>
+                    <Modal.Body className="p-0">
+                        <CustomScroll className="copy-modal-body" showBottomBlur={false} showTopBlur={true}>
 
 
 
@@ -205,8 +212,8 @@ function CopyModal({ data, onClose }) {
                                                 <div className="d-flex align-items-center">
                                                     <InteractiveIcon
                                                         defaultIcon={getFolderIcon(folder.color, "list", folder.isShared)}
-                                                        width={28}
-                                                        height={24}
+                                                        width={32}
+                                                        height={28}
                                                     />
                                                     <div className="ms-2 ps-1">
                                                         <p className="file-name m-0">{folder.name}</p>
@@ -231,8 +238,8 @@ function CopyModal({ data, onClose }) {
                                                         }}>
                                                         <InteractiveIcon
                                                             defaultIcon={arrowRightIcon}
-                                                            width={20}
-                                                            height={20}
+                                                            width={24}
+                                                            height={24}
                                                         />
                                                     </button>
                                                 </div>

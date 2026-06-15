@@ -12,7 +12,6 @@ const escapeRegex = (string) => {
 
 export const searchFiles = async (req, res) => {
     try {
-        console.time("⏱️ Total Search Execution"); // Start total timer
 
         // ##################################################
         // ---- STEP 1: Get query and filter details from request
@@ -20,7 +19,6 @@ export const searchFiles = async (req, res) => {
         const { query, fileType, dateFrom, dateTo, ownerFilter, location, folderId, personIds } = req.query
         const userID = req.user._id;
 
-        console.time("⏱️ Shared Folders BFS");
 
         // ##################################################
         // ---- STEP 2: Find all folders shared with the user
@@ -53,7 +51,6 @@ export const searchFiles = async (req, res) => {
             }
         }
 
-        console.timeEnd("⏱️ Shared Folders BFS");
 
         // ##################################################
         // ---- STEP 3: Add folders owned by the user to the list
@@ -88,6 +85,21 @@ export const searchFiles = async (req, res) => {
         } else if (location === "trash") {
             // search only inside user's trash
             filter.owner = userID
+        } else if (location === "shared") {
+            // search only inside the shared - user sahred item with others
+            filter.owner = userID
+            filter.isShared = true
+        } else if (location === "shared-with-me") {
+            // search only items shared with the current user
+            filter.$and.push({
+                // atlease one of this condition must be true
+                $or: [
+                    { "sharedWith.userId": userID },   // the item is shared with current user
+                    { parent: { $in: Array.from(allSharedFolderIds) } }
+                ]
+            })
+            // exclude the items owend by user so we can only show shared with me 
+            filter.owner = { $ne: userID }
         } else if (location === "specific-folder" && folderId) {
             // search inside a specific folder and check permission
             const permission = await getUserPermission(userID, folderId)
@@ -162,8 +174,6 @@ export const searchFiles = async (req, res) => {
         // ---- STEP 8: Filter by date created --------------
         // ##################################################
         if (dateFrom || dateTo) {
-            console.log("dateFrom received:", dateFrom)
-            console.log("dateTo received:", dateTo)
             filter.createdAt = {}
             if (dateFrom) {
                 filter.createdAt.$gte = new Date(dateFrom + "T00:00:00.000Z")
@@ -172,9 +182,6 @@ export const searchFiles = async (req, res) => {
             if (dateTo) {
                 filter.createdAt.$lte = new Date(dateTo + "T23:59:59.999Z")
             }
-
-            console.log("file createdAt in db:", "2026-05-06T03:41:29.367+00:00")
-            console.log("should be between:", filter.createdAt.$gte, "and", filter.createdAt.$lte)
         }
 
         // ##################################################
@@ -210,7 +217,6 @@ export const searchFiles = async (req, res) => {
             })
         }
 
-        console.time("⏱️ Trashed Folders BFS");
         // ##################################################
         // ---- STEP 10: Find all folders that are in trash -
         // ##################################################
@@ -241,7 +247,6 @@ export const searchFiles = async (req, res) => {
                 }
             }
         }
-        console.timeEnd("⏱️ Trashed Folders BFS");
 
         // ##################################################
         // ---- STEP 11: Apply trash visibility rules ------
@@ -270,7 +275,6 @@ export const searchFiles = async (req, res) => {
         const page = parseInt(req.query.page) || 1
         const limit = 50
         const skip = (page - 1) * limit
-        console.time("⏱️ Database Search & Count");
         const [results, totalCount] = await Promise.all([
             uploadModel.find(filter)
                 .select("name type fileSize fileType updatedAt createdAt parent owner storagePath color isShared")
@@ -282,14 +286,10 @@ export const searchFiles = async (req, res) => {
                 .lean(),
             uploadModel.countDocuments(filter)
         ])
-        console.timeEnd("⏱️ Database Search & Count");
-        console.log("total results found:", results.length)
-        console.log("results names:", results.map(r => r.name))
 
         // ##################################################
         // ---- STEP 13: Fetch folder names for paths -------
         // ##################################################
-        console.time("⏱️ Fetching only parent folders");
         const folderCache = {}
         const parentIdsToFetch = new Set()
         results.forEach(item => {
@@ -315,7 +315,6 @@ export const searchFiles = async (req, res) => {
                 }
             })
         }
-        console.timeEnd("⏱️ Fetching only parent folders");
 
         // ##################################################
         // ---- STEP 14: Format paths for search results ----
@@ -338,13 +337,10 @@ export const searchFiles = async (req, res) => {
             }
             return {
                 ...item,
-                storagePath: item.storagePath
-                    ? item.storagePath.split("files")[1].replace(/\\/g, "/")
-                    : null,
+                storagePath: item.storagePath ? `/${item.storagePath}` : null,
                 locationPath: path.join(" / ")
             }
         })
-        console.timeEnd("⏱️ Total Search Execution");
 
         // ##################################################
         // ---- STEP 15: Send the results response ----------

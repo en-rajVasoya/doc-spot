@@ -177,9 +177,9 @@ export const unshareItem = async (req, res) => {
         // ########################################################
 
         // only allow unsharing items that current user actually owns
-        const ownedItems = await uploadModel.find({ 
-            _id: { $in: normalizedItemIds }, 
-            owner: currentUserId 
+        const ownedItems = await uploadModel.find({
+            _id: { $in: normalizedItemIds },
+            owner: currentUserId
         })
         //  if there is no item found or no owner is there so return
         if (ownedItems.length === 0) {
@@ -244,7 +244,7 @@ export const unshareItem = async (req, res) => {
                                 name: child.owner.name,
                                 profilePic: child.owner.profilePic
                             },
-                            storagePath: child.storagePath ? child.storagePath.split("files")[1]?.replace(/\\/g, "/") : null
+                            storagePath: child.storagePath ? `/${child.storagePath}` : null
                         }
                     })
                 })
@@ -316,18 +316,17 @@ export const unshareItem = async (req, res) => {
     }
 }
 
+
+
 //  5) owner can see all user with file and folder access in modal
+//  5) owner can see all user with file and folder access in modal (including inherited)
 export const getSharedUsers = async (req, res) => {
     try {
         const { itemId } = req.params;
         const requesterId = req.user._id;
 
-        // find item without restricting to owner
-        const item = await uploadModel.findById(itemId)
-            .populate("sharedWith.userId", "name email profilePic")
-            .populate("owner", "name email profilePic")
-
-        if (!item) {
+        const targetItem = await uploadModel.findById(itemId).populate("owner", "name email profilePic");
+        if (!targetItem) {
             return res.status(404).json({ success: false, message: "No item found" })
         }
 
@@ -336,33 +335,55 @@ export const getSharedUsers = async (req, res) => {
             return res.status(403).json({ success: false, message: "Access denied" })
         }
 
-        const isOwner = permission === "owner"
-
         const ownerData = {
-            userId: item.owner._id,
-            name: item.owner.name,
-            email: item.owner.email,
-            profilePic: item.owner.profilePic
+            userId: targetItem.owner._id,
+            name: targetItem.owner.name,
+            email: targetItem.owner.email,
+            profilePic: targetItem.owner.profilePic
         }
 
-        // owner gets full sharedWith list, shared user only sees owner
-        const sharedWith = isOwner
-            ? item.sharedWith.map(s => ({
-                userId: s.userId._id,
-                name: s.userId.name,
-                email: s.userId.email,
-                profilePic: s.userId.profilePic,
-                permission: s.permission
-            }))
-            : []
+        const allSharedUsersMap = new Map();
 
+        if (permission === "owner") {
+            let currentId = itemId;
+
+            // Climb the folder tree to grab ALL users
+            while (currentId) {
+                const currentItem = await uploadModel.findById(currentId)
+                    .populate("sharedWith.userId", "name email profilePic");
+                
+                if (!currentItem) break;
+
+                if (currentItem.sharedWith && currentItem.sharedWith.length > 0) {
+                    for (const s of currentItem.sharedWith) {
+                        if (s.userId && !allSharedUsersMap.has(s.userId._id.toString())) {
+                            allSharedUsersMap.set(s.userId._id.toString(), {
+                                userId: s.userId._id,
+                                name: s.userId.name,
+                                email: s.userId.email,
+                                profilePic: s.userId.profilePic,
+                                permission: s.permission,
+                                // This tells the frontend it came from a parent folder!
+                                inherited: currentId.toString() !== itemId.toString() 
+                            });
+                        }
+                    }
+                }
+                currentId = currentItem.parent;
+            }
+        }
+
+        const sharedWith = Array.from(allSharedUsersMap.values());
         res.json({ success: true, owner: ownerData, sharedWith })
 
     } catch (error) {
-        logger.error(error);
         res.status(500).json({ success: false, message: error.message })
     }
 }
+
+
+
+
 
 //  in forntend share modal search user here
 export const searchUsers = async (req, res) => {

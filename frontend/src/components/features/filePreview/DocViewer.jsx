@@ -251,7 +251,7 @@ function DocViewer({ file }) {
     const { downloadFile } = useDownload()
     
     // Fallback to relative path or blob URL
-    const fileUrl = file?.url || (file?.storagePath ? `/files${file.storagePath}` : "");
+    const fileUrl = file?.url || (file?.storagePath ? `${file.storagePath}` : "");
     
     // react-doc-viewer requires a fully qualified absolute URL if it is going to use the MS Office Iframe
     // If you are on localhost, this will fail to load in the MS Viewer.

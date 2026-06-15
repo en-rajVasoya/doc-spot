@@ -1,6 +1,8 @@
 import { Modal, InputGroup, Form } from "react-bootstrap";
 import { useState, useRef } from "react";
 import { useFileExplorer } from "../../context/FileExplorerContext";
+import InteractiveIcon from "../layout/InteractiveIcon";
+import closeIcon from "@images/icon/close-icon.svg"
 
 function RenameModal({ data, onClose }) {
 
@@ -40,6 +42,12 @@ function RenameModal({ data, onClose }) {
                 <div ref={modalRef}>
                     <Modal.Header className="border-0">
                         <Modal.Title>Rename</Modal.Title>
+                        <button
+                            className="btn-only-icon"
+                            onClick={onClose}
+                        >
+                            <InteractiveIcon defaultIcon={closeIcon} width={24} alt="close" />
+                        </button>
                     </Modal.Header>
 
                     <Modal.Body>
@@ -64,7 +72,7 @@ function RenameModal({ data, onClose }) {
                             Cancel
                         </button>
 
-                        {/* ✅ NEW: connect submit */}
+                        {/* connect submit */}
                         <button className="btn-black btn-lg m-0" onClick={handleSubmit}>
                             Ok
                         </button>

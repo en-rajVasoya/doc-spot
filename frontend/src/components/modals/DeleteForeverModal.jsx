@@ -2,6 +2,8 @@
 import Modal from "react-bootstrap/Modal";
 import { useState, useRef } from "react";
 import { useTrash } from "../../context/TrashContext";
+import InteractiveIcon from "../layout/InteractiveIcon";
+import closeIcon from "@images/icon/close-icon.svg"
 
 
 function DeleteForeverModal({ data, onClose }) {
@@ -41,6 +43,12 @@ function DeleteForeverModal({ data, onClose }) {
                 <div ref={modalRef}>
                     <Modal.Header className="border-0">
                         <Modal.Title>Delete forever?</Modal.Title>
+                        <button
+                            className="btn-only-icon"
+                            onClick={onClose}
+                        >
+                            <InteractiveIcon defaultIcon={closeIcon} width={24} alt="close" />
+                        </button>
                     </Modal.Header>
                     <Modal.Body>
                         {selectedItems.length === 1 ? (

@@ -11,50 +11,78 @@ import { useDownload } from "../../../context/DownloadContext";
 import Breadcrumbs from "../../features/Breadcrumbs";
 import { getRoute } from "../../../utils/getRoutes.js";
 
-
-
+// ##################################################
+// ---- SubHeader Component -------------------------
+// This component renders the secondary navigation bar 
+// which includes the breadcrumbs and the list/grid view toggle.
+// ##################################################
 const SubHeader = memo(function SubHeader({ view, setView, setModal, isSearchMode }) {
+    // 1. Pull necessary state and functions from Contexts
     const { trail, selectedIds, items, currentFolderId, navigateTo, changeColorApi, isViewerOnly, currentFolderMeta } = useFileExplorer();
     const { addFiles, checkAndUpload, openScanningPanel } = useUpload();
     const { downloadFile, downloadFolder, downloadMultiple } = useDownload();
+    
+    // 2. Setup routing hooks for navigation
     const navigate = useNavigate()
     const location = useLocation()
 
+    // ##################################################
+    // ---- STEP 1: Determine Route Prefix --------------
+    // Checks the current URL path to figure out which 
+    // root dashboard the user is currently browsing.
+    // ##################################################
     const getPathPrefix = () => {
         if (location.pathname.startsWith(getRoute.SHARED_WITH_ME)) return getRoute.SHARED_WITH_ME;
         if (location.pathname.startsWith(getRoute.SHARED)) return getRoute.SHARED;
         return getRoute.DASHBOARD;
     };
 
+    // ##################################################
+    // ---- STEP 2: Determine Root Label ----------------
+    // Sets the very first breadcrumb label (e.g. "My Docspot") 
+    // depending on the active route.
+    // ##################################################
     const getRootLabel = () => {
         if (location.pathname.startsWith(getRoute.SHARED_WITH_ME)) return "Shared with me";
         if (location.pathname.startsWith(getRoute.SHARED)) return "Shared";
         return "My Docspot";
     };
-    //  here when user is in the roor of the shared and shared-with-me so no breadcrumb menu will open here
+
+    // ##################################################
+    // ---- STEP 3: Permission Logic & Breadcrumb Actions
+    // Calculates what options should be available inside 
+    // the breadcrumb dropdown based on the folder level.
+    // ##################################################
+    
+    // Check if user is at the root of a Shared folder (trail is empty)
     const isSharedRoot = (location.pathname.startsWith(getRoute.SHARED_WITH_ME) || location.pathname.startsWith(getRoute.SHARED)) && trail.length === 0;
     
     let actionsList = [];
 
     if (isSharedRoot) {
-        // 1. Shared Root -> Keep it exactly as you had it (No menu opens)
+        // SCENARIO 1: Shared Root -> No menu opens, purely read-only structural view
         actionsList = []; 
     } else if (trail.length === 0) {
-        // 2. My Docspot Root -> Only show the 3 creation actions
+        // SCENARIO 2: My Docspot Root -> User is at home, only allow creation actions
         actionsList = ["newFolder", "uploadFolder", "addFiles"]; 
     } else {
-        // 3. Inside ANY Folder -> Show all actions
-        actionsList = ["newFolder", "uploadFolder", "addFiles", "share", "download", "rename", "changeColor", "copy", "move", "trash"];
+        // SCENARIO 3: Inside ANY Folder -> Show all context actions (including info, share, trash)
+        actionsList = ["newFolder", "uploadFolder", "addFiles", "share", "download", "rename", "changeColor", "copy", "move", "info", "trash"];
     }
 
     return (
         <>
+            {/* Only display the subheader if the user is NOT actively searching */}
             {!isSearchMode && (
                 <header className="header">
 
-
-                    {/*  here breadcumb component here  */}
+                    {/* ################################################## */}
+                    {/* ---- MAIN HEADER ROW ----------------------------- */}
+                    {/* ################################################## */}
                     <div className="header-view d-flex align-items-center justify-content-between ">
+                        
+                        {/* --- BREADCRUMBS COMPONENT --- */}
+                        {/* Passes all calculated navigation and permission data to the breadcrumb renderer */}
                         <Breadcrumbs
                             trail={trail}
                             onNavigate={navigateTo}
@@ -76,8 +104,12 @@ const SubHeader = memo(function SubHeader({ view, setView, setModal, isSearchMod
                             currentFolderMeta={currentFolderMeta}
                         />
 
+                        {/* --- VIEW TOGGLE BUTTONS --- */}
+                        {/* Allows switching between List and Grid layouts */}
                         <div className="d-flex align-items-center">
                             <ul className="mb-0 d-flex view-btn">
+                                
+                                {/* List View Toggle */}
                                 <li>
                                     <Tooltip text="List View">
                                         <button
@@ -89,6 +121,7 @@ const SubHeader = memo(function SubHeader({ view, setView, setModal, isSearchMod
                                     </Tooltip>
                                 </li>
 
+                                {/* Grid View Toggle */}
                                 <li>
                                     <Tooltip text="Grid View">
                                         <button
@@ -99,13 +132,13 @@ const SubHeader = memo(function SubHeader({ view, setView, setModal, isSearchMod
                                         </button>
                                     </Tooltip>
                                 </li>
+
                             </ul>
                         </div>
                     </div>
                 </header>
             )}
         </>
-
     );
 })
 

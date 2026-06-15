@@ -126,7 +126,7 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                                     </div>
                                 </Dropdown.Toggle>
 
-                                <Dropdown.Menu className='dropdown-menu-lg'>
+                                <Dropdown.Menu align="end" className='dropdown-menu-lg'>
                                     <div className='profile-header'>
                                         <InteractiveIcon
                                             defaultIcon={BrandSmallIcon}

@@ -4,6 +4,7 @@ import InteractiveIcon from "../layout/InteractiveIcon";
 import getFileIcon from "../../utils/getFileIcon";
 import colorIcon from "@images/icon/color.svg";
 
+
 function UploadIssuesModal({ data, onClose }) {
     const issues = data || [];
     const [shake, setShake] = useState(false);
@@ -29,6 +30,12 @@ function UploadIssuesModal({ data, onClose }) {
                 <div ref={modalRef} className="position-relative">
                     <Modal.Header className="border-0">
                         <Modal.Title>Upload Issues</Modal.Title>
+                        <button
+                            className="btn-only-icon"
+                            onClick={onClose}
+                        >
+                            <InteractiveIcon defaultIcon={closeIcon} width={24} alt="close" />
+                        </button>
                     </Modal.Header>
 
                     <Modal.Body className="h-modal-lg p-0">

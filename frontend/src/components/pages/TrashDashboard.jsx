@@ -24,6 +24,9 @@ function TrashDashboard() {
     const dragRootRef = useRef(null)
     const dragAndSelectRef = useRef(null)
 
+    // ##################################################
+    // ---- STEP 1: Modal escape key handler ------------
+    // ##################################################
     useEffect(() => {
         const handleKeyDown = (e) => {
             if (e.key === "Escape") {

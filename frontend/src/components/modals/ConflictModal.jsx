@@ -1,6 +1,8 @@
 import { Modal } from "react-bootstrap"
 import { useState } from "react"
 import { useUpload } from "../../context/UploadContext"
+import InteractiveIcon from "../layout/InteractiveIcon"
+import closeIcon from "@images/icon/close-icon.svg"
 
 
 function ConflictModal(){
@@ -21,6 +23,12 @@ function ConflictModal(){
         <Modal show={true} backdrop="static" keyboard={false} centered className="upload-option-modal">
             <Modal.Header className="border-0">
                 <Modal.Title>File Conflict</Modal.Title>
+                <button
+                            className="btn-only-icon"
+                            onClick={onClose}
+                        >
+                            <InteractiveIcon defaultIcon={closeIcon} width={24} alt="close" />
+                        </button>
             </Modal.Header>
 
             <Modal.Body>

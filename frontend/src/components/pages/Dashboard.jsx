@@ -24,53 +24,80 @@ function Dashboard() {
   const [isSidebarNavOpen, setIsSidebarNavOpen] = useState(false);
 
 
-  //  here for the sorting and display item 
+  // ##################################################
+  // ---- STEP 1: Sorting and displaying items --------
+  // ##################################################
   const sortedSearchResults = useMemo(() => {
+    // If not in search mode, there are no search results to sort
     if (!isSearchMode) return []
+    
+    // Create a fresh copy of the search results array before sorting it
     return [...searchResults].sort((a, b) => {
+      // Always put folders before files, regardless of other sorting rules
       if (a.type !== b.type) return a.type === "folder" ? -1 : 1
+      
       let valA, valB
+      
       if (sortBy === "name") {
+        // For name sorting, convert both to lowercase to ensure 'A' and 'a' are treated equally
         valA = a.name.toLowerCase()
         valB = b.name.toLowerCase()
       } else if (sortBy === "size") {
+        // For size sorting, use the file size or default to 0 if not present
         valA = a.fileSize || 0
         valB = b.fileSize || 0
       } else {
+        // For date sorting, grab the most recent timestamp (update vs creation)
         valA = new Date(a.updatedAt || a.createdAt).getTime()
         valB = new Date(b.updatedAt || b.createdAt).getTime()
       }
+      
+      // Compare the two values and apply the ascending or descending order logic
       if (valA < valB) return sortOrder === "asc" ? -1 : 1
       if (valA > valB) return sortOrder === "asc" ? 1 : -1
+      // If the values are identical, leave them in their current order
       return 0
     })
   }, [isSearchMode, searchResults, sortBy, sortOrder])
 
 
-  //  sending the dispaly items error and loading to the all component where it is used here
+  // ##################################################
+  // ---- STEP 2: Propagate display state to components
+  // ##################################################
   // const displayItems = isSearchMode ? sortedSearchResults : items
   const displayItems = isSearchMode ? sortedSearchResults : (loading ? [] : items)
   const displayLoading = isSearchMode ? searchLoading : loading
   const displayError = isSearchMode ? searchError : error
 
-  //  drag and select item state 
+  // ##################################################
+  // ---- STEP 3: Drag and select item state ----------
+  // ##################################################
   const itemRefsFromContent = useRef({})
   const dragRootRef = useRef(null)
   const dragAndSelectRef = useRef(null)
 
-  //  view change
+  // ##################################################
+  // ---- STEP 4: View change state -------------------
+  // ##################################################
   const [view, setView] = useState("grid");
 
 
-  //  for any modal open
+  // ##################################################
+  // ---- STEP 5: Modal open and close handlers -------
+  // ##################################################
   const [modal, setModal] = useState(null);
+  
   useEffect(() => {
     const handleKeyDown = (e) => {
+      // If any modal is currently open and the user hits the Escape key
       if (e.key === "Escape") {
+        // Close the modal by setting its state to null
         setModal(null)
       }
     }
+    // Attach the keyboard listener to the entire document
     document.addEventListener("keydown", handleKeyDown)
+    // Clean up the listener when the Dashboard unmounts
     return () => document.removeEventListener("keydown", handleKeyDown)
   }, [])
 

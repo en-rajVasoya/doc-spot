@@ -7,7 +7,7 @@ import CreateNewFolder from './CreateNewFolder';
 import DeleteForeverModal from "./DeleteForeverModal"
 import ConflictModal from './ConflictModal';
 import UploadIssuesModal from './UploadIssuesModal';
-
+import ItemInfoModal from "./ItemInfoModal"
 
 const MODAL_COMPONENTS = {
     shareUser: ShareUserModal,
@@ -18,7 +18,8 @@ const MODAL_COMPONENTS = {
     createNewFolder: CreateNewFolder,
     DeleteForeverModal: DeleteForeverModal,
     ConflictModal: ConflictModal,
-    UploadIssuesModal: UploadIssuesModal
+    UploadIssuesModal: UploadIssuesModal,
+    ItemInfoModal: ItemInfoModal
 };
 
 function ModalManager({ modal, setModal }) {

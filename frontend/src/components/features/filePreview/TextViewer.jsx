@@ -14,7 +14,7 @@ const MAX_SIZE = 51 * 1024 * 1024; // 20 MB
 export default function TextViewer({ file, contentRef }) {
     const src = file?.url ||
         (file?.storagePath
-            ? `/files${file.storagePath}`
+            ? `${file.storagePath}`
             : "");
 
     const [content, setContent] = useState("");

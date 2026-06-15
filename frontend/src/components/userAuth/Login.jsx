@@ -166,7 +166,7 @@ function Login() {
                                     defaultIcon={passwordShow ? viewIcon : viewHideIcon}
                                     alt=""
                                     className="form-right-icon"
-                                    width={20}
+                                    width={24}
                                     onClick={() => setPasswordShow(!passwordShow)}
                                 />
                                 <Form.Control

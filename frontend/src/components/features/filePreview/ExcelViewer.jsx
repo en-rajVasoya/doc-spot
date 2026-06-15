@@ -2060,7 +2060,7 @@ const getColumnName = (n) => {
 function ExcelViewer({ file }) {
 
     const { downloadFile } = useDownload();
-    const fileUrl = `/files${file.storagePath}`;
+    const fileUrl = `${file.storagePath}`;
 
     const [tooBig, setTooBig] = useState(false);
     const [tooBigMB, setTooBigMB] = useState(null);

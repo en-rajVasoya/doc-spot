@@ -6,6 +6,7 @@ import fsPromises from "fs/promises"
 import busboy from "busboy"
 import Chunk from "../models/chunkModel.js"
 import Upload from "../models/uploadModel.js"
+import { getAbsolutePath } from "../utils/pathHelper.js"
 
 
 
@@ -299,7 +300,7 @@ export const streamChunkMiddleware = (req, res, next) => {
 
                 try {
                     // get open file descriptor (FD) from cache pool, or open file if first chunk
-                    const fd = await getFd(uploadId, record.storagePath)
+                    const fd = await getFd(uploadId, getAbsolutePath(record.storagePath))
 
                     // write chunk stream directly into correct byte position in file
                     await new Promise((resolveWrite, rejectWrite) => {

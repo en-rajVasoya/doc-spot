@@ -22,6 +22,7 @@ import { scanFileWithClamAV } from "../virusTotal/clamAVWorker.js";
 //  utils - helper
 import { logger } from "#utils/logger";
 import { updateParentFolderTimestamps } from "#utils/parentFolderTimestamp";
+import { getAbsolutePath } from "#utils/pathHelper";
 
 
 //  first create out /file folder if not exist here
@@ -123,7 +124,8 @@ export const initUpload = async (req, res) => {
     //  if uplaod statues is still uploading here
     if (existing?.uploadStatus === "uploading") {
       //  verify if temp file still exist on disk or not 
-      if (!existing.storagePath || !fs.existsSync(existing.storagePath)) {
+      const existingAbsPath = getAbsolutePath(existing.storagePath)
+      if (!existing.storagePath || !existingAbsPath || !fs.existsSync(existingAbsPath)) {
         //  file is gone so - delete broken record and start fresh upload here
         await uploadModel.deleteOne({ _id: existing._id })
         await chunkModel.deleteMany({ uploadId: existing.uploadId })   // chunk schema all dleete that chunks here
@@ -156,11 +158,13 @@ export const initUpload = async (req, res) => {
 
     // get storage path here
     const bucketDir = getBucketPath(uploadId)
-    const storagePath = path.join(bucketDir, `${uploadId}.tmp`)
+    const bucket = uploadId.substring(0, 2)
+    const absoluteTmpPath = path.join(bucketDir, `${uploadId}.tmp`)
+    const storagePath = `files/${bucket}/${uploadId}.tmp`
 
     //  now here main point we are doin glike when first user upload a file here wo we are pre-alocating full file size to the disk
     //  so when random index chunks arrive here we can write at the position here
-    const fd = fs.openSync(storagePath, "w")
+    const fd = fs.openSync(absoluteTmpPath, "w")
     fs.ftruncateSync(fd, fileSize)
     fs.closeSync(fd)    //after allocation file close that file
 
@@ -270,11 +274,13 @@ export const completeUpload = async (req, res) => {
     //  here we are replacing the file name 
     const ext = record.name?.includes(".") ? "." + record.name.split(".").pop() : ""
     const bucketDir = getBucketPath(uploadId)
-    const oldPath = record.storagePath
-    const newPath = path.join(bucketDir, `${uploadId}${ext}`)
+    const bucket = uploadId.substring(0, 2)
+    const oldAbsPath = getAbsolutePath(record.storagePath)
+    const newAbsPath = path.join(bucketDir, `${uploadId}${ext}`)
+    const newRelativePath = `files/${bucket}/${uploadId}${ext}`
 
-    if (fs.existsSync(oldPath)) {
-      fs.renameSync(oldPath, newPath)
+    if (oldAbsPath && fs.existsSync(oldAbsPath)) {
+      fs.renameSync(oldAbsPath, newAbsPath)
     }
 
     //  --------------------------------------------------------------------------
@@ -286,7 +292,7 @@ export const completeUpload = async (req, res) => {
       { uploadId, owner },
       {
         uploadStatus: "completed",
-        storagePath: newPath,
+        storagePath: newRelativePath,
         lastActivity: new Date()
       }
     )
@@ -315,9 +321,10 @@ export const completeUpload = async (req, res) => {
         )
 
         // delete the old file reord from disk
-        if (oldRecord.storagePath && fs.existsSync(oldRecord.storagePath)) {
+        const oldAbsolute = getAbsolutePath(oldRecord.storagePath)
+        if (oldAbsolute && fs.existsSync(oldAbsolute)) {
           try {
-            fs.unlinkSync(oldRecord.storagePath)
+            fs.unlinkSync(oldAbsolute)
           } catch (error) {
             logger.error(error);
             console.log("Old file record ")
@@ -550,12 +557,14 @@ export const uploadSmallBatch = async (req, res) => {
         ? "." + meta.fileName.split(".").pop()
         : "";
       const bucketDir = getBucketPath(uploadId)
-      const storagePath = path.join(bucketDir, `${uploadId}${ext}`)
+      const bucket = uploadId.substring(0, 2)
+      const absoluteStoragePath = path.join(bucketDir, `${uploadId}${ext}`)
+      const relativeStoragePath = `files/${bucket}/${uploadId}${ext}`
 
       // 4) write file to disk storage path - all 50 files will write at same time 
       //  all file will write at same time and we are pushing here refresh of that file into array to know when it will be done
       pendingDiskWrites.push(
-        fs.promises.writeFile(storagePath, file.buffer)
+        fs.promises.writeFile(absoluteStoragePath, file.buffer)
       );
 
       //  5) We are pushing object in to array when all complet so we can bult write to the mongodb
@@ -571,7 +580,7 @@ export const uploadSmallBatch = async (req, res) => {
             uploadId,
             fileSize: meta.fileSize,
             fileType: meta.fileType,
-            storagePath,
+            storagePath: relativeStoragePath,
             totalChunks: 1,
             uploadStatus: "completed",
             replacesFileId: meta.replacesFileId || null  // add replacesFileId here
@@ -587,7 +596,7 @@ export const uploadSmallBatch = async (req, res) => {
           fingerprint: meta.fingerprint,
           parentId: meta.parentId,
           replacesFileId: meta.replacesFileId,
-          storagePath,
+          storagePath: relativeStoragePath,
           newRecordId: fileId
         })
       }
@@ -604,7 +613,7 @@ export const uploadSmallBatch = async (req, res) => {
 
     //  wait for the all preocess to complete disk write + database write
     await Promise.all([...pendingDiskWrites, dbPromise]);
-    
+
     //  update the all parents time stmap for sorting here
     if (parentId) {
       await updateParentFolderTimestamps(parentId);
@@ -632,9 +641,10 @@ export const uploadSmallBatch = async (req, res) => {
       }
 
       // delete old file from disk
-      if (oldRecord.storagePath && fs.existsSync(oldRecord.storagePath)) {
+      const oldAbsolute = getAbsolutePath(oldRecord.storagePath)
+      if (oldAbsolute && fs.existsSync(oldAbsolute)) {
         try {
-          fs.unlinkSync(oldRecord.storagePath)
+          fs.unlinkSync(oldAbsolute)
         } catch (err) {
           logger.error(err);
           console.error("Old file delete failed:", err.message)
@@ -836,7 +846,7 @@ export const createFoldersBulk = async (req, res) => {
       })
     }
 
-     // Update parent folder modified timestamps recursively
+    // Update parent folder modified timestamps recursively
     if (parentId) {
       await updateParentFolderTimestamps(parentId);
     }
@@ -924,9 +934,10 @@ export const cancelUpload = async (req, res) => {
     await cleanupUploadResources(uploadId)
 
     // delete physical file if exists
-    if (record.storagePath && fs.existsSync(record.storagePath)) {
+    const cancelAbsPath = getAbsolutePath(record.storagePath)
+    if (cancelAbsPath && fs.existsSync(cancelAbsPath)) {
       try {
-        fs.unlinkSync(record.storagePath)
+        fs.unlinkSync(cancelAbsPath)
       } catch (err) {
         logger.error(err);
         console.error("File delete failed:", err.message)
@@ -968,12 +979,16 @@ export const cancelFolderUpload = async (req, res) => {
 
       await Promise.all(
         records
-          .filter(r => r.storagePath && fs.existsSync(r.storagePath))
-          .map(r =>
-            fs.promises.unlink(r.storagePath).catch(err =>
-              console.error(`File delete failed for ${r.uploadId}:`, err.message)
-            )
-          )
+          .filter(r => r.storagePath)
+          .map(r => {
+            const absPath = getAbsolutePath(r.storagePath)
+            if (absPath && fs.existsSync(absPath)) {
+              return fs.promises.unlink(absPath).catch(err =>
+                console.error(`File delete failed for ${r.uploadId}:`, err.message)
+              )
+            }
+            return Promise.resolve()
+          })
       )
 
       const verifiedUploadIds = records.map(r => r.uploadId)
@@ -1004,12 +1019,16 @@ export const cancelFolderUpload = async (req, res) => {
       // delete physical files
       await Promise.all(
         toDelete
-          .filter(r => r.storagePath && fs.existsSync(r.storagePath))
-          .map(r =>
-            fs.promises.unlink(r.storagePath).catch(err =>
-              console.error(`File delete failed:`, err.message)
-            )
-          )
+          .filter(r => r.storagePath)
+          .map(r => {
+            const absPath = getAbsolutePath(r.storagePath)
+            if (absPath && fs.existsSync(absPath)) {
+              return fs.promises.unlink(absPath).catch(err =>
+                console.error(`File delete failed:`, err.message)
+              )
+            }
+            return Promise.resolve()
+          })
       )
 
       const allIds = toDelete.map(r => r._id)
@@ -1081,9 +1100,10 @@ export const completeFolderReplace = async (req, res) => {
           await deleteRecursive(child._id)
         } else if (child.type === "file") {
           // delete file from disk
-          if (child.storagePath && fs.existsSync(child.storagePath)) {
+          const childAbsPath = getAbsolutePath(child.storagePath)
+          if (childAbsPath && fs.existsSync(childAbsPath)) {
             try {
-              fs.unlinkSync(child.storagePath)
+              fs.unlinkSync(childAbsPath)
             } catch (err) {
               logger.error(err);
               console.error("File delete failed:", err.message)

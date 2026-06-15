@@ -53,7 +53,9 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
     const debounceRef = useRef(null);
 
 
-    //  this is when user press escape key then all back to normal dashboard
+    // ##################################################
+    // ---- STEP 1: Handle escape key to close search ---
+    // ##################################################
     useEffect(() => {
         const handleKeyDown = (e) => {
             if (e.key === "Escape") {
@@ -65,7 +67,9 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
         return () => document.removeEventListener("keydown", handleKeyDown)
     })
 
-    // this is when search bar is not open then clear all input
+    // ##################################################
+    // ---- STEP 2: Reset search on close ---------------
+    // ##################################################
     useEffect(() => {
         if (!searchBarOpen) {
             setFileType(null)
@@ -82,7 +86,9 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
         }
     }, [searchBarOpen])
 
-    //  this is when user click on outside 
+    // ##################################################
+    // ---- STEP 3: Close search on outside click -------
+    // ##################################################
     useEffect(() => {
         const handleClickOutside = (event) => {
             const isInsideSearch =
@@ -95,7 +101,7 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
             if (!isInsideSearch) {
                 setIsOpen(false);
                 setShowSuggestions(false);
-                if(!isSearchMode){
+                if (!isSearchMode) {
                     setSearchBarOpen(false)
                 }
             }
@@ -105,7 +111,9 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, [isSearchMode]);
 
-    // debounce quick search
+    // ##################################################
+    // ---- STEP 4: Debounce quick search requests ------
+    // ##################################################
     useEffect(() => {
         if (!searchText.trim()) {
             setShowSuggestions(false);
@@ -138,7 +146,9 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
 
 
     //  when user will cick on remove the filter  in content view so remove also here that in search bar
-    // Sync search bar inputs with active search filters (e.g. when chips are cleared)
+    // ##################################################
+    // ---- STEP 5: Sync inputs with active filters -----
+    // ##################################################
     useEffect(() => {
         // 1. Sync Search Text
         setSearchText(searchFilters.query || "");
@@ -190,7 +200,9 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
         defaultDate: new Date()
     }), []);
 
-    // search users for specific person select
+    // ##################################################
+    // ---- STEP 6: Search users for selection ----------
+    // ##################################################
     const handleUserSearch = useCallback((inputValue) => {
         console.log("handleUserSearch called", inputValue)
         if (!inputValue || inputValue.trim().length < 2) return;
@@ -209,8 +221,11 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
     const navigate = useNavigate();
     const locationPath = useLocation().pathname;
 
+    // ##################################################
+    // ---- STEP 7: Main search execution handler -------
+    // ##################################################
     const handleSearch = () => {
-        
+
         //  when user have empty input boxed and press enter here so search won happens here 
         const hasText = searchText.trim().length > 0;
         const hasFileType = fileType && fileType.value !== "Any";
@@ -286,6 +301,9 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
         }
     };
 
+    // ##################################################
+    // ---- STEP 8: Reset all search filters ------------
+    // ##################################################
     const handleReset = () => {
         setFileType(null);
         setOwner(null);
@@ -300,6 +318,9 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
         setShowSuggestions(false);
     };
 
+    // ##################################################
+    // ---- STEP 9: Close and reset search bar ----------
+    // ##################################################
     const handleCloseSearchBar = () => {
         setSearchBarOpen(false);
         setShowRangePicker(false);
@@ -341,13 +362,14 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
 
     const locationOptions = [
         { value: "my-docspot", label: "My Docspot" },
-        { value: "Shared", label: "Shared" },
-        { value: "Shared-with-me", label: "Shared with me" },
+        { value: "shared", label: "Shared" },
+        { value: "shared-with-me", label: "Shared with me" },
         { value: "trash", label: "Trash" },
     ];
 
     return (
         <>
+            {/* 1. File Preview Modal - Renders when a user clicks a file suggestion */}
             {filePreview && (
                 <FilePreviewModal
                     file={filePreview}
@@ -366,6 +388,7 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
                                         width={24}
                                     />
 
+                                    {/* 2. Main Search Input Field */}
                                     <Form.Control
                                         name="name"
                                         type="text"
@@ -533,6 +556,7 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
 
                                     <Form.Group className="mb-3">
                                         <Form.Label>Owner</Form.Label>
+                                        {/* 3. Owner Filter Dropdown */}
                                         <CustomSelect
                                             options={ownerOptions}
                                             value={owner}
@@ -552,6 +576,7 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
 
                                     {showSelectPerson && (
                                         <Form.Group className="mb-3 add-user-gradient-box">
+                                            {/* 4. Specific Person Search Box */}
                                             <CustomSelect
                                                 options={userOptions}
                                                 value={selectedPersons}
@@ -573,6 +598,7 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
 
                                     <Form.Group className="mb-3">
                                         <Form.Label>Date Modified</Form.Label>
+                                        {/* 5. Date Range Dropdown */}
                                         <CustomSelect
                                             options={dateOptions}
                                             value={date}
@@ -591,6 +617,7 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
 
                                     {showRangePicker && (
                                         <RangePicker
+                                            // 6. Custom Date Range Picker
                                             label="Date Range"
                                             value={selectedDate}
                                             onChange={(d, dateStr, instance) => {
@@ -612,6 +639,7 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
 
                                     <Form.Group className="mb-3">
                                         <Form.Label>Type</Form.Label>
+                                        {/* 7. File Type Filter Dropdown */}
                                         <CustomSelect
                                             options={fileTypeOptions}
                                             value={fileType}
@@ -624,6 +652,7 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
 
                                     <Form.Group className="mb-3">
                                         <Form.Label>Location</Form.Label>
+                                        {/* 8. Location Filter Dropdown */}
                                         <CustomSelect
                                             options={locationOptions}
                                             value={location}

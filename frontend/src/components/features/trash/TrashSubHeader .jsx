@@ -108,13 +108,18 @@ const TrashSubHeader = memo(function TrashSubHeader({ view, setView, setModal })
 
     const selectedArray = Array.from(selectedIds || new Set())
 
+    // ##################################################
+    // ---- STEP 1: Empty bin handler -------------------
+    // ##################################################
     const handleEmptyBin = () => {
         if (items.length === 0) return
         const allIds = items.map(i => i._id)
         setModal({ type: "DeleteForeverModal", data: allIds })
     }
 
-    //  here restore item 
+    // ##################################################
+    // ---- STEP 2: Restore selected items --------------
+    // ##################################################
     const handleRestore = async () => {
         for (const id of selectedIds) {
             await restoreItemApi(id, true)
@@ -124,7 +129,9 @@ const TrashSubHeader = memo(function TrashSubHeader({ view, setView, setModal })
         setSelectedIds(new Set())
     }
 
-    //  here delete for ever
+    // ##################################################
+    // ---- STEP 3: Delete items forever ----------------
+    // ##################################################
     const handleDeleteForever = () => {
         if (selectedArray.length === 0) return
         setModal({ type: "DeleteForeverModal", data: selectedArray })
@@ -195,16 +202,15 @@ const TrashSubHeader = memo(function TrashSubHeader({ view, setView, setModal })
                 </div>
             </header>
             {/* full width notice bar */}
-            <div className="empty-bin-section ">
-                <span>
-                    Items in trash are deleted forever after 30 days
-                </span>
-                {/* {items.length > 0 && (
-                    <button className=" btn" onClick={handleEmptyBin}>
-                        Empty Bin
-                    </button>
-                )} */}
-            </div>
+            {items.length > 0 && (
+                <div className="empty-bin-section ">
+                    <span>
+                        Items in trash are deleted forever after 30 days
+                    </span>
+            
+                </div>
+            )}
+
         </>
     );
 })

@@ -128,7 +128,7 @@ const fmt = (s) => {
 const speeds = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
 export default function AudioViewer({ file }) {
-  const src = file?.url || (file?.storagePath ? `/files${file.storagePath}` : "");
+  const src = file?.url || (file?.storagePath ? `${file.storagePath}` : "");
 
   const audioRef = useRef();
   const [playing, setPlaying] = useState(false);

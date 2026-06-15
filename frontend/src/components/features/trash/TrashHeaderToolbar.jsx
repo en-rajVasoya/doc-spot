@@ -4,6 +4,7 @@ import closeIcon from "@images/icon/close.svg";
 import downloadIcon from "@images/icon/download.svg";
 import retryAddIcon from "@images/icon/retry-add-icon.svg";
 import deleteIcon from "@images/icon/trash.svg";
+import searchIconWhite from "@images/icon/search-icon-white.svg";
 import { useTrash } from "../../../context/TrashContext";
 import { useDownload } from "../../../context/DownloadContext";
 import { useNotification } from "../../../context/NotificationContext";
@@ -106,6 +107,19 @@ function TrashHeaderToolbar({ setModal, searchBarOpen }) {
                                         onClick={!isDisabled ? () => setModal({ type: "DeleteForeverModal", data: selectedArray }) : undefined}
                                     />
                                 </Tooltip>
+                            </li>
+                            <li className="d-flex align-items-center justify-content-center">
+                                <div className="divider" />
+                            </li>
+                            <li className="d-flex align-items-center justify-content-center">
+                                <button className="header-search-btn" onClick={(e) => { setSearchBarOpen(prev => !prev); }}>
+                                    <InteractiveIcon
+                                        defaultIcon={searchIconWhite}
+                                        alt="Delete"
+                                        width={24}
+                                        height={24}
+                                    />
+                                </button>
                             </li>
 
                         </ul>

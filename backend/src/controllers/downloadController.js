@@ -12,6 +12,7 @@ import uploadModel from "#models/uploadModel"
 // helper
 import { logger } from "#utils/logger"
 import { getUserPermission } from "#utils/userPermissionUtil";
+import { getAbsolutePath } from "#utils/pathHelper";
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -112,7 +113,7 @@ const collectFilesFromFolders = async (folderIds, pathPrefixMap = {}, includeTra
             if (!file.storagePath) continue
             const parentPath = pathMap.get(file.parent.toString()) || rootPrefix
             fileList.push({
-                storagePath: file.storagePath,
+                storagePath: getAbsolutePath(file.storagePath),
                 archiveName: path.join(parentPath, file.name)
             })
         }
@@ -208,7 +209,8 @@ export const downloadFile = async (req, res) => {
             return res.status(404).json({ success: false, message: "File not found" })
         }
 
-        if (!fs.existsSync(fileData.storagePath)) {
+        const absFilePath = getAbsolutePath(fileData.storagePath)
+        if (!absFilePath || !fs.existsSync(absFilePath)) {
             return res.status(404).json({ success: false, message: "File not found on server" })
         }
 
@@ -221,7 +223,7 @@ export const downloadFile = async (req, res) => {
 
         if (!rangeHeader) {
             res.setHeader("Content-Length", fileSize)
-            const stream = fs.createReadStream(fileData.storagePath)
+            const stream = fs.createReadStream(absFilePath)
             stream.pipe(res)
             return
         }
@@ -240,7 +242,7 @@ export const downloadFile = async (req, res) => {
         res.setHeader("Content-Range", `bytes ${start}-${end}/${fileSize}`)
         res.setHeader("Content-Length", chunkSize)
 
-        const stream = fs.createReadStream(fileData.storagePath, { start, end })
+        const stream = fs.createReadStream(absFilePath, { start, end })
         stream.pipe(res)
 
     } catch (error) {
@@ -351,7 +353,7 @@ export const downloadMultiple = async (req, res) => {
                 //  directly add file to root of zip
                 if (item.storagePath) {
                     fileList.push({
-                        storagePath: item.storagePath,
+                        storagePath: getAbsolutePath(item.storagePath),
                         archiveName: item.name
                     })
                 }
@@ -526,7 +528,8 @@ export const previewFile = async (req, res) => {
             return res.status(404).json({ success: false, message: "File not found" })
         }
 
-        if (!fs.existsSync(fileData.storagePath)) {
+        const absFilePath = getAbsolutePath(fileData.storagePath)
+        if (!absFilePath || !fs.existsSync(absFilePath)) {
             return res.status(404).json({ success: false, message: "File not found on server" })
         }
 
@@ -539,7 +542,7 @@ export const previewFile = async (req, res) => {
 
         if (!rangeHeader) {
             res.setHeader("Content-Length", fileSize)
-            const stream = fs.createReadStream(fileData.storagePath)
+            const stream = fs.createReadStream(absFilePath)
             stream.pipe(res)
             return
         }
@@ -558,7 +561,7 @@ export const previewFile = async (req, res) => {
         res.setHeader("Content-Range", `bytes ${start}-${end}/${fileSize}`)
         res.setHeader("Content-Length", chunkSize)
 
-        const stream = fs.createReadStream(fileData.storagePath, { start, end })
+        const stream = fs.createReadStream(absFilePath, { start, end })
         stream.pipe(res)
 
     } catch (error) {

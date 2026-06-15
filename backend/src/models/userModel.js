@@ -26,11 +26,19 @@ const userSchema = new mongoose.Schema({
 
     profilePic: {
         type: String, // store URL or path
-        default: "/uploadimage/profilepic/u2.jpg"
+    },
+
+    //  here is the comprassed profile image for the resize here
+    compressed_profile_pic: {
+        type: String,
+    },
+
+    thumbnail_profile_pic: {
+        type: String
     },
 
     //  for active user - admin can deactive user and active user here no need t delete user completely
-    is_active:{
+    is_active: {
         type: Boolean,
         default: true
     },
@@ -56,7 +64,7 @@ userSchema.index({ name: "text", email: "text", user_id: "text" })
 userSchema.index({ role: 1, is_active: 1, createdAt: -1 })
 
 
-const User =  mongoose.model("User", userSchema);
+const User = mongoose.model("User", userSchema);
 
 
 export default User

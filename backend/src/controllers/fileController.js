@@ -9,6 +9,7 @@ import { getUserPermission } from "#utils/userPermissionUtil";
 import { logger } from "#utils/logger";
 import { notifySharedUsers } from "#utils/userNotification";
 import { updateParentFolderTimestamps } from "#utils/parentFolderTimestamp";
+import { getAbsolutePath } from "#utils/pathHelper";
 
 //  helper function for socket notify all user that some change made
 
@@ -367,9 +368,7 @@ export const getUserFiles = async (req, res) => {
       // 3) fix storage path here becuse in vite proxy we defined /files already so we modifed here ffiles and remove/files from url here
       const fixPath = (item) => ({
         ...item,
-        storagePath: item.storagePath
-          ? item.storagePath.split("files")[1]?.replace(/\\/g, "/")
-          : null
+        storagePath: item.storagePath ? `/${item.storagePath}` : null
       })
 
       // 3) in front end shared folder icon is diffrent so we mark them so rotned know to change this icon here
@@ -433,9 +432,7 @@ export const getUserFiles = async (req, res) => {
     // 1) fix storage path here becuse in vite proxy we defined /files already so we modifed here ffiles and remove/files from url here
     const fixPath = (item) => ({
       ...item,
-      storagePath: item.storagePath
-        ? item.storagePath.split("files")[1]?.replace(/\\/g, "/")
-        : null
+      storagePath: item.storagePath ? `/${item.storagePath}` : null
     })
 
     // 2) in front end shared folder icon is diffrent so we mark them so rotned know to change this icon here
@@ -631,8 +628,9 @@ export const deleteItem = async (req, res) => {
     // FILE check here for storage count before deleting from disk
     if (itemData.type === "file") {
       const count = await uploadModel.countDocuments({ storagePath: itemData.storagePath })
-      if (count === 1 && itemData.storagePath && fs.existsSync(itemData.storagePath)) {
-        fs.unlinkSync(itemData.storagePath)
+      const itemAbsPath = getAbsolutePath(itemData.storagePath)
+      if (count === 1 && itemAbsPath && fs.existsSync(itemAbsPath)) {
+        fs.unlinkSync(itemAbsPath)
       }
       await uploadModel.deleteOne({ _id: id });
       return res.status(200).json({ success: true, message: "Deleted" });
@@ -647,8 +645,9 @@ export const deleteItem = async (req, res) => {
           await deleteRecursive(child._id);
         } else if (child.type === "file") {
           const count = await uploadModel.countDocuments({ storagePath: child.storagePath })
-          if (count === 1 && child.storagePath && fs.existsSync(child.storagePath)) {
-            fs.unlinkSync(child.storagePath)
+          const childAbsPath = getAbsolutePath(child.storagePath)
+          if (count === 1 && childAbsPath && fs.existsSync(childAbsPath)) {
+            fs.unlinkSync(childAbsPath)
           }
         }
         await uploadModel.deleteOne({ _id: child._id });
@@ -860,7 +859,7 @@ export const moveItem = async (req, res) => {
 
     const movedItem = {
       ...itemData.toObject(),
-      storagePath: itemData.storagePath ? itemData.storagePath.split("/files")[1]?.replace(/\\/g, "/") : null,
+      storagePath: itemData.storagePath ? `/${itemData.storagePath}` : null,
       owner: {
         _id: req.user._id,
         name: req.user.name,
@@ -1007,9 +1006,7 @@ export const copyItem = async (req, res) => {
 
     const fixedItem = {
       ...newItem.toObject(),
-      storagePath: newItem.storagePath
-        ? newItem.storagePath.split("files")[1]?.replace(/\\/g, "/")
-        : null,
+      storagePath: newItem.storagePath ? `/${newItem.storagePath}` : null,
       owner: {
         _id: userID,
         name: userName,

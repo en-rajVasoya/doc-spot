@@ -7,6 +7,7 @@ import uploadModel from "#models/uploadModel";
 import { logger } from "#utils/logger";
 import { getUserPermission } from "#utils/userPermissionUtil";
 import { notifySharedUsers } from "#utils/userNotification";
+import { getAbsolutePath } from "#utils/pathHelper";
 
 
 
@@ -104,7 +105,7 @@ export const trashItem = async (req, res) => {
 
             // Populate owner to ensure info is ready for socket payload
             const item = await uploadModel.findOne({ _id: id, isTrashed: { $ne: true } }).populate("owner", "_id name profilePic");
-            
+
             if (!item || item.isTrashed) continue;
 
             const itemOwnerId = item.owner._id ? item.owner._id.toString() : item.owner.toString();
@@ -132,7 +133,7 @@ export const trashItem = async (req, res) => {
                             name: item.owner.name,
                             profilePic: item.owner.profilePic
                         },
-                        storagePath: item.storagePath ? item.storagePath.split("files")[1]?.replace(/\\/g, "/") : null
+                        storagePath: item.storagePath ? `/${item.storagePath}` : null
                     }
                 });
             }
@@ -193,7 +194,7 @@ export const trashItem = async (req, res) => {
                                     name: child.owner.name,
                                     profilePic: child.owner.profilePic
                                 },
-                                storagePath: child.storagePath ? child.storagePath.split("files")[1]?.replace(/\\/g, "/") : null
+                                storagePath: child.storagePath ? `/${child.storagePath}` : null
                             }
                         });
                     });
@@ -326,7 +327,7 @@ export const getTrashedItems = async (req, res) => {
         const userId = req.user._id;
         // parent: get the folder id if user is inside a folder, otherwise null
         const parent = req.query.parent || null
-        
+
         // ------------------------------------------
         // --- STEP - 2 - setup sorting parameters
         // -----------------------------------------
@@ -362,7 +363,7 @@ export const getTrashedItems = async (req, res) => {
         // remove the base storage directory from the file path for frontend display
         const fixPath = (item) => ({
             ...item,
-            storagePath: item.storagePath ? item.storagePath.split("files")[1].replace(/\\/g, "/") : null
+            storagePath: item.storagePath ? `/${item.storagePath}` : null
         })
 
         // ------------------------------------------
@@ -521,9 +522,10 @@ export const deleteForver = async (req, res) => {
                     try {
                         // Check if any remaining copy still references the storagePath in MongoDB
                         const count = await uploadModel.countDocuments({ storagePath: file.storagePath });
-                        if (count === 0 && fs.existsSync(file.storagePath)) {
-                            await fs.promises.unlink(file.storagePath);
-                            console.log(`[BACKGROUND DELETE] Unlinked file: ${file.storagePath}`);
+                        const absPath = getAbsolutePath(file.storagePath);
+                        if (count === 0 && absPath && fs.existsSync(absPath)) {
+                            await fs.promises.unlink(absPath);
+                            console.log(`[BACKGROUND DELETE] Unlinked file: ${absPath}`);
                         }
                     } catch (err) {
                         logger.error(err);
