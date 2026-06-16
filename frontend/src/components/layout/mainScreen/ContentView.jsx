@@ -610,7 +610,7 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
                                 <div className="no-data-found-single-box">
                                     <InteractiveIcon defaultIcon={trashEmptyIcon} alt="No folders" />
                                     <p className="text-center text-muted py-3 m-0">
-                                        Trash is empty
+                                        Dashboard is 
                                     </p>
                                 </div>
                             </div>
@@ -722,12 +722,12 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
                                         {user._id === item.owner._id ? "Me" : item.owner.name}
                                     </div> */}
                                     <div className="table-cell">
-                                        <div className="d-flex align-items-center gap-2">
+                                        <div className="folder-name-single-box">
                                             <img
                                                 src={user._id === item.owner._id ? (user.profilePic || "/uploadimage/profilepic/u2.jpg") : (item.owner.profilePic || "/uploadimage/profilepic/u2.jpg")}
                                                 alt=""
-                                                className="rounded-circle"
-                                                style={{ width: "24px", height: "24px", objectFit: "cover" }}
+                                                className="user-avatar"
+                                                
                                             />
                                             <span>{user._id === item.owner._id ? "Me" : item.owner.name}</span>
                                         </div>

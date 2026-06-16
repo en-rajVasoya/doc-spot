@@ -326,6 +326,8 @@ import squareArrowDownLinearIcon from "@images/icon/square-arrow-down-linear.svg
 import userManagementIcon from "@images/icon/user-management-icon.svg";
 import CustomSelect from '../CustomSelect';
 import { Form } from "react-bootstrap";
+import arrowLeftIcon from "@images/icon/arrow-left.svg";
+import arrowRightIcon from "@images/icon/arrow-right.svg";
 
 const limitOptions = [
   { value: 5, label: "5" },
@@ -335,46 +337,56 @@ const limitOptions = [
 ]
 
 function AdminDashboard() {
-  const { users, isLoading, pagination, setPagination } = useAdmin()
-  const [selectedIds, setSelectedIds] = useState(new Set())
-  const [sortBy, setSortBy] = useState("name")
-  const [sortOrder, setSortOrder] = useState("asc")
+  const { users, isLoading, pagination, setPagination, selectedIds, setSelectedIds, sortBy, setSortBy, sortOrder, setSortOrder, roleFilter, setRoleFilter, activeFilter, setActiveFilter } = useAdmin()
+
   const pageInputRef = useRef(null)
 
   // Sort
-  const sortedUsers = [...users].sort((a, b) => {
-    let valA, valB
-    if (sortBy === "name") {
-      valA = a.name?.toLowerCase() || ""
-      valB = b.name?.toLowerCase() || ""
-    } else if (sortBy === "email") {
-      valA = a.email?.toLowerCase() || ""
-      valB = b.email?.toLowerCase() || ""
-    } else if (sortBy === "createdAt") {
-      valA = new Date(a.createdAt || 0)
-      valB = new Date(b.createdAt || 0)
-    } else {
-      return 0
-    }
-    if (valA < valB) return sortOrder === "asc" ? -1 : 1
-    if (valA > valB) return sortOrder === "asc" ? 1 : -1
-    return 0
-  })
+  // const sortedUsers = [...users].sort((a, b) => {
+  //   let valA, valB
+  //   if (sortBy === "name") {
+  //     valA = a.name?.toLowerCase() || ""
+  //     valB = b.name?.toLowerCase() || ""
+  //   } else if (sortBy === "email") {
+  //     valA = a.email?.toLowerCase() || ""
+  //     valB = b.email?.toLowerCase() || ""
+  //   } else if (sortBy === "createdAt") {
+  //     valA = new Date(a.createdAt || 0)
+  //     valB = new Date(b.createdAt || 0)
+  //   } else {
+  //     return 0
+  //   }
+  //   if (valA < valB) return sortOrder === "asc" ? -1 : 1
+  //   if (valA > valB) return sortOrder === "asc" ? 1 : -1
+  //   return 0
+  // })
 
   const handleColumnSort = (column) => {
+    // if (sortBy === column) {
+    //   setSortOrder(prev => prev === "asc" ? "desc" : "asc")
+    // } else {
+    //   setSortBy(column)
+    //   setSortOrder("asc")
+    // }
+
     if (sortBy === column) {
-      setSortOrder(prev => prev === "asc" ? "desc" : "asc")
+      setSortOrder((prev) =>
+        prev === "asc" ? "desc" : "asc"
+      );
     } else {
-      setSortBy(column)
-      setSortOrder("asc")
+      setSortBy(column);
+      setSortOrder("asc");
     }
+
+    //  here whn user is on the diffrnet page and do sorting there so it will redirect to the first page here
+    setPagination(prev => ({ ...prev, page: 1 }))
   }
 
   const handleCheckBoxSelected = () => {
-    if (selectedIds.size === sortedUsers.length) {
+    if (selectedIds.size === users.length) {
       setSelectedIds(new Set())
     } else {
-      setSelectedIds(new Set(sortedUsers.map(u => u.user_id)))
+      setSelectedIds(new Set(users.map(u => u.user_id)))
     }
   }
 
@@ -428,7 +440,7 @@ function AdminDashboard() {
   )
 
   return (
-    <div className="admin-page-wrapper">
+   
       <div className="content-wrapper-main">
 
         {/* Header */}
@@ -439,7 +451,7 @@ function AdminDashboard() {
               <h5 className="admin-title">
                 <InteractiveIcon
                   defaultIcon={userManagementIcon}
-                  width={20}
+                  width={24}
                   alt=""
                   className=""
                 />
@@ -484,7 +496,7 @@ function AdminDashboard() {
                             type="checkbox"
                             className="checkbox"
                             id="allcheck"
-                            checked={sortedUsers.length > 0 && selectedIds.size === sortedUsers.length}
+                            checked={users.length > 0 && selectedIds.size === users.length}
                             onChange={handleCheckBoxSelected}
                           />
                         </div>
@@ -515,14 +527,25 @@ function AdminDashboard() {
                       </div>
                     </div>
 
-                    <div className="table-cell">
+                    {/* Role  */}
+                    <div className="table-cell" style={{width: "150px" }}>
                       <div className="sorting-label-text">Role</div>
                     </div>
 
-                    <div className="table-cell">
-                      <div className="sorting-label-text">Status</div>
+                    {/*  user status */}
+                    <div className="table-cell" onClick={() => handleColumnSort("is_active")} style={{width: "150px" }}>
+                      <div className={`sorting-label-text ${sortBy === "is_active" ? "sorting-active" : ""}`}>
+                        Status
+                        <InteractiveIcon
+                          defaultIcon={squareArrowDownLinearIcon}
+                          width={20}
+                          alt=""
+                          className={`sorting-label-icon ${sortBy === "is_active" ? "visible" : "invisible"} ${sortBy === "is_active" && sortOrder === "asc" ? "sorting-label-icon--desc" : ""}`}
+                        />
+                      </div>
                     </div>
 
+                    {/* Created Date */}
                     <div className="table-cell" onClick={() => handleColumnSort("createdAt")}>
                       <div className={`sorting-label-text ${sortBy === "createdAt" ? "sorting-active" : ""}`}>
                         Created Date/ Time
@@ -537,12 +560,12 @@ function AdminDashboard() {
                   </div>
 
                   {/* Empty State */}
-                  {sortedUsers.length === 0 && (
+                  {users.length === 0 && (
                     <div className="page-empty-state">No users found</div>
                   )}
 
                   {/* Rows */}
-                  {sortedUsers.map((user) => (
+                  {users.map((user) => (
                     <div
                       key={user.user_id}
                       className="table-row col-xl-2 col-lg-3 col-md-4 col-sm-6 col-6"
@@ -565,13 +588,13 @@ function AdminDashboard() {
                                 onClick={(e) => handleCheckboxOnly(e, user.user_id)}
                               />
                             </div>
-                            <div className="d-flex align-items-center gap-2">
+                            <div className="folder-name-single-box">
                               <img
                                 src={user.thumbnail_profile_pic || user.compressed_profile_pic || user.profilePic || "/uploadimage/profilepic/u2.jpg"}
                                 alt=""
-                                className="user-avatar rounded-circle"
+                                className="user-avatar"
                               />
-                              <div>
+                              <div className='folder-name'>
                                 <p className="file-name mb-0">{user.name}</p>
                                 <p className="user-id-name">{user.user_id}</p>
                               </div>
@@ -623,73 +646,83 @@ function AdminDashboard() {
               </section>
             </div>
 
-            {/* Pagination Footer */}
-            <div className="pagination-footer">
 
-              {/* Left: Showing entries */}
+          </div>
+
+          {/* Pagination Footer */}
+          <div className="pagination-footer">
+
+            {/* Left: Showing entries */}
+            <span className="pagination-entries-text">
+              Showing <strong>{startEntry}</strong> to <strong>{endEntry}</strong> of <strong>{pagination?.total}</strong> entries
+            </span>
+
+            {/* Center: Page buttons */}
+            <div className="pagination-pages">
+              <button
+                className="pagination-arrow-btn btn-only-icon"
+                disabled={pagination?.page <= 1}
+                onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))}
+              >
+                <InteractiveIcon defaultIcon={arrowLeftIcon} alt="" width={24} />
+              </button>
+
+              {getPageNumbers().map((item, idx) =>
+                item === "..." ? (
+                  <span key={`dots-${idx}`} className="pagination-dots">…</span>
+                ) : (
+                  <button
+                    key={item}
+                    className={`pagination-page-btn ${pagination?.page === item ? "pagination-page-btn--active" : ""}`}
+                    onClick={() => setPagination(prev => ({ ...prev, page: item }))}
+                  >
+                    {item}
+                  </button>
+                )
+              )}
+
+              <button
+                className="pagination-arrow-btn btn-only-icon"
+                disabled={pagination?.page >= pagination?.totalPages}
+                onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))}
+              >
+                <InteractiveIcon defaultIcon={arrowRightIcon} alt="" width={24} />
+              </button>
+            </div>
+
+            {/* Right: Go to page */}
+            <div className="pagination-goto">
               <span className="pagination-entries-text">
-                Showing <strong>{startEntry}</strong> to <strong>{endEntry}</strong> of <strong>{pagination?.total}</strong> entries
+                <strong>{pagination?.page}</strong> of <strong>{pagination?.totalPages}</strong>
               </span>
+              <Form.Group className="mb-0" controlId="formName">
 
-              {/* Center: Page buttons */}
-              <div className="pagination-pages">
-                <button
-                  className="pagination-arrow-btn"
-                  disabled={pagination?.page <= 1}
-                  onClick={() => setPagination(prev => ({ ...prev, page: prev.page - 1 }))}
-                >
-                  ‹
-                </button>
-
-                {getPageNumbers().map((item, idx) =>
-                  item === "..." ? (
-                    <span key={`dots-${idx}`} className="pagination-dots">…</span>
-                  ) : (
-                    <button
-                      key={item}
-                      className={`pagination-page-btn ${pagination?.page === item ? "pagination-page-btn--active" : ""}`}
-                      onClick={() => setPagination(prev => ({ ...prev, page: item }))}
-                    >
-                      {item}
-                    </button>
-                  )
-                )}
-
-                <button
-                  className="pagination-arrow-btn"
-                  disabled={pagination?.page >= pagination?.totalPages}
-                  onClick={() => setPagination(prev => ({ ...prev, page: prev.page + 1 }))}
-                >
-                  ›
-                </button>
-              </div>
-
-              {/* Right: Go to page */}
-              <div className="pagination-goto">
-                <input
-                  ref={pageInputRef}
-                  type="number"
-                  min={1}
-                  max={pagination?.totalPages}
-                  placeholder="#"
-                  className="pagination-goto-input"
-                  onKeyDown={handlePageInputKeyDown}
-                />
-                <button
-                  className="pagination-goto-btn"
-                  onClick={handleGoToPage}
-                >
-                  ›
-                </button>
-              </div>
-
+                <div className='form-control-single-icon'>
+                  <InteractiveIcon
+                    defaultIcon={arrowRightIcon}
+                    alt=""
+                    className="form-right-icon"
+                    width={20}
+                    onClick={handleGoToPage}
+                  />
+                  <Form.Control
+                    ref={pageInputRef}
+                    type="number"
+                    min={1}
+                    max={pagination?.totalPages}
+                    placeholder="Go"
+                    className="custom-form-control"
+                    onKeyDown={handlePageInputKeyDown}
+                  />
+                </div>
+              </Form.Group>
             </div>
 
           </div>
         </div>
 
       </div>
-    </div>
+
   )
 }
 

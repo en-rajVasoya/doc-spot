@@ -3,6 +3,7 @@ import { useState, useRef } from "react";
 import { useFileExplorer } from "../../context/FileExplorerContext";
 import InteractiveIcon from "../layout/InteractiveIcon";
 import closeIcon from "@images/icon/close-icon.svg"
+import Tooltip from "../layout/Tooltip";
 
 function RenameModal({ data, onClose }) {
 
@@ -42,12 +43,14 @@ function RenameModal({ data, onClose }) {
                 <div ref={modalRef}>
                     <Modal.Header className="border-0">
                         <Modal.Title>Rename</Modal.Title>
+                        <Tooltip text="Close" offset={8}>
                         <button
                             className="btn-only-icon"
                             onClick={onClose}
                         >
                             <InteractiveIcon defaultIcon={closeIcon} width={24} alt="close" />
                         </button>
+                        </Tooltip>
                     </Modal.Header>
 
                     <Modal.Body>

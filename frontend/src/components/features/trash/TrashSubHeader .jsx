@@ -121,21 +121,30 @@ const TrashSubHeader = memo(function TrashSubHeader({ view, setView, setModal })
     // ##################################################
     // ---- STEP 2: Restore selected items --------------
     // ##################################################
-    const handleRestore = async () => {
-        for (const id of selectedIds) {
-            await restoreItemApi(id, true)
+    const handleRestore = async (targetFolder) => {
+        if (targetFolder) {
+            await restoreItemApi(targetFolder.id, true)
+            showNotification("Folder restored successfully", "success", "bottom-center")
+        } else {
+            for (const id of selectedIds) {
+                await restoreItemApi(id, true)
+            }
+            const message = selectedArray.length > 1 ? "Items restored successfully" : "Item restored successfully"
+            showNotification(message, "success", "bottom-center")
+            setSelectedIds(new Set())
         }
-        const message = selectedArray.length > 1 ? "Items restored successfully" : "Item restored successfully"
-        showNotification(message, "success", "bottom-center")
-        setSelectedIds(new Set())
     }
 
     // ##################################################
     // ---- STEP 3: Delete items forever ----------------
     // ##################################################
-    const handleDeleteForever = () => {
-        if (selectedArray.length === 0) return
-        setModal({ type: "DeleteForeverModal", data: selectedArray })
+    const handleDeleteForever = (targetFolder) => {
+        if (targetFolder) {
+            setModal({ type: "DeleteForeverModal", data: [targetFolder.id] })
+        } else {
+            if (selectedArray.length === 0) return
+            setModal({ type: "DeleteForeverModal", data: selectedArray })
+        }
     }
 
     return (
@@ -186,7 +195,7 @@ const TrashSubHeader = memo(function TrashSubHeader({ view, setView, setModal })
                                     Trash
                                 </div>
                             }
-                            actions={["download", "restore", "deleteForever"]}
+                            actions={trail.length === 0 ? [] : ["restore", "deleteForever"]}
                             selectedIds={selectedIds}
                             onRestore={handleRestore}
                             onDeleteForever={handleDeleteForever}
@@ -194,6 +203,8 @@ const TrashSubHeader = memo(function TrashSubHeader({ view, setView, setModal })
                             downloadFolder={downloadFolder}
                             downloadMultiple={downloadMultiple}
                             items={items}
+                            currentFolderId={trail.length > 0 ? trail[trail.length - 1].id : null}
+                            currentFolderMeta={trail.length > 0 ? trail[trail.length - 1] : null}
                         />
                     </div>
 

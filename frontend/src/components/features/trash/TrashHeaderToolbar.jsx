@@ -9,7 +9,7 @@ import { useTrash } from "../../../context/TrashContext";
 import { useDownload } from "../../../context/DownloadContext";
 import { useNotification } from "../../../context/NotificationContext";
 
-function TrashHeaderToolbar({ setModal, searchBarOpen }) {
+function TrashHeaderToolbar({ setModal, searchBarOpen, setSearchBarOpen }) {
     const { selectedIds, setSelectedIds, items, restoreItemApi } = useTrash();
     const { showNotification } = useNotification()
     const { downloadFile, downloadFolder, downloadMultiple } = useDownload();

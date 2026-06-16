@@ -12,6 +12,7 @@ import arrowRightIcon from "@images/icon/arrow-right.svg";
 import addFileIcon from "@images/icon/plus.svg";
 import CustomScroll from "../layout/CustomScroll.jsx";
 import closeIcon from "@images/icon/close-icon.svg"
+import Tooltip from "../layout/Tooltip";
 
 function CopyModal({ data, onClose }) {
     const { copyItemApi, currentFolderId, refetch } = useFileExplorer();
@@ -153,12 +154,14 @@ function CopyModal({ data, onClose }) {
 
                     <Modal.Header className="border-0">
                         <Modal.Title>Copy to</Modal.Title>
+                        <Tooltip text="Close" offset={8}>
                         <button
                             className="btn-only-icon"
                             onClick={onClose}
                         >
                             <InteractiveIcon defaultIcon={closeIcon} width={24} alt="close" />
                         </button>
+                        </Tooltip>
                     </Modal.Header>
 
                     {/* Breadcrumb */}

@@ -457,7 +457,7 @@ function TrashContentView({ view, setModal, onItemRefsReady, dragRootRef }) {
                     <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
 
                         {/*  download  */}
-                        <li onClick={() => {
+                        {/* <li onClick={() => {
                             const selectedItems = Array.from(selectedIds)
                                 .map(id => items.find(i => i._id === id))
                                 .filter(Boolean)
@@ -480,7 +480,7 @@ function TrashContentView({ view, setModal, onItemRefsReady, dragRootRef }) {
                                     Download
                                 </span>
                             </button>
-                        </li>
+                        </li> */}
 
 
                         {/* restore */}

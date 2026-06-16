@@ -17,11 +17,12 @@ import { useNavigate } from "react-router-dom";
 import SearchBar from './SearchBar.jsx';
 import TrashHeaderToolbar from '../../features/trash/TrashHeaderToolbar.jsx';
 import { useFileExplorer } from '../../../context/FileExplorerContext.jsx';
+import AdminHeaderToolbar from '../admin/AdminHeaderToolbar .jsx';
 
 //  getiing backend url for getting profile pic of user
 const BASE_URL = import.meta.env.VITE_API_URL?.replace(/\/api\/?$/, "") || "";
 
-function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobileSidebarNavclick }) {
+function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobileSidebarNavclick, isAdmin }) {
 
 
     const { logout, user } = useAuth()
@@ -78,7 +79,9 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
 
                 {/* Toolbar */}
                 {isTrash ? (
-                    <TrashHeaderToolbar setModal={setModal} searchBarOpen={searchBarOpen} />
+                    <TrashHeaderToolbar setModal={setModal} searchBarOpen={searchBarOpen} setSearchBarOpen={setSearchBarOpen} />
+                ) : isAdmin ? (
+                    <AdminHeaderToolbar setModal={setModal} />
                 ) : (
                     <HeaderToolbar setModal={setModal} searchBarOpen={searchBarOpen} setSearchBarOpen={setSearchBarOpen} />
 
@@ -151,6 +154,7 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                                         </div>
                                     </div>
                                     <h4 className="profile-name text-center mb-3 text-capitalize">{user.name}</h4>
+                                    
                                     {user.role === "admin" && (
                                         <Dropdown.Item className="dropdown-item d-flex align-items-center" onClick={() => navigate("/admin-dashboard")}>
                                             <InteractiveIcon
@@ -164,7 +168,8 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                                     )}
 
 
-                                    <Dropdown.Divider />
+                                    <Dropdown.Divider className='dot' />
+                                     
 
                                     <Dropdown.Item className="dropdown-item d-flex align-items-center" href="#">
                                         <InteractiveIcon

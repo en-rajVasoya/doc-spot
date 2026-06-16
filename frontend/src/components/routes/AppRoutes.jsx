@@ -108,6 +108,7 @@ import AdminDashboard from "../layout/admin/AdminDashboard"
 import { AdminAuthProvider } from "../../context/AdminContext"
 import { getRoute } from "../../utils/getRoutes.js"
 import SharedPreview from "../pages/SharedPreview.jsx"
+import AdminDashboardPage from "../pages/AdminDashboardPage.jsx"
 
 function AppRoutes() {
   return (
@@ -189,7 +190,9 @@ function AppRoutes() {
       <Route element={<AdminProtectedRoute />}>
         <Route path="/admin-dashboard" element={
           <AdminAuthProvider>
-            <AdminDashboard />
+            <FileExplorerProvider>
+              <AdminDashboardPage />
+            </FileExplorerProvider>
           </AdminAuthProvider>
         } />
       </Route>

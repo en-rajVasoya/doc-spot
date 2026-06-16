@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { Modal, Form, Dropdown } from "react-bootstrap";
+import Tooltip from "../layout/Tooltip.jsx";
 import InteractiveIcon from "../layout/InteractiveIcon";
 import userProfileIcon from "@images/svgs/user-profile.svg"
 import { useFileExplorer } from "../../context/FileExplorerContext";
@@ -327,12 +328,14 @@ function ShareUserModal({ data, onClose }) {
                 <div ref={modalRef}>
                     <Modal.Header className="border-0">
                         <Modal.Title>Shared with people</Modal.Title>
+                         <Tooltip text="Close" offset={8}>
                         <button
                             className="btn-only-icon"
                             onClick={onClose}
                         >
                             <InteractiveIcon defaultIcon={closeIcon} width={24} alt="add" />
                         </button>
+                        </Tooltip>
                     </Modal.Header>
                     <Modal.Body>
                         {/* ONLY the owner can search for and add new people */}

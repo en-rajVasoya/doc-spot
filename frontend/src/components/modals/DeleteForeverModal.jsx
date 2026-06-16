@@ -7,7 +7,7 @@ import closeIcon from "@images/icon/close-icon.svg"
 
 
 function DeleteForeverModal({ data, onClose }) {
-    const {deleteForeverApi, items} = useTrash()
+    const { deleteForeverApi, items, trail } = useTrash()
 
     // Shake animation
     const [shake, setShake] = useState(false);
@@ -15,6 +15,19 @@ function DeleteForeverModal({ data, onClose }) {
 
     //  getting selected item name here
     const selectedItems = items.filter(i => data.includes(i._id))
+
+
+    // for when user inside the fodler and from breadcrumb open delete forever modal so itemname display here
+    const currentFolderMeta = trail.length > 0 ? trail[trail.length - 1] : null;
+
+    let deleteMessage = `${data.length} items will be deleted forever.`;
+    if (selectedItems.length === 1) {
+        deleteMessage = `"${selectedItems[0].name}" will be deleted forever.`;
+    } else if (selectedItems.length > 1) {
+        deleteMessage = `${selectedItems.length} items will be deleted forever.`;
+    } else if (data.length === 1 && data[0] === currentFolderId && currentFolderMeta) {
+        deleteMessage = `"${currentFolderMeta.name}" will be deleted forever.`;
+    }
 
     const handleOutsideClick = (e) => {
         if (modalRef.current && !modalRef.current.contains(e.target)) {
@@ -51,15 +64,9 @@ function DeleteForeverModal({ data, onClose }) {
                         </button>
                     </Modal.Header>
                     <Modal.Body>
-                        {selectedItems.length === 1 ? (
-                            <p className="m-0 message">
-                                "{selectedItems[0].name}" will be deleted forever.
-                            </p>
-                        ) : (
-                            <p className="m-0 message">
-                                {selectedItems.length} items will be deleted forever.
-                            </p>
-                        )}
+                         <p className="m-0 message">
+                            {deleteMessage}
+                        </p>
 
                     </Modal.Body>
                     <Modal.Footer className="d-flex align-items-center justify-content-between border-0">

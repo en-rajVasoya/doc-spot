@@ -11,6 +11,7 @@ import { useNotification } from "../../context/NotificationContext.jsx";
 import arrowRightIcon from "@images/icon/arrow-right.svg";
 import addFileIcon from "@images/icon/plus.svg";
 import CustomScroll from "../layout/CustomScroll.jsx";
+import Tooltip from "../layout/Tooltip";
 import closeIcon from "@images/icon/close-icon.svg"
 
 function MoveModal({ data, onClose }) {
@@ -154,12 +155,14 @@ function MoveModal({ data, onClose }) {
 
                     <Modal.Header className="border-0">
                         <Modal.Title>Move to</Modal.Title>
+                        <Tooltip text="Close" offset={8}>
                         <button
                             className="btn-only-icon"
                             onClick={onClose}
                         >
                             <InteractiveIcon defaultIcon={closeIcon} width={24} alt="close" />
                         </button>
+                        </Tooltip>
                     </Modal.Header>
 
                     {/* Breadcrumb */}

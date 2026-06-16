@@ -202,6 +202,11 @@ export function TrashProvider({ children }) {
             setItems(prev => prev.filter(item => item._id !== id))
             setSelectedIds(new Set())
             if (!silent) showNotification("Restored successfully", "success", "bottom-center")
+
+            // when user goes inside the fodler and resotre current folder using the breadcrumb so navigate user to the dashboard
+            if(id === currentFolderId){
+                navigate("/trash-dashboard")
+            }
         } catch (error) {
             showNotification(error.response?.data?.message || "Restore failed", "error", "bottom-center")
         }
@@ -221,6 +226,9 @@ export function TrashProvider({ children }) {
                 removeNotification(loadingId)
             }
             showNotification("Deleted forever", "success", "bottom-center")
+            if (idArray.includes(currentFolderId)) {
+                navigate("/trash-dashboard")
+            }
         } catch (error) {
             if (loadingId) {
                 removeNotification(loadingId)

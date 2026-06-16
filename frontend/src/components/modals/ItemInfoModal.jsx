@@ -5,6 +5,7 @@ import closeIcon from "@images/icon/close-icon.svg"
 import CustomScroll from "../layout/CustomScroll.jsx";
 import { useFileExplorer } from '../../context/FileExplorerContext.jsx';
 import { useEffect } from 'react';
+import Tooltip from "../layout/Tooltip";
 
 function ItemInfoModal({ data, onClose }) {
   const [shake, setShake] = useState(false);
@@ -55,6 +56,30 @@ function ItemInfoModal({ data, onClose }) {
     });
   };
 
+  // Helper to format raw MIME types into human-readable strings
+  const getFriendlyFileType = (mimeType, fileName) => {
+    if (!mimeType) {
+      if (fileName && fileName.includes(".")) return fileName.split('.').pop().toUpperCase() + " File";
+      return "File";
+    }
+    
+    if (mimeType === "application/pdf") return "PDF Document";
+    if (mimeType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" || mimeType === "application/vnd.ms-excel") return "Excel Spreadsheet";
+    if (mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || mimeType === "application/msword") return "Word Document";
+    if (mimeType === "application/vnd.openxmlformats-officedocument.presentationml.presentation" || mimeType === "application/vnd.ms-powerpoint") return "PowerPoint Presentation";
+    if (mimeType.startsWith("image/")) return mimeType.split("/")[1].toUpperCase() + " Image";
+    if (mimeType.startsWith("video/")) return mimeType.split("/")[1].toUpperCase() + " Video";
+    if (mimeType.startsWith("audio/")) return mimeType.split("/")[1].toUpperCase() + " Audio";
+    if (mimeType.startsWith("text/")) return mimeType.split("/")[1].toUpperCase() + " File";
+
+    // Fallback: use extension from filename
+    if (fileName && fileName.includes(".")) {
+      return fileName.split('.').pop().toUpperCase() + " File";
+    }
+    
+    return "File";
+  };
+
 
   if (!item) return null;
 
@@ -78,12 +103,14 @@ function ItemInfoModal({ data, onClose }) {
     >
       <Modal.Header className="border-0">
         <Modal.Title>{isFolder ? "Folder" : "File"} details</Modal.Title>
+        <Tooltip text="Close" offset={8}>
         <button
           className="btn-only-icon"
           onClick={onClose}
         >
           <InteractiveIcon defaultIcon={closeIcon} width={24} alt="close" />
         </button>
+        </Tooltip>
       </Modal.Header>
       <Modal.Body className="p-0">
         <CustomScroll className="file-details-modal-body" showBottomBlur={false} showTopBlur={true}>
@@ -118,8 +145,8 @@ function ItemInfoModal({ data, onClose }) {
             {/* Type */}
             <div className='file-details-box'>
               <p className='file-details-label'>Type</p>
-              {/* CHANGE: Use item.fileType instead of item.type */}
-              <p className='file-details-value text-capitalize'>{isFolder ? "Folder" : (item.fileType || "File")}</p>
+              {/* CHANGE: Use getFriendlyFileType to convert MIME strings into readable types */}
+              <p className='file-details-value text-capitalize'>{isFolder ? "Folder" : getFriendlyFileType(item.fileType, item.name)}</p>
             </div>
 
 

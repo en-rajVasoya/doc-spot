@@ -15,8 +15,17 @@ export function AdminAuthProvider({ children }) {
     const [roleFilter, setRoleFilter] = useState("")
     const [activeFilter, setActiveFilter] = useState("")
 
+    // for select users 
+    const [selectedIds, setSelectedIds] = useState(new Set())
+
+    const [sortBy, setSortBy] = useState("name")
+    const [sortOrder, setSortOrder] = useState("asc")
+
     //  notifiation toaster
     const { showNotification } = useNotification();
+
+
+
 
 
     //  fetch users
@@ -28,7 +37,9 @@ export function AdminAuthProvider({ children }) {
                     limit: pagination.limit,
                     search: searchQuery,
                     role: roleFilter,
-                    isActive: activeFilter
+                    is_active: activeFilter,
+                    sortField: sortBy,
+                    sortOrder,
                 }
             })
             setUsers(res.data.users)
@@ -39,6 +50,35 @@ export function AdminAuthProvider({ children }) {
             setIsLoading(false)
         }
     }
+
+
+
+    //     const fetchUsers = async () => {
+    //     try {
+    //         const res = await axiosApi.get("/admin/get_users", {
+    //             params: {
+    //                 page: Number(pagination.page),
+    //                 limit: Number(pagination.limit),
+    //                 search: searchQuery,
+    //                 role: roleFilter,
+    //                 is_active: activeFilter,
+    //                 sortField: sortBy,
+    //                 sortOrder,
+    //             }
+    //         })
+    //         setUsers(res.data.users)
+    //         // only update total and totalPages, NOT page and limit
+    //         setPagination(prev => ({
+    //             ...prev,
+    //             total: res.data.pagination.total,
+    //             totalPages: res.data.pagination.totalPages,
+    //         }))
+    //     } catch (error) {
+    //         showNotification(error.response?.data?.message)
+    //     } finally {
+    //         setIsLoading(false)
+    //     }
+    // }
 
 
     //  Admin create user
@@ -65,8 +105,31 @@ export function AdminAuthProvider({ children }) {
 
     useEffect(() => {
         fetchUsers()
-    }, [searchQuery, roleFilter, activeFilter, pagination.page, pagination.limit])
+    }, [searchQuery, roleFilter, activeFilter, pagination.page, pagination.limit, sortBy, sortOrder])  // add sortBy, sortOrder
 
+
+
+    //  here this function is used for the when user select on the main check box so select all users here
+    const toggleSelectAll = () => {
+        if (selectedIds.size === users.length) {
+            setSelectedIds(new Set())
+        } else {
+            setSelectedIds(new Set(users.map(u => u.user._id)))
+        }
+    }
+
+
+    //  when user select one user 
+    const toggleSelect = (id) => {
+        setSelectedIds(prev => {
+            const next = newSet(prev)
+            next.has(id) ? next.delete(id) : next.add(id)
+            return next
+        })
+    }
+
+    //  clear selection 
+    const clearSelection = () => setSelectedIds(new Set())
 
 
     return (
@@ -77,7 +140,21 @@ export function AdminAuthProvider({ children }) {
                 pagination,
                 fetchUsers,
                 searchQuery,
-                setSearchQuery
+                setSearchQuery,
+                setPagination,
+                selectedIds,
+                setSelectedIds,
+                toggleSelectAll,
+                toggleSelect,
+                clearSelection,
+                setSortBy,
+                sortBy,
+                setSortOrder,
+                sortOrder,
+                roleFilter,
+                setRoleFilter,
+                activeFilter,
+                setActiveFilter,
             }}>
             {children}
         </AdminContext.Provider>
