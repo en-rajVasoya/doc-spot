@@ -87,10 +87,11 @@ export const accessLink = async (req, res) => {
         }
 
         if (!sharedLink.is_public) {
-            console.log("90 -->", req.user);
+
             if (!req.user) {
                 return res.status(401).json({ success: false, message: "Login required to access this link" });
             }
+            
             const hasAccess = sharedLink.permissions_users.some(
                 (id) => id.toString() === req.user.toString()
             );

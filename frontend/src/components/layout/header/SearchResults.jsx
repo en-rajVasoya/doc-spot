@@ -202,6 +202,7 @@ function SearchResults({ setSearchBarOpen, showViewButtons, view, setView }) {
                 {/* Clear all filters button */}
                 <button className="search-suggestion-clear-all-chip " onClick={() => {
                     clearSearch();
+                    navigate(`/dashboard`);
                     if (setSearchBarOpen) setSearchBarOpen(false);
                 }}>
                     Clear all

@@ -70,7 +70,6 @@ function ShareUserModal({ data, onClose }) {
     // automatically fetch the existing shared users for this item when modal opens
     useEffect(() => {
         if (!itemId) return;
-
         const fetch = async () => {
             setLoading(false);
             const data = await getSharedUsersApi(itemId);
@@ -106,7 +105,7 @@ function ShareUserModal({ data, onClose }) {
     // Helper to generate a random 8-character numeric password to bypass the strict backend validator!
     const generateRandomPassword = () => {
         // We strictly use ONLY numbers so that the backend's `min:8` math calculation succeeds!
-        const chars = "123456789"; 
+        const chars = "123456789";
         let newPassword = "";
         for (let i = 0; i < 8; i++) {
             newPassword += chars.charAt(Math.floor(Math.random() * chars.length));
@@ -219,10 +218,15 @@ function ShareUserModal({ data, onClose }) {
             const payload = {
                 links: generatedLinks,
                 is_public: accessType === "public",
-                user_ids: accessType === "restricted" ? [
-                    ...sharedWith.map(s => s.userId),
-                    ...Array.from(selectedUsers.keys())
-                ] : []
+                user_ids: accessType === "restricted" ? (() => {
+                    const ids = [
+                        ...sharedWith.map(s => s.userId),
+                        ...Array.from(selectedUsers.keys()),
+                        user._id
+                    ];
+                    return ids.length > 0 ? ids : [user._id];
+                })() : []
+
             };
 
             // Only attach expire_date if they actually ticked the box
@@ -246,7 +250,7 @@ function ShareUserModal({ data, onClose }) {
                     return;
                 }
             }
-            console.log("220 -->", payload);
+
             await axiosApi.post("/links/store", payload)
             const linksText = generatedLinks.map(l => l.link).join(", ")
             await navigator.clipboard.writeText(linksText)

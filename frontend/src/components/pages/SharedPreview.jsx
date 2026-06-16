@@ -4,6 +4,12 @@ import { OverlayTrigger, Tooltip } from "react-bootstrap"
 // import FeatherIcon from "feather-icons-react"
 import ImageViewer from "../features/filePreview/ImageViewer"
 import PdfViewer from "../features/filePreview/PdfViewer"
+import TextViewer from "../features/filePreview/TextViewer"
+import VideoViewer from "../features/filePreview/VideoViewer"
+import AudioViewer from "../features/filePreview/AudioViewer"
+import ZipViewer from "../features/filePreview/ZipViewer"
+import ExcelViewer from "../features/filePreview/ExcelViewer"
+import DocViewer from "../features/filePreview/DocViewer"
 
 function SharedPreview() {
     const [searchParams] = useSearchParams()
@@ -21,8 +27,8 @@ function SharedPreview() {
             return
         }
 
-        fetch(`https://192.168.1.213:4001/api/links/access?token=${token}`, {
-            credentials: "include"   // 👈 add this
+        fetch(`${import.meta.env.VITE_BACKEND_URL}/api/links/access?token=${token}`, {
+            credentials: "include"
         })
             .then(res => res.json())
             .then(res => {
@@ -36,7 +42,7 @@ function SharedPreview() {
     if (loading) return <p>Loading...</p>
     if (error) return <p>{error}</p>
 
-    // ✅ File Preview
+    //File Preview
     if (data.type === "file") {
         const file = data.data
         const fileUrl = data.redirect_url
@@ -46,16 +52,24 @@ function SharedPreview() {
         const isPDF = mimeType === "application/pdf"
         const isImage = mimeType.startsWith("image/")
         const isVideo = mimeType.startsWith("video/")
-        const isText = mimeType.startsWith("text/")
-        const isOffice = ["sheet", "word", "presentation", "excel", "docx", "xlsx", "pptx"]
-            .some(t => mimeType.includes(t))
+        const isExcel = mimeType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+            mimeType === "application/vnd.ms-excel" || mimeType === "text/csv"
+        const isText = mimeType.startsWith("text/") && !isExcel
+        const isAudio = mimeType.startsWith("audio/")
+        const isZip = mimeType === "application/x-zip-compressed"
+        const isDoc = mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+            mimeType === "application/msword"
+
 
         const type = isImage ? "image"
             : isPDF ? "pdf"
                 : isVideo ? "video"
                     : isText ? "text"
-                        : isOffice ? "office"
-                            : "unknown"
+                        : isAudio ? "audio"
+                            : isZip ? "zip"
+                                : isExcel ? "excel"
+                                    : isDoc ? "docx"
+                                        : "unknown"
 
         const handleDownload = () => {
             const a = document.createElement("a")
@@ -82,21 +96,12 @@ function SharedPreview() {
         const renderViewer = () => {
             if (isImage) return <ImageViewer file={file} />
             if (isPDF) return <PdfViewer file={file} />
-            if (isVideo) return (
-                <video controls width="100%">
-                    <source src={fileUrl} type={mimeType} />
-                    Your browser does not support the video tag.
-                </video>
-            )
-            if (isOffice) return (
-                <iframe
-                    src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(fileUrl)}`}
-                    title={fileName}
-                    width="100%"
-                    height="100%"
-                    style={{ border: "none" }}
-                />
-            )
+            if (isText) return <TextViewer file={file} />
+            if (isVideo) return <VideoViewer file={file} />
+            if (isAudio) return <AudioViewer file={file} />
+            if (isZip) return <ZipViewer file={file} />
+            if (isDoc) return <DocViewer file={file} />
+            if (isExcel) return <ExcelViewer file={file} />
             // Fallback
             return (
                 <div className="preview-toobig">
@@ -148,27 +153,8 @@ function SharedPreview() {
         )
     }
 
-    // ✅ Folder Preview
+    // Folder Preview
     if (data.type === "folder") {
-        return (
-            <div>
-                <h2>{data.data.name}</h2>
-                {data.data.files?.length === 0 ? (
-                    <p>This folder is empty.</p>
-                ) : (
-                    <ul>
-                        {data.data.files?.map(file => (
-                            <li key={file._id}>
-                                <span>{file.name}</span>
-                                <a href={file.url} download={file.name}>
-                                    <button>Download</button>
-                                </a>
-                            </li>
-                        ))}
-                    </ul>
-                )}
-            </div>
-        )
     }
 
     return <p>Unknown shared content.</p>

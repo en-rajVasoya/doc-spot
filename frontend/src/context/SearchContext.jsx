@@ -102,7 +102,6 @@ export function SearchProvider({ children }) {
             dateFrom: null,
             dateTo: null
         })
-        navigate(`/dashboard`);
     }, [])
 
 

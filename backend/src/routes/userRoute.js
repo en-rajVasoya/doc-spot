@@ -1,6 +1,7 @@
 import express from "express"
-import { currentUser, registerUser, userLogin, userLogout } from "../controllers/userController.js";
-import authMiddleware from "../middleware/authMiddleware.js";
+import { currentUser, registerUser, userLogin, userLogout, updateProfile } from "#controllers/userController";
+import authMiddleware from "#middleware/authMiddleware";
+import profilePicUploadMiddleware from "#middleware/profilePicMiddleware";
 
 const userRouter = express.Router();
 
@@ -16,6 +17,8 @@ userRouter.post("/login", userLogin)
 //  for getting the current user
 userRouter.get("/me", authMiddleware, currentUser)
 
+//  to update user profile
+userRouter.post("/edit_profile", authMiddleware, profilePicUploadMiddleware.single("profilePic"), updateProfile)
 
 //  for logout user
 userRouter.post("/logout", authMiddleware, userLogout)

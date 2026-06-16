@@ -1,3 +1,5 @@
+import uploadModel from "#models/uploadModel";
+
 // search optimization function
 export const searchOptimize = (searchQuery) => {
     return { $regex: searchQuery, $options: "i" }

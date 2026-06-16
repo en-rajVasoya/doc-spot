@@ -1,4 +1,6 @@
 import bcrypt from "bcryptjs"
+import fs from "fs";
+import path from "path";
 
 //  models - schema
 import User from "../models/userModel.js";
@@ -6,6 +8,7 @@ import User from "../models/userModel.js";
 //  utils - helper
 import { logger } from "#utils/logger";
 import { generateToken } from "../utils/generateLoginToken.js";
+import { processProfileImage } from "#utils/imageProcessor";
 
 //  User Register Controller
 export const registerUser = async (req, res) => {
@@ -165,5 +168,113 @@ export const currentUser = async (req, res) => {
             success: false,
             message: error.message
         });
+    }
+}
+
+//  function to update user profile details 
+export const updateProfile = async (req, res) => {
+    try {
+        const { name, email, user_id, password } = req.body;
+
+        let userID = req.user._id;
+
+        const userData = await User.findById(userID);
+
+        if (!userData) {
+            return res.status(404).json({ message: "User not found" });
+        }
+
+        // ==============================
+        // USERNAME CHECK
+        // ==============================
+        if (user_id && user_id !== userData.user_id) {
+            const exists = await User.findOne({ user_id });
+
+            if (exists) {
+                return res.status(400).json({
+                    message: "User ID already taken"
+                });
+            }
+
+            userData.user_id = user_id;
+        }
+
+        // ==============================
+        // NAME UPDATE
+        // ==============================
+        if (name) {
+            userData.name = name;
+        }
+
+        if (email) {
+            const normalizedEmail = email.trim().toLowerCase()
+
+            //  Email validation email must contains @ - domain - . - extension
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+            if (!emailRegex.test(normalizedEmail)) {
+                return res.status(400).json({ success: false, message: "Email is invalid" })
+            }
+
+            userData.email = emailRegex;
+        }
+
+        if (password) {
+            const hashedPassword = await bcrypt.hash(password, 10);
+            userData.password = hashedPassword;
+        }
+
+        // ==============================
+        // AVATAR UPLOAD (USING YOUR HELPER)
+        // ==============================
+        if (req.file && !req.file.mimetype.startsWith("image/")) {
+            return res.status(400).json({ message: "Only image allowed for profile picture" });
+        }
+
+        if (req.file) {
+            // process via existing helper
+            const newAvatar = await processProfileImage(req.file);
+
+            // ==============================
+            // DELETE OLD AVATAR
+            // ==============================
+            if (userData.avatar) {
+                try {
+                    if (userData.profilePic) {
+                        fs.unlinkSync(
+                            path.join(process.cwd(), userData.profilePic)
+                        );
+                    }
+
+                    if (userData.compressed_profile_pic) {
+                        fs.unlinkSync(
+                            path.join(process.cwd(), userData.compressed_profile_pic)
+                        );
+                    }
+
+                    if (userData.thumbnail_profile_pic) {
+                        fs.unlinkSync(
+                            path.join(process.cwd(), userData.thumbnail_profile_pic)
+                        );
+                    }
+                } catch (err) {
+                    logger.error("Avatar delete error:", err);
+                }
+            }
+
+            userData.profilePic = newAvatar.original_url;
+            userData.compressed_profile_pic = newAvatar.compressed_url;
+            userData.thumbnail_profile_pic = newAvatar.thumbnail_url;
+        }
+
+        await userData.save();
+
+        return res.status(200).json({
+            message: "Profile updated successfully",
+            data: userData
+        });
+
+    } catch (error) {
+        logger.error(error);
+        res.status(500).json({ success: false, message: error.message });
     }
 }

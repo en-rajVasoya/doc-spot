@@ -9,6 +9,7 @@ import userModel from "#models/userModel"
 //  utils - helper
 import { logger } from "#utils/logger"
 import { searchOptimize } from "#utils/index"
+import { processProfileImage } from "#utils/imageProcessor";
 
 // ----------------------------- CREATE USER  ----------------------------------
 export const createUser = async (req, res) => {
@@ -204,39 +205,36 @@ export const getUsers = async (req, res) => {
 // ----------------------------- UPDATE USER ----------------------------------
 export const updateUser = async (req, res) => {
     try {
-        // ##################################################
-        // ---- STEP 1: Getting input parament ----------------
-        // ##################################################
-        let { name, email, user_id, role, is_active, password } = req.body;
-        const { update_user_id } = req.params;
+        const { name, email, user_id, password, is_active, update_user_id } = req.body;
 
-        // ##################################################
-        //  --- STEP - 2 : Validation of existing user
-        // #################################################
+        const userData = await userModel.findById(update_user_id);
 
-        // 1) check if userId is in database or not 
-        const existingUser = await userModel.findById(update_user_id)
-        if (!existingUser) {
-            return res.status(404).json({ success: false, message: "No user found" })
+        if (!userData) {
+            return res.status(404).json({ message: "User not found" });
         }
 
-        // ####################################################################
-        //  --- STEP - 3 : Getting fields that are not empty and validation 
-        // ####################################################################
+        // ==============================
+        // USERNAME CHECK
+        // ==============================
+        if (user_id && user_id !== userData.user_id) {
+            const exists = await userModel.findOne({ user_id });
 
-        //  name trim here
-        if (name) name = name.trim()
-
-        // 1) create one empty object 
-        const updateFields = {}
-        const allowedFields = ["name", "role", "is_active"]
-        allowedFields.forEach(field => {
-            if (req.body[field] !== undefined) {
-                updateFields[field] = req.body[field]
+            if (exists) {
+                return res.status(400).json({
+                    message: "User ID already taken"
+                });
             }
-        });
 
-        // 2) if email is there so validation email
+            userData.user_id = user_id;
+        }
+
+        // ==============================
+        // NAME UPDATE
+        // ==============================
+        if (name) {
+            userData.name = name;
+        }
+
         if (email) {
             const normalizedEmail = email.trim().toLowerCase()
 
@@ -246,73 +244,68 @@ export const updateUser = async (req, res) => {
                 return res.status(400).json({ success: false, message: "Email is invalid" })
             }
 
-            //  check if email is already assign with other user email
-            const emailExist = await userModel.findOne({
-                email: normalizedEmail,
-                _id: { $ne: update_user_id }
-            })
-
-            //  if email already exist so return
-            if (emailExist) {
-                return res.status(400).json({ success: false, message: "Email alread assigned with diffrent user" })
-            }
-
-            //  assign email to update field
-            updateFields.email = normalizedEmail
+            userData.email = emailRegex;
         }
 
-        // 3) user_id field validation
-        if (user_id) {
-            let trimmedUserId = user_id.trim()
-
-            // check same user_id already assigned to diffren user or not 
-            const existingUserId = await userModel.findOne({
-                user_id: trimmedUserId,
-                _id: { $ne: update_user_id }
-            })
-
-            //  if user id assiged to diffrent user id so return
-            if (existingUserId) {
-                return res.status(400).json({ success: false, message: "User id alread assigned with diffrent user" })
-            }
-
-            //  set user_id to update field
-            updateFields.user_id = trimmedUserId
+        if (is_active) {
+            userData.is_active = is_active;
         }
 
-        // 4) if pasword is there so hash it
         if (password) {
-            // validation for password - password must contains one upper case one special charcter and must 8 char long
-            const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/
-            if (!passwordRegex.test(password)) {
-                return res.status(400).json({ success: false, message: "Password must be 8 characters, one uppercase and one special symbol" })
+            const hashedPassword = await bcrypt.hash(password, 10);
+            userData.password = hashedPassword;
+        }
+
+        // ==============================
+        // AVATAR UPLOAD (USING YOUR HELPER)
+        // ==============================
+        if (req.file && !req.file.mimetype.startsWith("image/")) {
+            return res.status(400).json({ message: "Only image allowed for profile picture" });
+        }
+
+        if (req.file) {
+            // process via existing helper
+            const newAvatar = await processProfileImage(req.file);
+
+            // ==============================
+            // DELETE OLD AVATAR
+            // ==============================
+            if (userData.avatar) {
+                try {
+                    if (userData.profilePic) {
+                        fs.unlinkSync(
+                            path.join(process.cwd(), userData.profilePic)
+                        );
+                    }
+
+                    if (userData.compressed_profile_pic) {
+                        fs.unlinkSync(
+                            path.join(process.cwd(), userData.compressed_profile_pic)
+                        );
+                    }
+
+                    if (userData.thumbnail_profile_pic) {
+                        fs.unlinkSync(
+                            path.join(process.cwd(), userData.thumbnail_profile_pic)
+                        );
+                    }
+                } catch (err) {
+                    logger.error("Avatar delete error:", err);
+                }
             }
 
-            //  hashed password
-            const hashedPassword = await bcrypt.hash(password, 10)
-            updateFields.password = hashedPassword
+            userData.profilePic = newAvatar.original_url;
+            userData.compressed_profile_pic = newAvatar.compressed_url;
+            userData.thumbnail_profile_pic = newAvatar.thumbnail_url;
         }
 
-        // ##################################################
-        //  --- STEP - 4 : Updating the profile pic
-        // #################################################
-        if (req.file) {
-            const profilePic = `/uploadimage/profilepic/${req.file.filename}`
+        await userData.save();
 
-            //  assigning profile pic to the updated field
-            updateFields.profilePic = profilePic
-        }
+        return res.status(200).json({
+            message: "Profile updated successfully",
+            data: userData
+        });
 
-        // ##################################################
-        //  --- STEP - 5 : Updating the data base
-        // #################################################
-        const updatedUser = await userModel.findByIdAndUpdate(update_user_id, updateFields, { new: true }).select("-password")
-
-        // ##################################################
-        //  --- STEP - 5 : send response
-        // #################################################
-
-        res.status(200).json({ success: true, user: updatedUser })
     } catch (error) {
         logger.error(error)
         res.status(500).json({ success: false, message: error.message })
