@@ -11,7 +11,7 @@ import { useNotification } from "../../../context/NotificationContext";
 
 function TrashHeaderToolbar({ setModal, searchBarOpen }) {
     const { selectedIds, setSelectedIds, items, restoreItemApi } = useTrash();
-    const {showNotification } = useNotification()
+    const { showNotification } = useNotification()
     const { downloadFile, downloadFolder, downloadMultiple } = useDownload();
 
     const selectedArray = Array.from(selectedIds);
@@ -32,26 +32,26 @@ function TrashHeaderToolbar({ setModal, searchBarOpen }) {
             {!searchBarOpen && (
                 <div className="trash-header-toolbar toolbar-box d-block">
                     <div className="toolbar">
-                <div className="toolbar-container">
-                    <div className="d-flex align-items-center">
-                        {selectedIds.size !== 0 && (
-                            <div className="selection-count">
-                                <span className="cursor-pointer">
-                                    <InteractiveIcon
-                                        defaultIcon={closeIcon}
-                                        width={24}
-                                        alt=""
-                                        onClick={() => setSelectedIds(new Set())}
-                                    />
-                                </span>
-                                {selectedIds.size} selected
-                            </div>
-                        )}
+                        <div className="toolbar-container">
+                            <div className="d-flex align-items-center">
+                                {selectedIds.size !== 0 && (
+                                    <div className="selection-count">
+                                        <span className="cursor-pointer">
+                                            <InteractiveIcon
+                                                defaultIcon={closeIcon}
+                                                width={24}
+                                                alt=""
+                                                onClick={() => setSelectedIds(new Set())}
+                                            />
+                                        </span>
+                                        {selectedIds.size} selected
+                                    </div>
+                                )}
 
-                        <ul className="mb-0 tools">
+                                <ul className="mb-0 tools">
 
-                            {/* DOWNLOAD */}
-                            {/* <li className="d-flex align-items-center justify-content-center">
+                                    {/* DOWNLOAD */}
+                                    {/* <li className="d-flex align-items-center justify-content-center">
                                 <Tooltip text="Download" placement="bottom" theme={`${isDisabled ? "disabled" : ""}`}>
                                     <InteractiveIcon
                                         defaultIcon={downloadIcon}
@@ -81,52 +81,52 @@ function TrashHeaderToolbar({ setModal, searchBarOpen }) {
                                 <div className="divider" />
                             </li> */}
 
-                            {/* RESTORE */}
-                            <li className="d-flex align-items-center justify-content-center">
-                                <Tooltip text="Restore" placement="bottom" theme={`${isDisabled ? "disabled" : ""}`}>
-                                    <InteractiveIcon
-                                        defaultIcon={retryAddIcon}
-                                        alt="Restore"
-                                        className={`${isDisabled ? "disabled" : ""}`}
-                                        onClick={!isDisabled ? handleRestore : undefined}
-                                    />
-                                </Tooltip>
-                            </li>
+                                    {/* RESTORE */}
+                                    <li className="d-flex align-items-center justify-content-center">
+                                        <Tooltip text="Restore" placement="bottom" theme={`${isDisabled ? "disabled" : ""}`}>
+                                            <InteractiveIcon
+                                                defaultIcon={retryAddIcon}
+                                                alt="Restore"
+                                                className={`${isDisabled ? "disabled" : ""}`}
+                                                onClick={!isDisabled ? handleRestore : undefined}
+                                            />
+                                        </Tooltip>
+                                    </li>
 
-                            <li className="d-flex align-items-center justify-content-center">
-                                <div className="divider" />
-                            </li>
+                                    <li className="d-flex align-items-center justify-content-center">
+                                        <div className="divider" />
+                                    </li>
 
-                            {/* DELETE FOREVER */}
-                            <li className="d-flex align-items-center justify-content-center">
-                                <Tooltip text="Delete Forever" placement="bottom" theme={`${isDisabled ? "disabled" : ""}`}>
-                                    <InteractiveIcon
-                                        defaultIcon={deleteIcon}
-                                        alt="Delete Forever"
-                                        className={`${isDisabled ? "disabled" : ""}`}
-                                        onClick={!isDisabled ? () => setModal({ type: "DeleteForeverModal", data: selectedArray }) : undefined}
-                                    />
-                                </Tooltip>
-                            </li>
-                            <li className="d-flex align-items-center justify-content-center">
-                                <div className="divider" />
-                            </li>
-                            <li className="d-flex align-items-center justify-content-center">
-                                <button className="header-search-btn" onClick={(e) => { setSearchBarOpen(prev => !prev); }}>
-                                    <InteractiveIcon
-                                        defaultIcon={searchIconWhite}
-                                        alt="Delete"
-                                        width={24}
-                                        height={24}
-                                    />
-                                </button>
-                            </li>
+                                    {/* DELETE FOREVER */}
+                                    <li className="d-flex align-items-center justify-content-center">
+                                        <Tooltip text="Delete Forever" placement="bottom" theme={`${isDisabled ? "disabled" : ""}`}>
+                                            <InteractiveIcon
+                                                defaultIcon={deleteIcon}
+                                                alt="Delete Forever"
+                                                className={`${isDisabled ? "disabled" : ""}`}
+                                                onClick={!isDisabled ? () => setModal({ type: "DeleteForeverModal", data: selectedArray }) : undefined}
+                                            />
+                                        </Tooltip>
+                                    </li>
+                                    <li className="d-flex align-items-center justify-content-center">
+                                        <div className="divider" />
+                                    </li>
+                                    <li className="d-flex align-items-center justify-content-center">
+                                        <button className="header-search-btn" onClick={(e) => { setSearchBarOpen(prev => !prev); }}>
+                                            <InteractiveIcon
+                                                defaultIcon={searchIconWhite}
+                                                alt="Delete"
+                                                width={24}
+                                                height={24}
+                                            />
+                                        </button>
+                                    </li>
 
-                        </ul>
+                                </ul>
+                            </div>
+                        </div>
                     </div>
                 </div>
-            </div>
-        </div>
             )}
         </>
     )

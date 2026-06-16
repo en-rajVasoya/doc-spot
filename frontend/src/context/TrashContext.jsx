@@ -49,7 +49,7 @@ export function TrashProvider({ children }) {
     // In-memory sorting hook specifically for Trash
     const sortedItems = useMemo(() => {
         const itemsCopy = [...items]
-        
+
         itemsCopy.sort((a, b) => {
             if (a.type !== b.type) {
                 return a.type === "folder" ? -1 : 1
@@ -72,7 +72,7 @@ export function TrashProvider({ children }) {
 
             return new Date(b.createdAt) - new Date(a.createdAt)
         })
-        
+
         return itemsCopy
     }, [items, sortBy, sortOrder])
 
@@ -166,6 +166,8 @@ export function TrashProvider({ children }) {
     //  here we are using open folder to user can go inside that folder
     const openFolder = useCallback((folder) => {
         clearSelection()
+        setItems([])           // clear old items immediately so no flicker
+        setLoading(true)       // show loading spinner right away
         setTrail(prev => {
             const lastId = prev[prev.length - 1]?.id
             if (lastId === folder._id) return prev    // here if last folder id is same so dont push it here
@@ -178,6 +180,8 @@ export function TrashProvider({ children }) {
 
     //  breadcumb navigation to track back folders here
     const navigateTo = useCallback((depth) => {
+        setItems([])           // clear old items immediately so no flicker
+        setLoading(true)       // show loading spinner right away
         setTrail(prev => {
             clearSelection()
             const newTrail = prev.slice(0, depth)

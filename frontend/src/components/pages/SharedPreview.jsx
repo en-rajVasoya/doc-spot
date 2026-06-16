@@ -155,6 +155,25 @@ function SharedPreview() {
 
     // Folder Preview
     if (data.type === "folder") {
+        return (
+            <div>
+                <h2>{data.data.name}</h2>
+                {data.data.files?.length === 0 ? (
+                    <p>This folder is empty.</p>
+                ) : (
+                    <ul>
+                        {data.data.files?.map(file => (
+                            <li key={file._id}>
+                                <span>{file.name}</span>
+                                <a href={file.url} download={file.name}>
+                                    <button>Download</button>
+                                </a>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </div>
+        )
     }
 
     return <p>Unknown shared content.</p>

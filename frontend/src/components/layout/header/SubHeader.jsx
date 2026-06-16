@@ -10,6 +10,8 @@ import { useUpload } from "../../../context/UploadContext";
 import { useDownload } from "../../../context/DownloadContext";
 import Breadcrumbs from "../../features/Breadcrumbs";
 import { getRoute } from "../../../utils/getRoutes.js";
+import sharedWithIcon from "@images/icon/shared-with-me-icon.svg";
+import userPlusIcon from "@images/icon/user-plus.svg";
 
 // ##################################################
 // ---- SubHeader Component -------------------------
@@ -21,7 +23,7 @@ const SubHeader = memo(function SubHeader({ view, setView, setModal, isSearchMod
     const { trail, selectedIds, items, currentFolderId, navigateTo, changeColorApi, isViewerOnly, currentFolderMeta } = useFileExplorer();
     const { addFiles, checkAndUpload, openScanningPanel } = useUpload();
     const { downloadFile, downloadFolder, downloadMultiple } = useDownload();
-    
+
     // 2. Setup routing hooks for navigation
     const navigate = useNavigate()
     const location = useLocation()
@@ -43,8 +45,18 @@ const SubHeader = memo(function SubHeader({ view, setView, setModal, isSearchMod
     // depending on the active route.
     // ##################################################
     const getRootLabel = () => {
-        if (location.pathname.startsWith(getRoute.SHARED_WITH_ME)) return "Shared with me";
-        if (location.pathname.startsWith(getRoute.SHARED)) return "Shared";
+        if (location.pathname.startsWith(getRoute.SHARED_WITH_ME)) return (
+            <div className="share-with-me breadcrumb-title">
+                <InteractiveIcon defaultIcon={sharedWithIcon} className="me-2" width={24} />
+                Share with me 
+            </div>
+        );
+        if (location.pathname.startsWith(getRoute.SHARED)) return (
+            <div className="share-with-me breadcrumb-title">
+                <InteractiveIcon defaultIcon={userPlusIcon} className="me-2" width={24} />
+                Shared
+            </div>
+        );
         return "My Docspot";
     };
 
@@ -53,18 +65,18 @@ const SubHeader = memo(function SubHeader({ view, setView, setModal, isSearchMod
     // Calculates what options should be available inside 
     // the breadcrumb dropdown based on the folder level.
     // ##################################################
-    
+
     // Check if user is at the root of a Shared folder (trail is empty)
     const isSharedRoot = (location.pathname.startsWith(getRoute.SHARED_WITH_ME) || location.pathname.startsWith(getRoute.SHARED)) && trail.length === 0;
-    
+
     let actionsList = [];
 
     if (isSharedRoot) {
         // SCENARIO 1: Shared Root -> No menu opens, purely read-only structural view
-        actionsList = []; 
+        actionsList = [];
     } else if (trail.length === 0) {
         // SCENARIO 2: My Docspot Root -> User is at home, only allow creation actions
-        actionsList = ["newFolder", "uploadFolder", "addFiles"]; 
+        actionsList = ["newFolder", "uploadFolder", "addFiles"];
     } else {
         // SCENARIO 3: Inside ANY Folder -> Show all context actions (including info, share, trash)
         actionsList = ["newFolder", "uploadFolder", "addFiles", "share", "download", "rename", "changeColor", "copy", "move", "info", "trash"];
@@ -80,7 +92,7 @@ const SubHeader = memo(function SubHeader({ view, setView, setModal, isSearchMod
                     {/* ---- MAIN HEADER ROW ----------------------------- */}
                     {/* ################################################## */}
                     <div className="header-view d-flex align-items-center justify-content-between ">
-                        
+
                         {/* --- BREADCRUMBS COMPONENT --- */}
                         {/* Passes all calculated navigation and permission data to the breadcrumb renderer */}
                         <Breadcrumbs
@@ -108,7 +120,7 @@ const SubHeader = memo(function SubHeader({ view, setView, setModal, isSearchMod
                         {/* Allows switching between List and Grid layouts */}
                         <div className="d-flex align-items-center">
                             <ul className="mb-0 d-flex view-btn">
-                                
+
                                 {/* List View Toggle */}
                                 <li>
                                     <Tooltip text="List View">

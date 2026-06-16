@@ -21,7 +21,7 @@ import { useFileExplorer } from '../../../context/FileExplorerContext.jsx';
 //  getiing backend url for getting profile pic of user
 const BASE_URL = import.meta.env.VITE_API_URL?.replace(/\/api\/?$/, "") || "";
 
-function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobileSidebarNavclick  }) {
+function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobileSidebarNavclick }) {
 
 
     const { logout, user } = useAuth()
@@ -58,7 +58,7 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                 {/* Logo */}
 
                 <div className="logo-section">
-                     <button className="sidebar2-Mobile-toggle-btn btn-only-icon"  onClick={onMobileSidebarNavclick}>
+                    <button className="sidebar2-Mobile-toggle-btn btn-only-icon" onClick={onMobileSidebarNavclick}>
                         <InteractiveIcon
                             defaultIcon={menuIcon}
                             alt=""

@@ -1390,6 +1390,20 @@ export function FileExplorerProvider({ children }) {
     }
 
 
+
+
+    //  here this is for when share user modal opens so suggested user will show there
+    const getSuggestedUsersApi  = async () => {
+        try {
+            const {data} = await axiosApi.get("/share/suggested_users")
+            return data.users || []
+
+        } catch (error) {
+            console.log(error.message)
+            return []
+        }
+    }
+
     const clearSelection = () => setSelectedIds(new Set())
 
 
@@ -1421,6 +1435,7 @@ export function FileExplorerProvider({ children }) {
             copyItemApi,
             createFolderApi,
             currentFolderMeta,
+            getSuggestedUsersApi,
 
 
             //  sorting 

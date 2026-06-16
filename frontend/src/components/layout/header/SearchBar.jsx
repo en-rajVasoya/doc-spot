@@ -17,18 +17,18 @@ import axiosApi from "../../../utils/api.js";
 import FilePreviewModal from "../../features/filePreview/FilePreviewModal.jsx";
 import { useNavigate, useLocation } from "react-router-dom";
 import enterIcon from "@images/icon/enter-icon.svg";
-import videoFile from "@images/svgs/media/video-file.svg";
-import imgFile from "@images/svgs/media/img-file.svg";
-import pdfFile from "@images/svgs/media/pdf-file.svg";
-import zipFile from "@images/svgs/media/zip-file.svg";
-import musicFile from "@images/svgs/media/music-file.svg";
-import navFolderIcon from "@images/icon/nav-folder-icon.svg";
-import fileIcon from "@images/svgs/file.svg";
+import videoFile from "@images/svgs/media/video-icon-18.svg";
+import imgFile from "@images/svgs/media/img-icon-18.svg";
+import pdfFile from "@images/svgs/media/pdf-icon-18.svg";
+import zipFile from "@images/svgs/media/zip-icon-18.svg";
+import musicFile from "@images/svgs/media/music-icon-18.svg";
+import navFolderIcon from "@images/svgs/media/search-file-icon.svg";
+import fileIcon from "@images/svgs/media/file-icon-18.svg";
 
 
 function SearchBar({ searchBarOpen, setSearchBarOpen }) {
     const { searchApi, clearSearch, searchLoading, searchResults, isSearchMode, searchFilters } = useSearch();
-    const { searchUsersApi, openFolder } = useFileExplorer();
+    const { searchUsersApi, openFolder, getSuggestedUsersApi } = useFileExplorer();
 
 
     const [filePreview, setFilePreview] = useState(null);
@@ -51,6 +51,24 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
 
     const searchRef = useRef(null);
     const debounceRef = useRef(null);
+
+
+    // ##################################################
+    // ---- Fetch Suggested Users for Specific Person ---
+    // ##################################################
+    useEffect(() => {
+        if (showSelectPerson) {
+            getSuggestedUsersApi().then((users) => {
+                const options = users.map((u) => ({
+                    value: u._id,
+                    label: u.name,
+                    email: u.email,
+                    profilePic: u.profilePic
+                }));
+                setUserOptions(options);
+            });
+        }
+    }, [showSelectPerson, getSuggestedUsersApi]);
 
 
     // ##################################################
@@ -201,11 +219,24 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
     }), []);
 
     // ##################################################
-    // ---- STEP 6: Search users for selection ----------
+    // ---- STEP 6: Search suggested  users for selection ----------
     // ##################################################
     const handleUserSearch = useCallback((inputValue) => {
         console.log("handleUserSearch called", inputValue)
-        if (!inputValue || inputValue.trim().length < 2) return;
+        if (!inputValue || inputValue.trim().length === 0) {
+            getSuggestedUsersApi().then((users) => {
+                const options = users.map((u) => ({
+                    value: u._id,
+                    label: u.name,
+                    email: u.email,
+                    profilePic: u.profilePic
+                }));
+                setUserOptions(options);
+            });
+            return;
+        }
+        
+        if (inputValue.trim().length < 2) return;
 
         searchUsersApi(inputValue).then((users) => {
             const options = users.map((u) => ({
@@ -216,7 +247,7 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
             }));
             setUserOptions(options);
         });
-    }, [searchUsersApi]);
+    }, [searchUsersApi, getSuggestedUsersApi]);
 
     const navigate = useNavigate();
     const locationPath = useLocation().pathname;

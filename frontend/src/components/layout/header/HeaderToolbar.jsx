@@ -22,17 +22,17 @@ function HeaderToolbar({ setModal, searchBarOpen, setSearchBarOpen }) {
     const { downloadFile, downloadFolder, downloadMultiple } = useDownload();
     const { isSearchMode, searchResults } = useSearch();
 
-// ##################################################
-// ---- STEP 1: Component Data & Setup --------------
-// Grab context functions and determine which list of 
-// items (normal or search results) to display.
-// ##################################################
+    // ##################################################
+    // ---- STEP 1: Component Data & Setup --------------
+    // Grab context functions and determine which list of 
+    // items (normal or search results) to display.
+    // ##################################################
     // decide which items list to use based on search mode
     const displayItems = isSearchMode ? searchResults : items;
 
     // Convert Set of selected IDs to an array for easier array operations
     const selectedArray = Array.from(selectedIds);
-    
+
     // Safely get the first selected item object (used for single-item actions like Rename/Info)
     const selectedItem = displayItems.find(
         item => item._id === selectedArray[0]

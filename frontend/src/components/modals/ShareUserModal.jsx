@@ -25,7 +25,7 @@ const BASE_URL = import.meta.env.VITE_API_URL?.replace(/\/api\/?$/, "") || "";
 
 function ShareUserModal({ data, onClose }) {
     const [loading, setLoading] = useState(true);
-    const { searchUsersApi, getSharedUsersApi, shareItemApi, unshareItemApi, selectedIds } = useFileExplorer()
+    const { searchUsersApi, getSharedUsersApi, shareItemApi, unshareItemApi, selectedIds, getSuggestedUsersApi } = useFileExplorer()
     const { user } = useAuth()
     const { showNotification } = useNotification()
 
@@ -67,6 +67,12 @@ function ShareUserModal({ data, onClose }) {
     const [passwordShow, setPasswordShow] = useState(false)
 
 
+
+    //  this state is used for the suggested user show in this modal when user click on the input
+    const [suggestedUsers, setSuggestedUsers] = useState([])
+    const [inputFocused, setInputFocused] = useState(false)
+
+
     // automatically fetch the existing shared users for this item when modal opens
     useEffect(() => {
         if (!itemId) return;
@@ -101,6 +107,16 @@ function ShareUserModal({ data, onClose }) {
         return () => clearTimeout(timeout)
     }, [searchTerm])
 
+
+
+    //  when share user modal opens so thsi will fetch suggested users here
+    useEffect(() => {
+        const fetchSuggestedUsers = async () => {
+            const users = await getSuggestedUsersApi()
+            setSuggestedUsers(users)
+        }
+        fetchSuggestedUsers()
+    }, [])
 
     // Helper to generate a random 8-character numeric password to bypass the strict backend validator!
     const generateRandomPassword = () => {
@@ -284,6 +300,18 @@ function ShareUserModal({ data, onClose }) {
     if (loading) {
         return <div className="p-3">Loading...</div>;
     }
+    // Filter out users who already have access or are currently selected
+    const filterOutExistingUsers = (usersToFilter) => {
+        return usersToFilter.filter(user => {
+            const isOwnerMatch = owner && String(owner.userId) === String(user._id);
+            const isShared = sharedWith.some(s => String(s.userId) === String(user._id));
+            const isSelected = selectedUsers.has(String(user._id));
+            return !isOwnerMatch && !isShared && !isSelected;
+        });
+    };
+
+    const filteredSuggestedUsers = filterOutExistingUsers(suggestedUsers);
+    const filteredSearchResults = filterOutExistingUsers(searchResults);
 
     return (
         <div onClick={handleOutsideClick}>
@@ -324,16 +352,43 @@ function ShareUserModal({ data, onClose }) {
                                                 placeholder="Search by name or email..."
                                                 value={searchTerm}
                                                 onChange={(e) => setSearchTerm(e.target.value)}
+                                                onFocus={() => setInputFocused(true)}
+                                                onBlur={() => setTimeout(() => setInputFocused(false), 200)}
                                                 className='custom-form-control h-36'
                                             />
                                         </div>
                                     </Form.Group>
                                     <h3 class="modal-title-sub">Shared with people</h3>
-                                    {/* Show the dropdown list if we have search results */}
-                                    {searchResults.length > 0 && (
+
+                                    {/* show suggested users on focus with empty input */}
+                                    {inputFocused && searchTerm.trim().length === 0 && filteredSuggestedUsers.length > 0 && (
                                         <div className="input-dd">
                                             <ul className="mb-0 py-2">
-                                                {searchResults.map(user => (
+                                                {/* mapping filtered suggested users */}
+                                                {filteredSuggestedUsers.slice(0, 5).map(user => (
+                                                    <li key={user._id} onClick={() => handleSelectUser(user)}>
+                                                        <div className="share-user-list-dd d-flex align-items-center cursor-pointer p-2">
+                                                            <InteractiveIcon
+                                                                defaultIcon={`${BASE_URL}${user.profilePic}`}
+                                                                width={48}
+                                                                height={48}
+                                                            />
+                                                            <div className="ms-2 ps-1">
+                                                                <p className="user-name mb-0">{user.name}</p>
+                                                                <p className="user-email mb-0 small text-muted">{user.email}</p>
+                                                            </div>
+                                                        </div>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
+                                    {/* Show the dropdown list if we have search results */}
+                                    {filteredSearchResults.length > 0 && searchTerm.trim().length >= 2 && (
+                                        <div className="input-dd">
+                                            <ul className="mb-0 py-2">
+                                                {/* mapping filtered search results */}
+                                                {filteredSearchResults.map(user => (
                                                     <li key={user._id} onClick={() => handleSelectUser(user)}>
                                                         <div className="share-user-list-dd d-flex align-items-center cursor-pointer p-2">
                                                             <InteractiveIcon
@@ -360,6 +415,7 @@ function ShareUserModal({ data, onClose }) {
                                     {/* Show the list of NEW users waiting to be shared */}
                                     {selectedUsers.size > 0 && (
                                         <>
+                                            {/* mapping selected pending users */}
                                             {[...selectedUsers.entries()].map(([userId, { user, permission }]) => (
                                                 <ul className="share-user-container" key={userId}>
                                                     <li>
@@ -432,6 +488,7 @@ function ShareUserModal({ data, onClose }) {
                                             </li>
                                         )}
 
+                                        {/* mapping existing shared users */}
                                         {sharedWith.map(s => (
                                             <li key={s.userId}>
                                                 <div className="share-user-list d-flex justify-content-between align-items-center">
@@ -448,10 +505,14 @@ function ShareUserModal({ data, onClose }) {
                                                             <p className="user-email mb-0 small text-muted">{s.email}</p>
                                                         </div>
                                                     </div>
-
                                                     <div className="d-flex align-items-center gap-2">
-                                                        <Form.Group className="m-0" onClick={(e) => e.stopPropagation()}>
+                                                        <Form.Group
+                                                            className="m-0"
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            style={{ opacity: s.inherited ? 0.5 : 1, pointerEvents: s.inherited ? 'none' : 'auto' }}
+                                                        >
                                                             <CustomSelect
+                                                                isDisabled={s.inherited}
                                                                 options={shareFileEditOptionsTwo}
                                                                 isSearchable={false}
                                                                 showIndicatorSeparator={false}

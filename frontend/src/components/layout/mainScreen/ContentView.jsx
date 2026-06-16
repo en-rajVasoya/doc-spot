@@ -25,6 +25,8 @@ import squareArrowDownLinearIcon from "@images/icon/square-arrow-down-linear.svg
 import searchIcon from "@images/icon/search.svg";
 import closeIcon from "@images/icon/close-icon.svg";
 import fileInfoIcon from "@images/icon/file-info.svg";
+import trashEmptyIcon from "@images/icon/trash-icon.svg";
+
 
 
 function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRefsReady, dragRootRef, displayError, displayLoading, displayItems }) {
@@ -602,6 +604,17 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
                                 </div>
                             </div>
                         </div>
+
+                        {displayItems.length === 0 && !loading && (
+                            <div className="no-data-found-single-box-wrapper">
+                                <div className="no-data-found-single-box">
+                                    <InteractiveIcon defaultIcon={trashEmptyIcon} alt="No folders" />
+                                    <p className="text-center text-muted py-3 m-0">
+                                        Trash is empty
+                                    </p>
+                                </div>
+                            </div>
+                        )}
                         {displayItems.length === 0 && !displayLoading && (
                             <div className="page-empty-state">
                                 {isSearchMode ? "No results found" : ""}

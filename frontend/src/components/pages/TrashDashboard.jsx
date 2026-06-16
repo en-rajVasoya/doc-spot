@@ -18,6 +18,20 @@ function TrashDashboard() {
     const [modal, setModal] = useState(null)
     const [searchBarOpen, setSearchBarOpen] = useState(false)
     const [isSidebarNavOpen, setIsSidebarNavOpen] = useState(false)
+    const headerRef = useRef(null);
+const [headerHeight, setHeaderHeight] = useState(215);
+
+useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    
+    const observer = new ResizeObserver(() => {
+        setHeaderHeight(el.offsetHeight);
+    });
+    
+    observer.observe(el);
+    return () => observer.disconnect();
+}, []);
 
     // Drag and select refs
     const itemRefsFromContent = useRef({})
@@ -43,7 +57,7 @@ function TrashDashboard() {
                 <div className='content-wrapper-main'>
 
                     {/* Same main header */}
-                    <div className="max-width-base-header">
+                    <div className="max-width-base-header" ref={headerRef}>
                         <MainHeader
                             setModal={setModal}
                             searchBarOpen={searchBarOpen}
@@ -65,7 +79,7 @@ function TrashDashboard() {
 
 
                     <div className='content-view-wrapper' ref={dragAndSelectRef}>
-                        <div className="max-width-base" ref={dragRootRef}>
+                        <div className="max-width-base" ref={dragRootRef} style={{ height: `calc(100dvh - ${headerHeight}px)` }}>
                             <GlobalContextMenu disableContextMenu={true} />
 
                             <TrashContentView 

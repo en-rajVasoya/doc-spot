@@ -24,6 +24,20 @@ function Dashboard() {
   const { isSearchMode, searchResults, searchLoading, searchError, clearSearch, searchApi  } = useSearch()
   const { clearSelection, items, sortBy, setSortBy, sortOrder, setSortOrder, selectedIds, setSelectedIds, loading, error } = useFileExplorer()
   const [isSidebarNavOpen, setIsSidebarNavOpen] = useState(false);
+  const headerRef = useRef(null);
+const [headerHeight, setHeaderHeight] = useState(215);
+
+useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    
+    const observer = new ResizeObserver(() => {
+        setHeaderHeight(el.offsetHeight);
+    });
+    
+    observer.observe(el);
+    return () => observer.disconnect();
+}, []);
 
 
   // ##################################################
@@ -32,14 +46,14 @@ function Dashboard() {
   const sortedSearchResults = useMemo(() => {
     // If not in search mode, there are no search results to sort
     if (!isSearchMode) return []
-    
+
     // Create a fresh copy of the search results array before sorting it
     return [...searchResults].sort((a, b) => {
       // Always put folders before files, regardless of other sorting rules
       if (a.type !== b.type) return a.type === "folder" ? -1 : 1
-      
+
       let valA, valB
-      
+
       if (sortBy === "name") {
         // For name sorting, convert both to lowercase to ensure 'A' and 'a' are treated equally
         valA = a.name.toLowerCase()
@@ -53,7 +67,7 @@ function Dashboard() {
         valA = new Date(a.updatedAt || a.createdAt).getTime()
         valB = new Date(b.updatedAt || b.createdAt).getTime()
       }
-      
+
       // Compare the two values and apply the ascending or descending order logic
       if (valA < valB) return sortOrder === "asc" ? -1 : 1
       if (valA > valB) return sortOrder === "asc" ? 1 : -1
@@ -88,7 +102,7 @@ function Dashboard() {
   // ---- STEP 5: Modal open and close handlers -------
   // ##################################################
   const [modal, setModal] = useState(null);
-  
+
   useEffect(() => {
     const handleKeyDown = (e) => {
       // If any modal is currently open and the user hits the Escape key
@@ -124,14 +138,14 @@ function Dashboard() {
   }, [urlSearch]); 
 
 
-  
+
   return (
     <>
       <div className="page-wrapper" >
         <div className='content-wrapper-main' >
 
           {/* Main header top */}
-          <div className="max-width-base-header">
+          <div className="max-width-base-header" ref={headerRef}>
             <MainHeader setModal={setModal} searchBarOpen={searchBarOpen} setSearchBarOpen={setSearchBarOpen}
               onMobileSidebarNavclick={() => setIsSidebarNavOpen(prev => !prev)}
             />
@@ -159,7 +173,7 @@ function Dashboard() {
 
           {/* Main content view dashboard and subheader  */}
           <div className='content-view-wrapper' ref={dragAndSelectRef}>
-            <div className="max-width-base" ref={dragRootRef}>
+            <div className="max-width-base" ref={dragRootRef} style={{ height: `calc(100dvh - ${headerHeight}px)` }}>
               <DragAndDrop />
               <GlobalContextMenu setModal={setModal} modal={modal} />
 

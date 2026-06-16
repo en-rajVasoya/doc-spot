@@ -322,19 +322,28 @@ export const unshareItem = async (req, res) => {
 //  5) owner can see all user with file and folder access in modal (including inherited)
 export const getSharedUsers = async (req, res) => {
     try {
+        // Extract the target file/folder ID from the request URL parameters
         const { itemId } = req.params;
+        // Get the ID of the user currently making the request (logged-in user)
         const requesterId = req.user._id;
 
+        // Fetch the specific file or folder from the database, and also fetch the owner's profile details (name, email, profilePic)
         const targetItem = await uploadModel.findById(itemId).populate("owner", "name email profilePic");
+
+        // If the file or folder does not exist in the database, return a 404 Not Found error
         if (!targetItem) {
             return res.status(404).json({ success: false, message: "No item found" })
         }
 
+        // Check if the current user actually has permission to view this item's details
         const permission = await getUserPermission(requesterId, itemId)
+
+        // If they have no permission, block them with a 403 Access Denied error
         if (!permission) {
             return res.status(403).json({ success: false, message: "Access denied" })
         }
 
+        // Create an object containing only the necessary details of the item's owner to send to the frontend
         const ownerData = {
             userId: targetItem.owner._id,
             name: targetItem.owner.name,
@@ -342,41 +351,57 @@ export const getSharedUsers = async (req, res) => {
             profilePic: targetItem.owner.profilePic
         }
 
+        // Create a Map (like a dictionary) to store unique users who have access.
+        // Using a Map prevents duplicate users if someone was shared on both a parent folder AND a child file.
         const allSharedUsersMap = new Map();
 
+        // We only reveal the full list of shared users if the person requesting it is the actual "owner"
         if (permission === "owner") {
+            // Start checking from the specific item the user clicked on
             let currentId = itemId;
 
-            // Climb the folder tree to grab ALL users
+            // Climb the folder tree to grab ALL users (Loops as long as currentId exists)
             while (currentId) {
+                // Fetch the current item (file/folder) and populate the profile details of anyone it is shared with
                 const currentItem = await uploadModel.findById(currentId)
                     .populate("sharedWith.userId", "name email profilePic");
-                
+
+                // If the item doesn't exist (failsafe), stop climbing the tree
                 if (!currentItem) break;
 
+                // Check if this specific item has anyone in its sharedWith array
                 if (currentItem.sharedWith && currentItem.sharedWith.length > 0) {
+                    // Loop through every user it is shared with
                     for (const s of currentItem.sharedWith) {
+                        // If the user exists and we haven't already added them to our Map
                         if (s.userId && !allSharedUsersMap.has(s.userId._id.toString())) {
+                            // Add them to the Map with their details
                             allSharedUsersMap.set(s.userId._id.toString(), {
                                 userId: s.userId._id,
                                 name: s.userId.name,
                                 email: s.userId.email,
                                 profilePic: s.userId.profilePic,
-                                permission: s.permission,
-                                // This tells the frontend it came from a parent folder!
-                                inherited: currentId.toString() !== itemId.toString() 
+                                permission: s.permission, // "viewer" or "editor"
+                                // Compare the ID of the folder we are currently checking against the original item the user clicked.
+                                // If they are different, it means we climbed up the tree, so this access is "inherited".
+                                inherited: currentId.toString() !== itemId.toString()
                             });
                         }
                     }
                 }
+                // Move up the tree: set the current ID to the parent folder's ID to check it in the next loop iteration
                 currentId = currentItem.parent;
             }
         }
 
+        // Convert our Map of unique users back into a standard Array
         const sharedWith = Array.from(allSharedUsersMap.values());
+
+        // Send the final response to the frontend containing the owner details and the array of shared users
         res.json({ success: true, owner: ownerData, sharedWith })
 
     } catch (error) {
+        // If any code above crashes, catch the error and return a 500 Server Error
         res.status(500).json({ success: false, message: error.message })
     }
 }
@@ -385,7 +410,6 @@ export const getSharedUsers = async (req, res) => {
 
 
 
-//  in forntend share modal search user here
 export const searchUsers = async (req, res) => {
     try {
         const { query } = req.query
@@ -397,6 +421,7 @@ export const searchUsers = async (req, res) => {
 
         const users = await userModel.find({
             _id: { $ne: owner },
+            is_active: { $ne: false },
             $or: [
                 { name: { $regex: query, $options: "i" } },
                 { email: { $regex: query, $options: "i" } }
@@ -410,6 +435,7 @@ export const searchUsers = async (req, res) => {
         res.status(500).json({ success: false, message: err.message })
     }
 }
+
 
 //  permissino check middleware here
 export const checkPermission = (...allowedRoles) => {
@@ -431,5 +457,61 @@ export const checkPermission = (...allowedRoles) => {
             logger.error(err);
             res.status(500).json({ success: false, message: err.message })
         }
+    }
+}
+
+
+
+
+//  when user click on the search input in the share user modal so defautl show this users here 
+export const getSuggestedUsers = async (req, res) => {
+    try {
+        const currentUserID = req.user._id;
+
+        // 1 get the users that current user have shared history here
+        const recentSharedUserIds = await uploadModel.distinct("sharedWith.userId", {
+            owner: currentUserID
+        })
+
+        let suggestedUsers = []
+
+        //  2. Fetch those recent users' details - 10 most
+        if (recentSharedUserIds.length > 0) {
+            suggestedUsers = await userModel.find({
+                _id: { $in: recentSharedUserIds },
+                is_active: { $ne: false }
+            })
+                .select("name email profilePic")
+                .limit(10)
+        }
+
+
+        // 3 if we have less then 10 users in the shared user so rest show alphabatically users 
+        if (suggestedUsers.length < 10) {
+            const limitNeeded = 10 - suggestedUsers.length;
+
+            // collect all ids we already have so we dont fetch this users here
+            const existingIds = suggestedUsers.map(u => u._id.toString())
+
+            // also exclude the current logged in user here
+            existingIds.push(currentUserID.toString())
+
+            const alphabeticalUsers = await userModel.find({
+                _id: { $nin: existingIds },
+                is_active: { $ne: false }
+            })
+                .select("name email profilePic")
+                .sort({ name: 1 })
+                .limit(limitNeeded)
+
+            // 4. Combine recent users (top) with alphabetical users (bottom)
+            suggestedUsers = [...suggestedUsers, ...alphabeticalUsers]
+        }
+
+        return res.json({ success: true, users: suggestedUsers })
+
+    } catch (error) {
+        logger.error(error)
+        res.status(500).json({ success: false, message: error.message })
     }
 }

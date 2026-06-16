@@ -99,6 +99,7 @@ import { useNavigate } from "react-router-dom";
 import backIcon from "@images/icon/arrow-left-outline-icon.svg";
 import { useNotification } from "../../../context/NotificationContext";
 import { useDownload } from "../../../context/DownloadContext";
+import deleteIcon from "@images/icon/trash.svg";
 
 const TrashSubHeader = memo(function TrashSubHeader({ view, setView, setModal }) {
     const { trail, navigateTo, items, selectedIds, setSelectedIds, restoreItemApi } = useTrash()
@@ -157,7 +158,7 @@ const TrashSubHeader = memo(function TrashSubHeader({ view, setView, setModal })
                             />
                         </button>
                         </Tooltip> */}
-                        <Breadcrumbs
+                        {/* <Breadcrumbs
                             trail={trail}
                             onNavigate={navigateTo}
                             onHomeClick={() => navigate("/trash-dashboard")}
@@ -172,6 +173,27 @@ const TrashSubHeader = memo(function TrashSubHeader({ view, setView, setModal })
                             downloadMultiple={downloadMultiple}
                             items={items}
 
+                        /> */}
+
+                        <Breadcrumbs
+                            trail={trail}
+                            onNavigate={navigateTo}
+                            onHomeClick={() => navigate("/trash-dashboard")}
+                            maxVisible={2}
+                            rootLabel={
+                                <div className="trash-box-breadcrumb breadcrumb-title">     
+                                  <InteractiveIcon defaultIcon={deleteIcon} className="me-2" width={24} />                               
+                                    Trash
+                                </div>
+                            }
+                            actions={["download", "restore", "deleteForever"]}
+                            selectedIds={selectedIds}
+                            onRestore={handleRestore}
+                            onDeleteForever={handleDeleteForever}
+                            downloadFile={downloadFile}
+                            downloadFolder={downloadFolder}
+                            downloadMultiple={downloadMultiple}
+                            items={items}
                         />
                     </div>
 
@@ -202,14 +224,20 @@ const TrashSubHeader = memo(function TrashSubHeader({ view, setView, setModal })
                 </div>
             </header>
             {/* full width notice bar */}
-            {items.length > 0 && (
+            {/* {items.length > 0 && (
                 <div className="empty-bin-section ">
                     <span>
                         Items in trash are deleted forever after 30 days
                     </span>
-            
+
                 </div>
-            )}
+            )} */}
+            <div className="empty-bin-section ">
+                    <span>
+                        Items in trash are deleted forever after 30 days
+                    </span>
+
+                </div>
 
         </>
     );

@@ -7,7 +7,7 @@ import { useAuth } from "../../../context/AuthContext.jsx"
 import getFileIcon from "../../../utils/getFileIcon.js";
 import getFolderIcon from "../../../utils/getFolderIconColor.js";
 import FilePreviewModal from "../filePreview/FilePreviewModal.jsx";
-import trashIcon from "@images/icon/trash-icon.svg";
+import trashEmptyIcon from "@images/icon/trash-icon.svg";
 
 import downloadIcon from "@images/icon/download.svg"
 import retryIcon from "@images/icon/retry-icon.svg"
@@ -331,7 +331,7 @@ function TrashContentView({ view, setModal, onItemRefsReady, dragRootRef }) {
                         {items.length === 0 && !loading && (
                             <div className="no-data-found-single-box-wrapper">
                                 <div className="no-data-found-single-box">
-                                    <InteractiveIcon defaultIcon={trashIcon} alt="No folders" />
+                                    <InteractiveIcon defaultIcon={trashEmptyIcon} alt="No folders" />
                                     <p className="text-center text-muted py-3 m-0">
                                         Trash is empty
                                     </p>

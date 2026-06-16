@@ -4,7 +4,8 @@ import {
   unshareItem,
   getSharedUsers,
   searchUsers,
-  checkPermission
+  checkPermission,
+  getSuggestedUsers
 } from "../controllers/shareController.js";
 import { getUserPermission } from "#utils/userPermissionUtil";
 import authMiddleware from "../middleware/authMiddleware.js"
@@ -24,9 +25,11 @@ shareRouter.delete("/unshare", authMiddleware, unshareItem);
 // Search users to share with — any logged-in user
 shareRouter.get("/share/search", authMiddleware, searchUsers);
 
+// get sugggsted user
+shareRouter.get("/share/suggested_users", authMiddleware, getSuggestedUsers)
+
 // Get all users who have access to an item — only owner
 shareRouter.get("/share/:itemId", authMiddleware, getSharedUsers);
-
 
 
 export default shareRouter;

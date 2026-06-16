@@ -168,7 +168,7 @@ function AppRoutes() {
         } />
 
         <Route path="/trash-dashboard" element={
-          <FileExplorerProvider key="trash">
+          <FileExplorerProvider key="trash-dashboard">
             <TrashProvider>
               <TrashDashboard />
             </TrashProvider>
