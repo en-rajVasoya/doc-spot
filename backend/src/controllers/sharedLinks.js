@@ -1,4 +1,6 @@
 
+import bcrypt from "bcryptjs"
+
 import SharedLink from "#models/sharedLinksModel";
 import uploadModel from "#models/uploadModel";
 
@@ -19,7 +21,7 @@ export const storeLinks = async (req, res) => {
             "links.*.item_id": "required|string",
             user_ids: "array",
             is_public: "required|boolean",
-            password: "min:8",
+            password: "string",
             expire_date: "date"
         });
 
@@ -32,22 +34,25 @@ export const storeLinks = async (req, res) => {
         }
 
         // Extract token from each link and build documents
-        const sharedLinksData = links.map(({ link, type, item_id }) => {
-            const url = new URL(link);
-            const token = url.searchParams.get("token");
+        const sharedLinksData = await Promise.all(
+            links.map(async ({ link, type, item_id }) => {
+                const url = new URL(link);
+                const token = url.searchParams.get("token");
+                const hashedPassword = password ? await bcrypt.hash(password, 8) : null;
 
-            return {
-                user_id: userID,
-                token,
-                type,
-                link,
-                item_id,                        // file_id or folder_id
-                password: password || null,
-                is_public,
-                permissions_users: user_ids || [],
-                expire_date: expire_date || null,
-            };
-        });
+                return {
+                    user_id: userID,
+                    token,
+                    type,
+                    link,
+                    item_id, // file_id or folder_id
+                    password: hashedPassword,
+                    is_public,
+                    permissions_users: user_ids || [],
+                    expire_date: expire_date || null,
+                };
+            })
+        );
 
         const savedLinks = await SharedLink.insertMany(sharedLinksData);
 
@@ -91,7 +96,7 @@ export const accessLink = async (req, res) => {
             if (!req.user) {
                 return res.status(401).json({ success: false, message: "Login required to access this link" });
             }
-            
+
             const hasAccess = sharedLink.permissions_users.some(
                 (id) => id.toString() === req.user.toString()
             );

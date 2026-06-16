@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { useSearchParams } from "react-router-dom"
-import { OverlayTrigger, Tooltip } from "react-bootstrap"
+import { OverlayTrigger, Tooltip, Modal, Button } from "react-bootstrap"
 // import FeatherIcon from "feather-icons-react"
 import ImageViewer from "../features/filePreview/ImageViewer"
 import PdfViewer from "../features/filePreview/PdfViewer"
@@ -10,15 +10,22 @@ import AudioViewer from "../features/filePreview/AudioViewer"
 import ZipViewer from "../features/filePreview/ZipViewer"
 import ExcelViewer from "../features/filePreview/ExcelViewer"
 import DocViewer from "../features/filePreview/DocViewer"
+import FolderViewer from "../features/filePreview/FolderViewer"
 
 function SharedPreview() {
     const [searchParams] = useSearchParams()
     const token = searchParams.get("token")
-
     const [data, setData] = useState(null)
     const [error, setError] = useState(null)
     const [loading, setLoading] = useState(true)
     const [copied, setCopied] = useState(false)
+
+    // Password modal states
+    const [showPasswordModal, setShowPasswordModal] = useState(false)
+    const [password, setPassword] = useState("")
+    const [passwordError, setPasswordError] = useState("")
+    const [verifyingPassword, setVerifyingPassword] = useState(false)
+    const [passwordVerified, setPasswordVerified] = useState(false)
 
     useEffect(() => {
         if (!token) {
@@ -26,29 +33,148 @@ function SharedPreview() {
             setLoading(false)
             return
         }
-
         fetch(`${import.meta.env.VITE_BACKEND_URL}/api/links/access?token=${token}`, {
             credentials: "include"
         })
             .then(res => res.json())
             .then(res => {
-                if (!res.success) setError(res.message)
-                else setData(res)
+                if (!res.success) {
+                    setError(res.message)
+                } else {
+                    // If password is required, show modal instead of data
+                    if (res.password_required) {
+                        setShowPasswordModal(true)
+                        setData(res) // Store initial response
+                    } else {
+                        setData(res)
+                    }
+                }
             })
             .catch(() => setError("Something went wrong"))
             .finally(() => setLoading(false))
     }, [token])
 
+    // Handle password submission
+    const handlePasswordSubmit = async (e) => {
+        e.preventDefault()
+
+        if (!password.trim()) {
+            setPasswordError("Please enter a password")
+            return
+        }
+
+        setVerifyingPassword(true)
+        setPasswordError("")
+
+        try {
+            const response = await fetch(
+                `${import.meta.env.VITE_BACKEND_URL}/api/links/verify_password`,
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    credentials: "include",
+                    body: JSON.stringify({
+                        token: token,
+                        password: password
+                    })
+                }
+            )
+
+            const result = await response.json()
+
+            if (!result.success) {
+                setPasswordError(result.message || "Incorrect password")
+            } else {
+                // Password verified successfully
+                setPasswordVerified(true)
+                setData(result) // Update data with file/folder content
+                setShowPasswordModal(false)
+                setPassword("") // Clear password input
+            }
+        } catch (err) {
+            setPasswordError("Something went wrong. Please try again.")
+            console.error("Password verification error:", err)
+        } finally {
+            setVerifyingPassword(false)
+        }
+    }
+
     if (loading) return <p>Loading...</p>
     if (error) return <p>{error}</p>
 
-    //File Preview
-    if (data.type === "file") {
+    // Show password modal if password is required and not yet verified
+    if (showPasswordModal && !passwordVerified) {
+        return (
+            <Modal show={showPasswordModal} onHide={() => { }} centered backdrop="static" keyboard={false}>
+                <Modal.Header>
+                    <Modal.Title>🔒 Password Protected Link</Modal.Title>
+                </Modal.Header>
+                <Modal.Body>
+                    <form onSubmit={handlePasswordSubmit}>
+                        <div className="mb-3">
+                            <label htmlFor="passwordInput" className="form-label">
+                                This link is password protected. Please enter the password:
+                            </label>
+                            <input
+                                id="passwordInput"
+                                type="password"
+                                className={`form-control ${passwordError ? "is-invalid" : ""}`}
+                                placeholder="Enter password"
+                                value={password}
+                                onChange={(e) => {
+                                    setPassword(e.target.value)
+                                    setPasswordError("") // Clear error when user types
+                                }}
+                                disabled={verifyingPassword}
+                                autoFocus
+                            />
+                            {passwordError && (
+                                <div className="invalid-feedback d-block">
+                                    {passwordError}
+                                </div>
+                            )}
+                        </div>
+                        <div className="d-flex gap-2 justify-content-end mb-1">
+                            <Button
+                                variant="secondary"
+                                onClick={() => window.history.back()}
+                                disabled={verifyingPassword}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                variant="primary"
+                                type="submit"
+                                disabled={verifyingPassword || !password.trim()}
+                            >
+                                {verifyingPassword ? (
+                                    <>
+                                        <span
+                                            className="spinner-border spinner-border-sm me-2"
+                                            role="status"
+                                            aria-hidden="true"
+                                        />
+                                        Verifying...
+                                    </>
+                                ) : (
+                                    "Verify Password"
+                                )}
+                            </Button>
+                        </div>
+                    </form>
+                </Modal.Body>
+            </Modal>
+        )
+    }
+
+    // File Preview
+    if (data?.type === "file") {
         const file = data.data
         const fileUrl = data.redirect_url
         const mimeType = file.fileType
         const fileName = file.name
-
         const isPDF = mimeType === "application/pdf"
         const isImage = mimeType.startsWith("image/")
         const isVideo = mimeType.startsWith("video/")
@@ -59,8 +185,6 @@ function SharedPreview() {
         const isZip = mimeType === "application/x-zip-compressed"
         const isDoc = mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
             mimeType === "application/msword"
-
-
         const type = isImage ? "image"
             : isPDF ? "pdf"
                 : isVideo ? "video"
@@ -90,7 +214,6 @@ function SharedPreview() {
             }
         }
 
-        // no-op since there's no modal to close on a standalone page
         const onClose = () => { }
 
         const renderViewer = () => {
@@ -154,25 +277,13 @@ function SharedPreview() {
     }
 
     // Folder Preview
-    if (data.type === "folder") {
+    if (data?.type === "folder") {
         return (
-            <div>
-                <h2>{data.data.name}</h2>
-                {data.data.files?.length === 0 ? (
-                    <p>This folder is empty.</p>
-                ) : (
-                    <ul>
-                        {data.data.files?.map(file => (
-                            <li key={file._id}>
-                                <span>{file.name}</span>
-                                <a href={file.url} download={file.name}>
-                                    <button>Download</button>
-                                </a>
-                            </li>
-                        ))}
-                    </ul>
-                )}
-            </div>
+            <FolderViewer
+                folder={data.data}
+                contents={data.folder_data}
+                isPublic={data.is_public ?? false}
+            />
         )
     }
 

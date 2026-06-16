@@ -126,15 +126,31 @@ export const getUsers = async (req, res) => {
 
         // ##################################################
         // ---- STEP 1: Extract query params ----------------
-        // ##################################################\
-        let { page, limit, search, role = "user", is_active } = req.query;
+        // ##################################################
+
+        let {
+            page = 1,
+            limit = 25,
+            search,
+            role = "user",
+            is_active
+        } = req.query;
+
+        page = parseInt(page);
+        limit = parseInt(limit);
+
+        const sortField = req.query.sortField || "createdAt";
+        const sortOrder = req.query.sortOrder === "asc" ? 1 : -1;
 
         // ##################################################
-        // ---- STEP 2: Build filter object -----------------
+        // ---- STEP 2: Build query -------------------------
         // ##################################################
-        const filters = [{ $match: { is_deleted: false } }];
 
-        // 1) Search by name, email, user_id
+        const filters = [
+            { is_deleted: false }
+        ];
+
+        // Search by name, email, user_id
         if (search) {
             search = searchOptimize(search.trim());
 
@@ -147,39 +163,61 @@ export const getUsers = async (req, res) => {
             });
         }
 
-        // 2) Filter by role
+        // Filter by role
         if (role) {
             filters.push({ role });
         }
 
-        // 3) Filter by active status
+        // Filter by active status
         if (is_active !== undefined && is_active !== "") {
             filters.push({
                 is_active: is_active === "true"
             });
         }
 
-        // Final query
-        const query = filters.length ? { $and: filters } : {};
+        const query = filters.length > 1
+            ? { $and: filters }
+            : filters[0];
+
+        // ##################################################
+        // ---- STEP 3: Sorting & Pagination ----------------
+        // ##################################################
+
+        const ALLOWED_SORT_FIELDS = [
+            "user_id",
+            "email",
+            "createdAt",
+            "is_active",
+            "name"
+        ];
+
+        const safeSortField = ALLOWED_SORT_FIELDS.includes(sortField)
+            ? sortField
+            : "createdAt";
 
         const skip = (page - 1) * limit;
+
+        // ##################################################
+        // ---- STEP 4: Get total count ---------------------
+        // ##################################################
 
         const total = await userModel.countDocuments(query);
 
         const totalPages = Math.ceil(total / limit);
 
         // ##################################################
-        // ---- STEP 4: Fetch users -------------------------
+        // ---- STEP 5: Fetch users -------------------------
         // ##################################################
+
         const users = await userModel.find(query)
             .select("-password")
-            .sort({ createdAt: -1 })
+            .sort({ [safeSortField]: sortOrder })
             .skip(skip)
             .limit(limit)
-            .lean()     // lean return palin js object 
+            .lean();
 
         // ##################################################
-        // ---- STEP 5: Send response -----------------------
+        // ---- STEP 6: Send response -----------------------
         // ##################################################
 
         res.status(200).json({
@@ -192,13 +230,16 @@ export const getUsers = async (req, res) => {
                 totalPages,
                 hasMore: page < totalPages
             }
-        })
+        });
 
     } catch (error) {
-        logger.error(error)
-        res.status(500).json({ success: false, message: error.message })
+        logger.error(error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
     }
-}
+};
 
 // ----------------------------- GET USERS ALSO WITH SEARCH END ----------------
 
@@ -415,7 +456,7 @@ export const importUsers = async (req, res) => {
 
         for (let i = 0; i < users.length; i++) {
             const user = users[i];
-            console.log("423 -->", user);
+            
             try {
                 if (!user.name || !user.email || !user.user_id || !user.password) {
                     errors.push({ row: i + 1, reason: "Missing required fields" });

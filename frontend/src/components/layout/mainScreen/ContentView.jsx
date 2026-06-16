@@ -620,7 +620,7 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
                                 {isSearchMode ? "No results found" : ""}
                             </div>
                         )}
-                        {(() => { console.log("rendering items count:", displayItems.length, "loading:", displayLoading); return null })()}
+                        {(() => { return null })()}
                         {displayItems.map((item) => (
                             <div
                                 key={item._id}

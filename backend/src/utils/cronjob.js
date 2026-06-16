@@ -1,49 +1,48 @@
 //  this file is used for cron job like every day one time checking like if trashed item 30day tme left or not if yes then auto delete this
-import fs from "fs"
-import cron from "node-cron"
+import fs from "fs";
+import cron from "node-cron";
 
-import Upload from "#models/uploadModel"
+import Upload from "#models/uploadModel";
 import SharedLink from "#models/sharedLinksModel";
 
-import { deleteForver } from "#controllers/trashController"
+import { deleteForver } from "#controllers/trashController";
 
+import { deleteItemPermanently } from '#utils/index';
+import { logger } from "#utils/logger";
 
-
+// cronjob to clear trash afte 30 days and run at midnight daily at 12 AM
 export const startTrashCleanup = () => {
-    // here cron job will run at 0 miniue, 0 hour (midnight), * daay, * month, * year
-    // so it will run at everydat at midnight here 12:00
-    cron.schedule("0 0 * * * ", async () => {
-        console.log("[Trash cleanup] starting....")
+    cron.schedule("0 0 * * *", async () => {
+        logger.info("[Trash cleanup] Starting at midnight...")
         try {
             const thirtyDaysAgo = new Date()
-            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)  // this will giveyou date 30days ago
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
 
             const expiredItems = await Upload.find({
                 isTrashed: true,
                 trashedAt: { $lte: thirtyDaysAgo }
-            }).select("_id type storagePath")
-            
-            //  if no expired items
-            if(expiredItems.length === 0){
-                console.log("[TRASH CLEANUP] No expired items")
-                return
-            }  
+            }).select("_id type storagePath parent")
 
-            //  if there any expired item then delete root and all nested here
-            for(const item of expiredItems){
+            if (expiredItems.length === 0) {
+                logger.info("[TRASH CLEANUP] No expired items")
+                return
+            }
+
+            logger.info(`[TRASH CLEANUP] Found ${expiredItems.length} expired items`)
+
+            // Delete each item permanently (without Express req/res)
+            for (const item of expiredItems) {
                 try {
-                    await deleteForver(item)
-                    console.log(`[trash cleanup] item deleted forever ${item.name}`)
+                    await deleteItemPermanently(item)
+                    logger.info(`[Trash cleanup] Item deleted: ${item._id}`)
                 } catch (error) {
-                    console.error(`[TRASH CLEANUP] Failed to delete item ${item._id}: ${error.message}`)
+                    logger.error(`[TRASH CLEANUP] Failed to delete ${item._id}: ${error.message}`)
                 }
             }
 
-            console.log(`[TRASH CLEANUP] Done — deleted ${expiredItems.length} items`)
-
-
+            logger.info(`[TRASH CLEANUP] Done — deleted ${expiredItems.length} items`)
         } catch (error) {
-            console.error("[TRASH CLEANUP] Error:", error.message)
+            logger.error("[TRASH CLEANUP] Error:", error.message)
         }
     })
 }
@@ -52,7 +51,7 @@ export const startTrashCleanup = () => {
 export const startExpiredLinksCleanup = () => {
     // runs every hour to check expired links
     cron.schedule("0 * * * *", async () => {
-        console.log("[LINK CLEANUP] Starting expired links check...")
+        logger.info("[LINK CLEANUP] Starting expired links check...")
         try {
             const now = new Date()
 
@@ -67,14 +66,14 @@ export const startExpiredLinksCleanup = () => {
             )
 
             if (result.modifiedCount === 0) {
-                console.log("[LINK CLEANUP] No expired links found")
+                logger.info("[LINK CLEANUP] No expired links found")
                 return
             }
 
-            console.log(`[LINK CLEANUP] Done — marked ${result.modifiedCount} links as expired`)
+            logger.info(`[LINK CLEANUP] Done — marked ${result.modifiedCount} links as expired`)
 
         } catch (error) {
-            console.error("[LINK CLEANUP] Error:", error.message)
+            logger.error("[LINK CLEANUP] Error:", error.message)
         }
     })
 }

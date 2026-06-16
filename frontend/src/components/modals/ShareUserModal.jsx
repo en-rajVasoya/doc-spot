@@ -121,14 +121,30 @@ function ShareUserModal({ data, onClose }) {
 
     // Helper to generate a random 8-character numeric password to bypass the strict backend validator!
     const generateRandomPassword = () => {
-        // We strictly use ONLY numbers so that the backend's `min:8` math calculation succeeds!
-        const chars = "123456789";
-        let newPassword = "";
-        for (let i = 0; i < 8; i++) {
-            newPassword += chars.charAt(Math.floor(Math.random() * chars.length));
+        const uppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        const lowercase = "abcdefghijklmnopqrstuvwxyz";
+        const numbers = "0123456789";
+        const special = "!@#$%^&*?";
+
+        let password = "";
+
+        // Ensure one character from each required category
+        password += uppercase[Math.floor(Math.random() * uppercase.length)];
+        password += lowercase[Math.floor(Math.random() * lowercase.length)];
+        password += numbers[Math.floor(Math.random() * numbers.length)];
+        password += special[Math.floor(Math.random() * special.length)];
+
+        // Fill the remaining 4 positions with random characters from all sets
+        const allChars = uppercase + lowercase + numbers + special;
+        for (let i = 0; i < 4; i++) {
+            password += allChars[Math.floor(Math.random() * allChars.length)];
         }
-        setPassword(newPassword);
-        setPasswordShow(true); // Automatically unhide the password so they can see what was generated!
+
+        // Shuffle the password so required chars aren't predictably positioned
+        password = password.split('').sort(() => Math.random() - 0.5).join('');
+
+        setPassword(password);
+        setPasswordShow(true); // Show the generated password
     }
 
     // checks if the currently logged-in user is the owner of the item

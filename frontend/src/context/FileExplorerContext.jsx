@@ -1409,7 +1409,6 @@ export function FileExplorerProvider({ children }) {
 
     //  if user is only the viewer so expose this permission
     const isViewerOnly = currentFolderPermission === "viewer"
-    console.log("isViewerOnly:", isViewerOnly, "currentFolderPermission:", currentFolderPermission)
 
 
     return (
