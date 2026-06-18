@@ -284,7 +284,7 @@ export const trashItem = async (req, res) => {
             if (!isOwnFile) {
                 const actorName = req.user.name || "Someone";
                 const message = `${_.startCase(actorName)} deleted your shared ${item.type} <b>${item.name}</b>`;
-                
+
 
                 notificationsToCreate.push({
                     recipient: itemOwnerId,
@@ -295,7 +295,8 @@ export const trashItem = async (req, res) => {
                         itemId: item._id,
                         itemName: item.name,
                         itemType: item.type,
-                        parentId: item.parent
+                        parentId: item.parent,
+                        profilePic: req.user.thumbnail_profile_pic || req.user.profilePic
                     }
                 });
 
@@ -358,7 +359,8 @@ export const trashItem = async (req, res) => {
                                     itemId: child._id,
                                     itemName: child.name,
                                     itemType: child.type,
-                                    parentId: child.parent
+                                    parentId: child.parent,
+                                    profilePic: req.user.thumbnail_profile_pic || req.user.profilePic
                                 }
                             });
 

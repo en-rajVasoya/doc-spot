@@ -214,6 +214,7 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                                                     }
                                                 >
                                                     <div>
+                                                        <UserAvatar user={notification.metadata} />
                                                         <strong className="text-capitalize">
                                                             {notification.actor?.name}
                                                         </strong>

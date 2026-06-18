@@ -26,7 +26,8 @@ const notificationSchema = new mongoose.Schema(
             itemId: mongoose.Schema.Types.ObjectId,
             itemName: String,
             itemType: String,
-            parentId: mongoose.Schema.Types.ObjectId
+            parentId: mongoose.Schema.Types.ObjectId,
+            profilePic: String
         },
         isRead: {
             type: Boolean,

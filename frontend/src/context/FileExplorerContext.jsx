@@ -1012,15 +1012,24 @@ export function FileExplorerProvider({ children }) {
 
 
         //  here if user trash someting notify user 2 
-        socket.on("item_trashed", ({ parentId, ids }) => {
-            if (String(currentFolderId) === String(parentId) || (!currentFolderId && !parentId)) {
-                setItems(prev => prev.filter(item => !ids.includes(item._id.toString())))
+        socket.on("item_trashed", (data) => {
+            const { parentId, ids, itemId, oldParent } = data;
+
+            if (ids) {
+                // triggered via notifySharedUsers
+                if (String(currentFolderId) === String(parentId) || (!currentFolderId && !parentId)) {
+                    setItems(prev => prev.filter(item => !ids.includes(item._id.toString())));
+                }
+                if (ids.includes(currentFolderId)) {
+                    navigate(getPathPrefix());
+                }
+            } else if (itemId) {
+                // triggered via crossUserItemsMap (shared file trashed by another user)
+                if (String(currentFolderId) === String(oldParent) || (!currentFolderId && !oldParent)) {
+                    setItems(prev => prev.filter(item => item._id.toString() !== itemId.toString()));
+                }
             }
-            //  when user will move folder to trash through breadcrumb so user will redirect to dashboard page
-            if (ids.includes(currentFolderId)) {
-                navigate(getPathPrefix())
-            }
-        })
+        });
 
         //  here when user restor something it main screeen socket event
         socket.on("item_restored", ({ parentId }) => {
@@ -1393,9 +1402,9 @@ export function FileExplorerProvider({ children }) {
 
 
     //  here this is for when share user modal opens so suggested user will show there
-    const getSuggestedUsersApi  = async () => {
+    const getSuggestedUsersApi = async () => {
         try {
-            const {data} = await axiosApi.get("/share/suggested_users")
+            const { data } = await axiosApi.get("/share/suggested_users")
             return data.users || []
 
         } catch (error) {
