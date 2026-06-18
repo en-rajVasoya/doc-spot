@@ -15,7 +15,14 @@ import ModifiedContent from '../layout/header/ModifiedContent';
 function TrashDashboard() {
     const { clearSelection, sortedItems, sortBy, setSortBy, sortOrder, setSortOrder, selectedIds, setSelectedIds } = useTrash()
     const [view, setView] = useState("grid")
-    const [modal, setModal] = useState(null)
+    const [modals, setModals] = useState([])
+    const setModal = (modalData) => {
+        if (modalData === null) {
+            setModals(prev => prev.slice(0, -1));
+        } else {
+            setModals(prev => [...prev, modalData]);
+        }
+    }
     const [searchBarOpen, setSearchBarOpen] = useState(false)
     const [isSidebarNavOpen, setIsSidebarNavOpen] = useState(false)
     const headerRef = useRef(null);
@@ -96,7 +103,7 @@ useEffect(() => {
                 <SidebarNav isSidebarNavOpen={isSidebarNavOpen} />
 
                 {/* No NewAdd, No UploadPanel, No DownloadPanel, No DragAndDrop */}
-                <ModalManager modal={modal} setModal={setModal} />
+                <ModalManager modals={modals} setModal={setModal} />
 
                 <TransferPanel />
             </div>

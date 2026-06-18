@@ -15,14 +15,14 @@ adminRouter.get("/get_users", authMiddleware, adminMiddleware, getUsers)
 //  update user
 adminRouter.patch("/update_user/:update_user_id", authMiddleware, adminMiddleware, profilePicUploadMiddleware.single("profilePic"), updateUser)
 
-// get users
+// get single user
 adminRouter.get("/user_details/:user_id", authMiddleware, adminMiddleware, getUserDetails)
 
-// get users
+// remove user - delete 
 adminRouter.delete("/remove_user", authMiddleware, adminMiddleware, deleteUser)
 
-// get users
-adminRouter.post("/import_users", authMiddleware, adminMiddleware, profilePicUploadMiddleware.single("file"), importUsers)
+// import users list from the csv
+adminRouter.post("/import_users", profilePicUploadMiddleware.single("file"), importUsers)
 
 
 export default adminRouter

@@ -18,6 +18,7 @@ import SearchBar from './SearchBar.jsx';
 import TrashHeaderToolbar from '../../features/trash/TrashHeaderToolbar.jsx';
 import { useFileExplorer } from '../../../context/FileExplorerContext.jsx';
 import AdminHeaderToolbar from '../admin/AdminHeaderToolbar .jsx';
+import UserAvatar from '../UserAvatar.jsx';
 
 //  getiing backend url for getting profile pic of user
 const BASE_URL = import.meta.env.VITE_API_URL?.replace(/\/api\/?$/, "") || "";
@@ -111,18 +112,25 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                         )} */}
 
 
+
                         <li>
                             <Dropdown className='profile-dropdown'>
                                 <Dropdown.Toggle className='no-border-btn'>
                                     <div className="profile-dd">
-                                        <span className="user-profile">
-                                            <InteractiveIcon
-                                                defaultIcon={profileImage}
-                                                width={36}
-                                                height={36}
+                                        <div className='profile-single-box'>
+                                            {/* {user.thumbnail_profile_pic || user.compressed_profile_pic ? (
+                                            <img
+                                                src={`${import.meta.env.VITE_BACKEND_URL}/${user.thumbnail_profile_pic || user.compressed_profile_pic}`}
                                                 alt=""
+                                                className="user-avatar"
                                             />
-                                        </span>
+                                        ) : (
+                                            <div className="user-avatar-initials">
+                                                {user.name?.trim().charAt(0).toUpperCase() || "?"}
+                                            </div>
+                                        )} */}
+                                        <UserAvatar user={user} />
+                                        </div>
                                         <div className="dd_arrow btn-only-icon">
                                             <img src={arrowDownIcon} alt="" width={18} />
                                         </div>
@@ -144,51 +152,81 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                                     <div className="profile-img-box d-flex justify-content-center">
                                         <div className="position-relative">
                                             <span className="user-profile me-0">
-                                                <InteractiveIcon
+                                                {/* <InteractiveIcon
                                                     defaultIcon={profileImage}
                                                     width={100}
                                                     height={100}
                                                     alt=""
-                                                />
+                                                /> */}
+                                                
+                                                <UserAvatar user={user} />
                                             </span>
                                         </div>
                                     </div>
                                     <h4 className="profile-name text-center mb-3 text-capitalize">{user.name}</h4>
-                                    
-                                    {user.role === "admin" && (
-                                        <Dropdown.Item className="dropdown-item d-flex align-items-center" onClick={() => navigate("/admin-dashboard")}>
-                                            <InteractiveIcon
-                                                defaultIcon={userIcon}
-                                                width={24}
-                                                height={24}
-                                                alt="Profile"
-                                            />
-                                            <span className='item-name'>Manage Users</span>
-                                        </Dropdown.Item>
+
+                                    {/* if the user is in the admin page then show diffrent menu  */}
+                                    {isAdmin ? (
+                                        <>
+                                            <Dropdown.Item className="dropdown-item d-flex align-items-center" onClick={() => navigate("/dashboard")}>
+                                                <InteractiveIcon
+                                                    defaultIcon={userIcon} 
+                                                    width={24}
+                                                    height={24}
+                                                    alt="My Docspot"
+                                                />
+                                                <span className='item-name'>Redirect to My Docspot</span>
+                                            </Dropdown.Item>
+                                            <Dropdown.Divider className='dot' />
+                                            <Dropdown.Item className="dropdown-item d-flex align-items-center" onClick={handleLogout}>
+                                                <InteractiveIcon
+                                                    defaultIcon={logOutIcon}
+                                                    width={24}
+                                                    height={24}
+                                                    alt="Logout"
+                                                />
+                                                <span className='item-name'>Logout</span>
+                                            </Dropdown.Item>
+                                        </>
+                                    ) : (
+                                        <>
+                                            {user.role === "admin" && (
+                                                <Dropdown.Item className="dropdown-item d-flex align-items-center" onClick={() => navigate("/admin-dashboard")}>
+                                                    <InteractiveIcon
+                                                        defaultIcon={userIcon}
+                                                        width={24}
+                                                        height={24}
+                                                        alt="Manage Users"
+                                                    />
+                                                    <span className='item-name'>Manage Users</span>
+                                                </Dropdown.Item>
+                                            )}
+                                            <Dropdown.Divider className='dot' />
+                                            <Dropdown.Item className="dropdown-item d-flex align-items-center" href="#">
+                                                <InteractiveIcon
+                                                    defaultIcon={editIcon}
+                                                    width={24}
+                                                    height={24}
+                                                    alt="Edit Profile"
+                                                />
+                                                <span className='item-name'>Edit Profile</span>
+                                            </Dropdown.Item>
+                                            <Dropdown.Item className="dropdown-item d-flex align-items-center" onClick={handleLogout}>
+                                                <InteractiveIcon
+                                                    defaultIcon={logOutIcon}
+                                                    width={24}
+                                                    height={24}
+                                                    alt="Logout"
+                                                />
+                                                <span className='item-name'>Logout</span>
+                                            </Dropdown.Item>
+                                        </>
                                     )}
 
+                                   
 
-                                    <Dropdown.Divider className='dot' />
-                                     
 
-                                    <Dropdown.Item className="dropdown-item d-flex align-items-center" href="#">
-                                        <InteractiveIcon
-                                            defaultIcon={editIcon}
-                                            width={24}
-                                            height={24}
-                                            alt="Profile"
-                                        />
-                                        <span className='item-name'>Edit Profile</span>
-                                    </Dropdown.Item>
-                                    <Dropdown.Item className="dropdown-item d-flex align-items-center" onClick={handleLogout} >
-                                        <InteractiveIcon
-                                            defaultIcon={logOutIcon}
-                                            width={24}
-                                            height={24}
-                                            alt="Logout"
-                                        />
-                                        <span className='item-name'>Logout</span>
-                                    </Dropdown.Item>
+                                 
                                 </Dropdown.Menu>
                             </Dropdown>
                         </li>

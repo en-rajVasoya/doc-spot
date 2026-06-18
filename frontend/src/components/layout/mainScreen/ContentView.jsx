@@ -723,12 +723,19 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
                                     </div> */}
                                     <div className="table-cell">
                                         <div className="folder-name-single-box">
+                                            <div className='profile-single-box'>
+                                            {user.thumbnail_profile_pic || user.compressed_profile_pic ? (
                                             <img
-                                                src={user._id === item.owner._id ? (user.profilePic || "/uploadimage/profilepic/u2.jpg") : (item.owner.profilePic || "/uploadimage/profilepic/u2.jpg")}
+                                                src={`${import.meta.env.VITE_BACKEND_URL}/${user.thumbnail_profile_pic || user.compressed_profile_pic}`}
                                                 alt=""
                                                 className="user-avatar"
-                                                
                                             />
+                                        ) : (
+                                            <div className="user-avatar-initials">
+                                                {user.name?.trim().charAt(0).toUpperCase() || "?"}
+                                            </div>
+                                        )}
+                                        </div>
                                             <span>{user._id === item.owner._id ? "Me" : item.owner.name}</span>
                                         </div>
                                     </div>

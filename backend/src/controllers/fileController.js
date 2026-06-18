@@ -5,7 +5,7 @@ import uploadModel from "#models/uploadModel";
 
 //  utils
 import { shareItem } from "./shareController.js";
-import { getUserPermission } from "#utils/userPermissionUtil";
+import { getUserPermission, checkIsSharedTree  } from "#utils/userPermissionUtil";
 import { logger } from "#utils/logger";
 import { notifySharedUsers } from "#utils/userNotification";
 import { updateParentFolderTimestamps } from "#utils/parentFolderTimestamp";
@@ -348,6 +348,8 @@ export const getUserFiles = async (req, res) => {
         })
       }
 
+      const isParentShared = await checkIsSharedTree(parentID);
+
       // 2) if user have permission so fetch all items inside folder where paent is this folder and not trashed one
       const items = await uploadModel.find({
         parent: parentID,
@@ -375,7 +377,10 @@ export const getUserFiles = async (req, res) => {
       const markedItems = items.map(item => ({
         ...fixPath(item),
         permission,
-        isSharedWithMe: permission !== "owner"
+        isSharedWithMe: permission !== "owner" 
+                    || item.isShared 
+                    || (item.sharedWith?.length > 0)
+                    || isParentShared
       }))
 
       // --------------------------------------------------------------
@@ -1103,8 +1108,10 @@ export const createFolder = async (req, res) => {
     // ------------------------------------------
     // --- STEP - 5 - notify shared users and send response
     // -----------------------------------------
+    const isParentShared = await checkIsSharedTree(parentId)
     const folderWithOwner = {
       ...folder.toObject(),
+      isShared: isParentShared,
       owner: {
         _id: userID,
         name: userName,

@@ -367,6 +367,8 @@ FORM CONTROLS
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button {-webkit-appearance: none;margin: 0;}
 input[type="number"] {-moz-appearance: textfield;}
+.form-control.is-invalid, .was-validated .form-control:invalid{background-image: none;outline: 2px solid var(--red);border-color: var(--border-2);outline-offset: 2px;}
+.invalid-feedback{font-size: 12px;color: var(--red);}
 /* ============================================================
 CHECKBOX — SQUARE
 ============================================================ */
@@ -395,9 +397,22 @@ PROFILE & USER
 .profile-edit { position: absolute; top: 0; right: 0; width: 32px; height: 32px; border-radius: 5px; display: flex; align-items: center; justify-content: center; box-shadow: 0px 3px 6px 0px rgba(0, 0, 0, 0.16); background-color: var(--white); border: 1px solid var(--dark-12); }
 .profile-edit img { opacity: 0.5; }
 .user-add-icon { display: flex; align-items: center; justify-content: center; width: 48px; height: 48px; background: var(--white); border-radius: 50px; outline: 1px solid var(--dark-12); outline-offset: -1px; overflow: hidden; }
-.user-add-icon img { max-width: 100%; }
-.user-avatar{width: 24px;height: 24px;outline: 1px solid var(--dark-20);outline-offset: -1px;object-fit: cover;flex-shrink: 0;border-radius: 200px;}
 .folder-name-single-box{display: flex;align-items: center;gap: 12px;flex: 1;min-width: 0;}
+.user-add-icon img { max-width: 100%; }
+.user-avatar,.user-avatar-initials {width: 36px;height: 36px;border-radius: 200px;flex-shrink: 0;outline: 1px solid var(--dark-12);outline-offset: -1px;}
+.user-avatar {object-fit: cover;}
+.user-avatar-initials {background-color: var(--primary);color: var(--white);display: flex;align-items: center;justify-content: center;}
+span.user-avatar-initials-text {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 20px;
+    font-size: 18px;
+    opacity: 0.67;
+    color: var(--black);
+    font-family: 'robotomedium', sans-serif; 
+    font-weight: normal; 
+}
 /* ============================================================
 TOOLTIP
 ============================================================ */
@@ -414,8 +429,7 @@ MASTER HEADER
 .master-header .divider { width: 2px; height: 16px; background-color: var(--light); margin: 0 12px; }
 .master-header .header-search { opacity: 0.5; transition: all 0.3s ease-in-out; cursor: pointer; }
 .master-header .header-search:hover { opacity: 1; }
-.master-header .profile-dd { display: flex; align-items: center; cursor: pointer; }
-.master-header .user-profile { margin-right: 6px; outline: 1px solid var(--dark-12); outline-offset: -1px; display: block; border-radius: 50%; overflow: hidden; }
+.master-header .profile-dd { display: flex; align-items: center; cursor: pointer;gap: 10px; }
 .master-header .profile-name { font-size: 18px; color: var(--dark-87); font-family: 'robotomedium', sans-serif; font-weight: normal; margin-bottom: 24px; }
 .master-header .profile-dd .dd_arrow { width: 24px; height: 24px; background-color: var(--dark-06); border-radius: 50%; display: flex; align-items: center; justify-content: center; }
 .master-header .profile-header { display: flex; align-items: center; justify-content: space-between; }
@@ -423,6 +437,8 @@ MASTER HEADER
 .master-header .profile-header .logo-sub-text { font-size: 10px; color: var(--dark-87); }
 .master-header .profile-header .version-status { color: var(--dark-40); margin-left: 3px; }
 .master-header .profile-img-box { margin-bottom: 24px; }
+.master-header .profile-img-box .user-profile  .user-profile-single-box .user-avatar, .master-header .profile-img-box .user-profile  .user-profile-single-box .user-avatar-initials{
+    width: 100px;height: 100px;}
 .master-header .profile-dropdown .dropdown-menu { padding: 30px 30px 40px 30px; overflow: visible; min-width: 360px; border-color: var(--dark-20) !important; }
 .master-header .profile-dropdown .dropdown-menu::after { content: ""; background: url(/src/assets/images/Profile-gradient.svg?t=1774264381197) no-repeat center; width: calc(100% - -2px); display: block; position: absolute; bottom: -1px; left: -1px; height: 50px; background-size: 360px; }
 .master-header .dropdown-item { padding: 8px 12px; color: var(--dark-60); font-family: 'robotoregular', sans-serif; max-width: unset; }
@@ -585,7 +601,7 @@ MODALS
 .modal-header .modal-title { color: var(--black); font-size: 18px; font-family: 'robotomedium', sans-serif; font-weight: normal; line-height: 21px; }
 .modal-title-sub { color: var(--dark-60); font-size: 15px; font-family: 'robotomedium', sans-serif; font-weight: normal; line-height: 18px; padding: 24px 0 12px 0; margin: 0; }
 .modal-tag { color: var(--dark-60); font-size: 14px; margin-bottom: 0; line-height: normal; }
-.modal-backdrop { background: rgba(190, 190, 199, 0.40) !important; opacity: 1 !important; }
+.modal-backdrop { background: rgba(190, 190, 199, 0.40) !important; opacity: 1 !important;z-index: 1055; }
 .h-modal-lg { height: min(calc(100vh - 270px), 400px); overflow: auto; }
 .modal-footer-btn-group { display: flex; align-items: center; gap: 12px; }
 .modal-add-new-btn { border-radius: 8px; border: 1px solid var(--secondary); color: var(--black); background: var(--white); box-shadow: 0px 1px 3px 0px #00000014; padding: 5px 15px 5px 10px; display: flex; align-items: center; justify-content: center; font-size: 14px; line-height: 17px; gap: 8px; }
@@ -601,6 +617,7 @@ MODALS
 RENAME MODAL
 ============================================================ */
 #rename .modal-body, #delete .modal-body { padding: 24px; }
+.message-delete-modal {word-wrap: break-word;}
 /* ============================================================
 DELETE MODAL
 ============================================================ */
@@ -652,6 +669,18 @@ SHARE MODAL
 #share .link-expirtation-day { display: flex; align-items: center; gap: 12px; }
 #share .link-expirtation-day .custom-select2 .customSelect2__control { width: 120px; }
 #share .link-expirtation-day .form-control-single-icon .custom-form-control { padding-left: 8px; }
+.pwd-requirements-box {position: absolute;bottom: calc(100% + 8px);left: 0;right: 0;border: 1px solid var(--secondary);background: var(--white);box-shadow: 0px 1px 3px 0px rgba(0, 0, 0, 0.08), 0px 4px 24px 0px rgba(0, 0, 0, 0.10);border-radius: 8px;padding: 12px 14px;width: 321px;z-index: 10;} 
+.pwd-req-title {font-size: 13px;color: var(--dark-87);margin-bottom: 12px;} 
+.pwd-req-list {list-style: none;padding: 0;margin: 0;display: flex;flex-direction: column;gap: 4px;} 
+.pwd-req-item {font-size: 12px;display: flex;gap: 6px;color: var(--dark-60);transition: color 0.2s;} 
+.pwd-req-item.pass {color: var(--green);} 
+.pwd-req-item.fail {color: var(--red);} 
+.pwd-req-icon {font-size: 11px;font-weight: 700;flex-shrink: 0;} 
+.pwd-strength-bar-wrapper {display: flex;gap: 4px;margin-top: 6px;position: absolute;bottom: -10px;width: 100%;padding: 0 8px;} 
+.pwd-strength-bar-segment {flex: 1;height: 3px;border-radius: 100px;background-color: var(--dark-12);transition: background-color 0.3s;} 
+.pwd-strength-bar-segment.weak {background-color: var(--red);} 
+.pwd-strength-bar-segment.medium {background-color: var(--primary);} 
+.pwd-strength-bar-segment.strong {background-color: var(--green);}
 /* ============================================================
 MOVE / COPY MODAL
 ============================================================ */
@@ -696,7 +725,52 @@ FILE DETAILS MODAL
 .file-details-modal .file-details-shared-item { margin-bottom: 6px; }
 .file-details-modal .file-details-shared-item:last-child { margin-bottom: 0; }
 .file-details-modal .file-details-shared-item .file-details-value { margin-bottom: 16px; }
-
+/* ============================================================
+ADD USER ANDMIN MODAL 
+============================================================ */
+.add-user-avatar-wrapper { margin-bottom: 24px; display: flex; align-items: center; gap: 30px; }
+.add-user-avatar-wrapper .user-avatar, .add-user-avatar-wrapper .user-avatar-initials { width: 90px; height: 90px; }
+.add-user-avatar-wrapper .user-avatar-initials { font-size: 26px; }
+.user-status-box { display: flex; align-items: center;gap: 16px; }
+.add-user-status-toggle { width: 50px; height: 26px; border-radius: 14px; background-color: var(--dark-06); box-shadow: 0px 2px 3px 0px #00000014 !important; outline: 1px solid var(--dark-20) !important; outline-offset: -1px; border: none; cursor: pointer; position: relative; transition: background 0.2s; flex-shrink: 0; }
+.add-user-status-toggle.active { background-color: var(--dark-16); }
+.add-user-status-toggle-knob { position: absolute; top: 4px; left: 4px; width: 18px; height: 18px; border-radius: 100px; background: var(--dark-30); transition: transform 0.2s; box-shadow: 0px 2px 3px 0px #00000052, 0px 3px 6px 0px #00000014; display: block; transform: translateX(0); }
+.add-user-status-toggle.active .add-user-status-toggle-knob { transform: translateX(24px); background: var(--dark-80); box-shadow: 0px 2px 3px 0px #00000052, 0px 3px 6px 0px #00000014; }
+.add-user-status-label { font-size: 14px; color: var(--dark-87); }
+/* ============================================================
+VIEW ANDMIN MODAL  
+============================================================ */
+.view-admin-modal .add-user-avatar-wrapper{
+    justify-content: center;
+}
+/* ============================================================
+PROFILE CROP MODAL
+============================================================ */
+.crop-img-modal .modal-dialog-sm { max-width: 400px; }
+.profile-crop-img .modal-header { padding: 16px 20px; }
+.profile-crop-img .modal-body { padding: 0; }
+.profile-crop-img .crop-preview-wrapper { display: flex; justify-content: center; align-items: center; background-color: var(--white); }
+.profile-crop-img .crop-outer-box { position: relative; width: 100%; height: 300px; overflow: hidden; }
+.profile-crop-img .crop-bg-img { position: absolute; top: 50%; left: 50%; max-width: none; pointer-events: none; user-select: none; filter: blur(2px); opacity: 0.4; }
+.profile-crop-img .crop-overlay { position: absolute; z-index: 1; backdrop-filter: blur(8px) saturate(1.8) brightness(0.5); -webkit-backdrop-filter: blur(8px) saturate(1.8) brightness(0.5); background: linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.03) 50%, rgba(0, 0, 0, 0.25) 100%); }
+.profile-crop-img .crop-circle { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 200px; height: 200px; border-radius: 50%; overflow: hidden; z-index: 2; outline: 2px solid var(--dark-20); outline-offset: -2px; }
+.profile-crop-img .crop-main-img { position: absolute; top: 50%; left: 50%; max-width: none; pointer-events: none; user-select: none; }
+.profile-crop-img .crop-drag-handler { position: absolute; inset: 0; z-index: 3; cursor: grab; }
+.profile-crop-img .crop-drag-handler.dragging { cursor: grabbing; }
+.profile-crop-img .crop-slide-bar { display: flex; align-items: center; justify-content: center; padding: 16px 24px; }
+.profile-crop-img .crop-slider { width: 100%; accent-color: var(--black); border: 0; cursor: pointer; height: 1px; }
+.profile-crop-img .static-btn-box-modal { display: flex; align-items: center; padding: 16px 20px; border-top: 1px solid var(--dark-10); }
+/* ============================================================
+DRAG SELECTION BOX 
+============================================================ */
+.drag-selection-box{
+    position: fixed;
+    background-color: #00a3ef11;
+    border: 1px solid var(--blue);
+    border-radius: 4px;
+    pointer-events: none;
+    z-index: 9999;
+}
 /* ============================================================
 SELECT2 — BASE
 ============================================================ */
@@ -1024,7 +1098,7 @@ LOADERS
 /* ============================================================
 FILE PREVIEW — COMMON
 ============================================================ */
-.file-preview-backdrop { position: fixed; inset: 0; background: var(--transparent); display: flex; align-items: center; justify-content: center; z-index: 99999; }
+.file-preview-backdrop { position: fixed; inset: 0; background: var(--transparent); display: flex; align-items: center; justify-content: center; z-index: 9999; }
 .file-preview-modal { width: 100%; height: 100%; overflow: hidden; display: flex; flex-direction: column; background-color: var(--transparent); }
 .file-preview-header { height: 60px; padding: 0 20px; display: flex; align-items: center; justify-content: space-between; position: absolute; width: 100%; z-index: 111; background: rgb(255 255 255 / 73%); backdrop-filter: blur(4px); }
 .file-preview-header h3 { margin: 0 0 0 16px; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1046,7 +1120,15 @@ FILE PREVIEW — IMAGE
 .image-preview-root { position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden; padding-top: 60px; }
 .image-preview-root .image-preview-img { max-width: none; max-height: none; object-fit: contain; user-select: none; -webkit-user-drag: none; display: block; outline: 1px solid var(--dark-20); outline-offset: -1px; border-radius: 4px; }
 .image-preview-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
-.image-preview-bar { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; z-index: 1001; }
+/* .image-preview-bar { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; z-index: 1001; } */
+.image-preview-bar {
+    position: absolute;
+    bottom: 30px;
+    right: 30px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
 .image-preview-btn { display: flex; align-items: center; justify-content: center; border: none; background: transparent; border-radius: 100px; cursor: pointer; padding: 5px; }
 .image-preview-btn img { opacity: 0.5; }
 .image-preview-btn:hover img { opacity: 1; }
@@ -1138,11 +1220,20 @@ FILE PREVIEW — ZIP
 FILE PREVIEW — PDF
 ============================================================ */
 .pdf-preview { display: flex; flex-direction: row; height: 100%; width: 100%; position: relative; overflow: hidden; padding-top: 60px; }
-.pdf-preview__sidebar { width: 200px; min-width: 200px; height: 100%; background-color: var(--transparent); display: flex; flex-direction: column; z-index: 100; }
+.pdf-preview__sidebar { width: 200px; min-width: 200px; height: 100%; background-color: var(--transparent); display: flex; flex-direction: column; z-index: 1; }
 .pdf-preview__sidebar-scroll { flex: 1; overflow-y: auto; overflow-x: hidden; height: 0; min-height: 100%; }
 .pdf-preview__thumb-item { padding: 10px; cursor: pointer; display: flex; flex-direction: column; align-items: center; background-color: transparent; transition: background-color 0.2s; }
-.pdf-preview__thumb-item--active .pdf-preview__thumb-box { outline: 1px solid var(--primary); outline-offset: 0; border-color: var(--transparent); }
-.pdf-preview__thumb-box { width: 120px; background: var(--white); border-radius: 4px; box-shadow: 0px 1px 2px 0px rgba(10, 41, 55, 0.16); outline: 1px solid hsla(0, 0%, 0%, 16%); outline-offset: 0; }
+
+.pdf-preview__thumb-box {
+    width: 120px;
+    background: var(--white);
+    border-radius: 4px;
+    box-shadow: 0px 1px 2px 0px rgba(10, 41, 55, 0.16);
+    outline: 1px solid var(--dark-20);
+    outline-offset: 0px;
+    overflow: hidden;
+}
+.pdf-preview__thumb-item--active .pdf-preview__thumb-box { outline: 1px solid var(--blue); outline-offset: 0; border-color: var(--transparent); }
 .pdf-preview__thumb-label { font-size: 11px; color: var(--dark-50); margin-top: 6px; }
 .pdf-preview__thumb-label--active { color: var(--dark-100); }
 .pdf-preview__thumb-canvas-wrap { position: relative; width: 100%; background-color: var(--dark-03); overflow: hidden; }
@@ -1187,6 +1278,26 @@ PDF.JS TEXT LAYER
 .textLayer { user-select: text !important; -webkit-user-select: text !important; }
 .textLayer br::selection, .textLayer .endOfContent::selection { background: transparent !important; color: transparent !important; }
 .pdf-preview__page, .pdf-preview__page-canvas, .textLayer { outline: none !important; border: none !important; }
+
+/* ============================================================
+DOC FILE PREVIEW
+============================================================ */
+.doc-preview { display: flex; flex-direction: column; height: 100%; width: 100%; position: relative;padding-top: 60px; }
+.docx-preview-wrapper{background-color: var(--transparent) !important;padding: 0 !important;font-family: 'dm_sansregular', sans-serif !important; font-weight: normal !important;}
+.docx-preview-wrapper>section.docx-preview{box-shadow: 0px 1px 2px 0px rgba(10, 41, 55, 0.16) !important;outline: 1px solid hsla(0, 0%, 0%, 16%) !important;outline-offset: 0px !important;}
+.docx-preview-wrapper>section.docx-preview{margin: 0 !important;}
+.doc-preview__content { flex: 1; overflow-y: auto; padding-bottom: 60px; }
+.doc-preview__body { max-width: 780px; margin: 0 auto; padding: 48px 40px; font-size: 15px; line-height: 1.8; color: var(--bs-body-color); }
+.doc-preview__body h1 { font-size: 26px; font-weight: 600; margin: 28px 0 12px; }
+.doc-preview__body h2 { font-size: 21px; font-weight: 600; margin: 24px 0 10px; }
+.doc-preview__body h3 { font-size: 17px; font-weight: 600; margin: 20px 0 8px; }
+.doc-preview__body p { margin: 0 0 12px; }
+.doc-preview__body table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px; }
+.doc-preview__body table td, .doc-preview__body table th { border: 1px solid var(--bs-border-color); padding: 8px 12px; }
+.doc-preview__body table th { font-weight: 600; background: var(--bs-tertiary-bg); }
+.doc-preview__body img { max-width: 100%; height: auto; margin: 12px 0; }
+.doc-preview__body ul, .doc-preview__body ol { padding-left: 24px; margin: 0 0 12px; }
+.doc-preview__body li { margin-bottom: 4px; }
 /* ============================================================
 RESPONSIVE — SIDEBAR TOGGLE
 ============================================================ */
@@ -1195,3 +1306,20 @@ RESPONSIVE — SIDEBAR TOGGLE
     .sidebar2-Mobile-toggle-btn { display: flex; }
     .sidebar2.sidebar2-Mobile { left: 14px; }
 }
+
+/* ============================================================
+FOLDER VIEWER PAGE
+============================================================ */
+
+.folder-viewer-page .max-width-base{
+    height: calc(-154px + 100dvh);
+}
+.folder-viewer-page .header .header-view .breadcrumb a.highlight::after{
+    content: ;
+}
+
+
+
+
+
+

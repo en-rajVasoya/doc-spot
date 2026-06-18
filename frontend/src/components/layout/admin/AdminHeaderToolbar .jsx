@@ -14,9 +14,13 @@ import { useAdmin } from "../../../context/AdminContext";
 function AdminHeaderToolbar({ setModal }) {
     
     const { showNotification } = useNotification()
-    const { selectedIds, setSelectedIds } = useAdmin();
+    const { selectedIds, setSelectedIds, users } = useAdmin();
     const selectedArray = Array.from(selectedIds);
     const isDisabled = selectedIds.size === 0;
+
+
+    //  get the selected user info from then selected id to pass in the edit modal or view modla here
+    const selectedUser = users.find(u => u._id === selectedArray[0])
 
     //  restore button
     const handleRestore = async () => {
@@ -49,14 +53,14 @@ function AdminHeaderToolbar({ setModal }) {
 
                         <ul className="mb-0 tools">
 
-                            {/* VIEW USER */}
+                            {/* Edit user */}
                             <li className="d-flex align-items-center justify-content-center">
                                 <Tooltip text="Edit User" placement="bottom" theme={`${isDisabled || selectedIds.size > 1 ? "disabled" : ""}`}>
                                     <InteractiveIcon
                                         defaultIcon={editIcon}
                                         alt="View"
                                         className={`${isDisabled || selectedIds.size > 1 ? "disabled" : ""}`}
-                                        onClick={!isDisabled && selectedIds.size === 1 ? () => setModal({ type: "ViewUserModal", data: selectedArray[0] }) : undefined}
+                                        onClick={!isDisabled && selectedIds.size === 1 ? () => setModal({ type: "editAdminModal", data: selectedUser }) : undefined}
                                     />
                                 </Tooltip>
                             </li>
@@ -64,7 +68,7 @@ function AdminHeaderToolbar({ setModal }) {
                                 <div className="divider" />
                             </li>
 
-                            {/* EDIT USER */}
+                            {/* View USER */}
                             <li className="d-flex align-items-center justify-content-center">
                                 <Tooltip text="view" placement="bottom" theme={`${isDisabled || selectedIds.size > 1 ? "disabled" : ""}`}>
                                     <InteractiveIcon
@@ -72,7 +76,7 @@ function AdminHeaderToolbar({ setModal }) {
                                         alt="Edit"
                                         width={24}
                                         className={`${isDisabled || selectedIds.size > 1 ? "disabled" : ""}`}
-                                        onClick={!isDisabled && selectedIds.size === 1 ? () => setModal({ type: "EditUserModal", data: selectedArray[0] }) : undefined}
+                                        onClick={!isDisabled && selectedIds.size === 1 ? () => setModal({ type: "viewAdminModal", data: selectedUser }) : undefined}
                                     />
                                 </Tooltip>
                             </li>

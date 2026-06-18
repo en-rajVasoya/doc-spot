@@ -66,7 +66,7 @@ function DeleteModal({ data, onClose }) {
                         </Tooltip>
                     </Modal.Header>
                     <Modal.Body>
-                        <p className="m-0 message">
+                        <p className="m-0 message-delete-modal">
                             {deleteMessage}
                         </p>
                     </Modal.Body>

@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState, useCallback } from "react"
-import { renderAsync } from "docx-preview"
-// import FeatherIcon from "feather-icons-react"
+import { renderAsync } from "docx-preview";
+import InteractiveIcon from "../../layout/InteractiveIcon";
+import plusIcon from "@images/icon/plus.svg";
+import nagativIcon from "@images/icon/negativ-icon.svg";
+import magnificationIcon from "@images/icon/magnification-icon.svg";
 import fileIcon from "@images/svgs/file.svg"
-const MAX_FILE_SIZE = 55 * 1024 * 1024
+
+const MAX_FILE_SIZE = 50 * 1024 * 1024
 const LoadingScreen = () => (
     <div className="pdf-preview__loading">
         <div className='file-upload-loader-container'>
@@ -435,7 +439,10 @@ function DocViewer({ file: fileData }) {
                 <p className="preview-toobig-title m-0">{fileData?.name || "Document"}</p>
                 <p className="mute-text">Legacy .doc files cannot be previewed. Download the file to open it in MS Word or LibreOffice.</p>
                 <button className="btn-primary btn mt-2" onClick={handleDownload}>
-                    {/* <FeatherIcon icon="download" size={16} className="me-2" />Download */}
+                    <InteractiveIcon
+                        defaultIcon={downloadIcon}
+                        width={24}
+                    />
                     Download
                 </button>
             </div>
@@ -448,7 +455,10 @@ function DocViewer({ file: fileData }) {
                 <p className="preview-toobig-title m-0">Preview not available</p>
                 <p className="mute-text">{error}</p>
                 <button className="btn-primary btn mt-2" onClick={handleDownload}>
-                    {/* <FeatherIcon icon="download" size={16} className="me-2" /> */}
+                    <InteractiveIcon
+                        defaultIcon={downloadIcon}
+                        width={24}
+                    />
                     Download
                 </button>
             </div>
@@ -456,9 +466,9 @@ function DocViewer({ file: fileData }) {
     }
     return (
         <div className="doc-preview" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-            
+
             {loading && <LoadingScreen />}
-            <div className="doc-preview__content" style={{ 
+            <div className="doc-preview__content" style={{
                 visibility: loading ? "hidden" : "visible",
                 flex: 1,
                 overflow: "auto",
@@ -483,19 +493,28 @@ function DocViewer({ file: fileData }) {
                             className={`image-preview-btn${scale <= 0.5 ? " pdf-preview__btn--disabled" : ""}`}
                             onClick={zoomOut} disabled={scale <= 0.5}
                         >
-                            {/* <FeatherIcon icon="minus" size={20} /> */}
+                           <InteractiveIcon
+                            defaultIcon={nagativIcon}
+                            width={24}
+                        />
                         </button>
-                       
+
                         <button
                             className={`image-preview-btn${scale >= 3 ? " pdf-preview__btn--disabled" : ""}`}
                             onClick={zoomIn} disabled={scale >= 3}
                         >
-                            {/* <FeatherIcon icon="plus" size={20} /> */}
+                           <InteractiveIcon
+                            defaultIcon={plusIcon}
+                            width={24}
+                        />
                         </button>
                     </div>
                     <div className="new-preview-zoom-controls-sub">
                         <button className="image-preview-btn" onClick={resetZoom} title="Reset Zoom">
-                            {/* <FeatherIcon icon={scale > 1 ? "zoom-out" : "zoom-in"} size={20} /> */}
+                            <InteractiveIcon
+                                defaultIcon={magnificationIcon}
+                                width={24}
+                            />
                         </button>
                     </div>
                 </div>

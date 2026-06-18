@@ -11,6 +11,7 @@ import { logger } from "#utils/logger"
 import { searchOptimize } from "#utils/index"
 import { processProfileImage } from "#utils/imageProcessor";
 
+
 // ----------------------------- CREATE USER  ----------------------------------
 export const createUser = async (req, res) => {
     try {
@@ -76,13 +77,19 @@ export const createUser = async (req, res) => {
             return res.status(400).json({ success: false, message: "User ID already taken" })
         }
 
-        // ##################################################
-        //  --- STEP - 4 : ProfilePic - uploading
-        // #################################################
-        //  if in request profilePic is there other wise default profile pic
-        const profilePic = req.file
-            ? `/uploadimage/profilepic/${req.file.filename}`
-            : "/uploadimage/profilepic/u2.jpg"
+        // ==============================
+        // AVATAR UPLOAD (USING YOUR HELPER)
+        // ==============================
+        if (req.file && !req.file.mimetype.startsWith("image/")) {
+            return res.status(400).json({ message: "Only image allowed for profile picture" });
+        }
+
+        let newAvatar = {};
+
+        if (req.file) {
+            // process via existing helper
+            newAvatar = await processProfileImage(req.file);
+        }
 
         // ##################################################
         //  --- STEP - 5 : Hashing password
@@ -99,7 +106,9 @@ export const createUser = async (req, res) => {
             password: hashedPassword,
             role: role || "user",   // if not specified role so default - User
             is_active: is_active !== undefined ? is_active : true,
-            profilePic
+            profilePic: newAvatar?.original_url || "",
+            compressed_profile_pic: newAvatar?.compressed_url || "",
+            thumbnail_profile_pic: newAvatar?.thumbnail_url || "",
         })
 
         // Dont send password to front end
@@ -205,12 +214,16 @@ export const getUsers = async (req, res) => {
 
         const totalPages = Math.ceil(total / limit);
 
+        // here we are getting all ids of users becuase we have this main checkbox here when  user seelct so select all users
+        const allMatchingIds = await userModel.find(query).select("_id").lean()
+
         // ##################################################
         // ---- STEP 5: Fetch users -------------------------
         // ##################################################
 
         const users = await userModel.find(query)
             .select("-password")
+            .collation({ locale: "en", strength: 2 })
             .sort({ [safeSortField]: sortOrder })
             .skip(skip)
             .limit(limit)
@@ -223,6 +236,7 @@ export const getUsers = async (req, res) => {
         res.status(200).json({
             success: true,
             users,
+            allIds: allMatchingIds.map(u => u._id),
             pagination: {
                 total,
                 page,
@@ -246,8 +260,8 @@ export const getUsers = async (req, res) => {
 // ----------------------------- UPDATE USER ----------------------------------
 export const updateUser = async (req, res) => {
     try {
-        const { name, email, user_id, password, is_active, update_user_id } = req.body;
-
+        const { name, email, user_id, password, is_active } = req.body;
+        const { update_user_id } = req.params;
         const userData = await userModel.findById(update_user_id);
 
         if (!userData) {
@@ -285,7 +299,7 @@ export const updateUser = async (req, res) => {
                 return res.status(400).json({ success: false, message: "Email is invalid" })
             }
 
-            userData.email = emailRegex;
+            userData.email = normalizedEmail;
         }
 
         if (is_active) {
@@ -342,9 +356,24 @@ export const updateUser = async (req, res) => {
 
         await userData.save();
 
+
+        // 1. Create a safe copy without the password
+        const safeUserData = userData.toObject();
+        delete safeUserData.password;
+
+
+        //  here esend the socket event to other user 
+        if (userData.is_active === false) {
+            // force log out
+            req.emitToUser(userData._id.toString(), "force_logout", {})
+        } else {
+            //  instant update the profile of other user socket
+            req.emitToUser(safeUserData._id.toString(), "profile_updated", safeUserData); 
+        }
+
         return res.status(200).json({
             message: "Profile updated successfully",
-            data: userData
+            data: safeUserData 
         });
 
     } catch (error) {
@@ -456,7 +485,7 @@ export const importUsers = async (req, res) => {
 
         for (let i = 0; i < users.length; i++) {
             const user = users[i];
-            
+
             try {
                 if (!user.name || !user.email || !user.user_id || !user.password) {
                     errors.push({ row: i + 1, reason: "Missing required fields" });

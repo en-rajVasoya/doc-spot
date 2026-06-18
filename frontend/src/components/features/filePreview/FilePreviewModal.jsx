@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import getFileType from "../../../utils/getFileType.js";
 import { Tooltip, OverlayTrigger } from "react-bootstrap";
+import InteractiveIcon from "../../layout/InteractiveIcon.jsx";
 // import FeatherIcon from "feather-icons-react";
 
 import ImageViewer from "../filePreview/ImageViewer";
@@ -9,11 +10,15 @@ import AudioViewer from "../filePreview/AudioViewer";
 import ExcelViewer from "../filePreview/ExcelViewer";
 import ZipViewer from "../filePreview/ZipViewer";
 import TextViewer from "../filePreview/TextViewer";
-import PdfViewer from "../filePreview/PDFViewer.jsx";
 import DocViewer from "../filePreview/DocViewer.jsx";
+import PdfViewer from "./PdfViewer.jsx";
 
 
-import fileIcon from "@images/svgs/file.svg"
+import downloadIcon from "@images/icon/download.svg";
+import closeIcon from "@images/icon/close-icon.svg";
+import arrowLeftIcon from "@images/icon/arrow-left.svg";
+import copyIcon from "@images/icon/copy.svg";
+import copiedIcon from "@images/icon/copied-icon.svg";
 
 // Map MIME type to viewer type string
 const mimeToType = (mime = "") => {
@@ -109,7 +114,10 @@ function FilePreviewModal({ file, onClose }) {
                     A preview of this file is not available. Please download it.
                 </p>
                 <button className="btn btn-primary mt-2" onClick={handleDownload}>
-                    {/* <FeatherIcon icon="download" size={16} className="me-2" /> */}
+                    <InteractiveIcon
+                        defaultIcon={downloadIcon}
+                        width={24}
+                    />
                     Download
                 </button>
             </div>
@@ -124,8 +132,11 @@ function FilePreviewModal({ file, onClose }) {
                 <div className="file-preview-header">
                     <div className="d-flex align-items-center gap-2">
                         <OverlayTrigger placement="bottom" overlay={<Tooltip>Back</Tooltip>}>
-                            <button onClick={onClose} className="btn icon-hover">
-                                {/* <FeatherIcon icon="chevron-left" size={20} /> */}
+                            <button onClick={onClose} className="btn-hover-gray">
+                                <InteractiveIcon
+                                    defaultIcon={arrowLeftIcon}
+                                    width={24}
+                                />
                             </button>
                         </OverlayTrigger>
                         <h3 className="mute-text mb-0">
@@ -137,21 +148,33 @@ function FilePreviewModal({ file, onClose }) {
                         {/* Copy button — text files only */}
                         {type === "text" && (
                             <OverlayTrigger placement="bottom" overlay={<Tooltip>{copied ? "Copied!" : "Copy"}</Tooltip>}>
-                                <button onClick={handleCopy} className="btn icon-hover">
-                                    {/* <FeatherIcon icon="copy" size={20} /> */}
+                                <button onClick={handleCopy} className="btn-hover-gray">
+                                   <InteractiveIcon
+                                        defaultIcon={copied ? copiedIcon : copyIcon}
+                                        width={24}
+                                        alt=""
+                                    />
                                 </button>
                             </OverlayTrigger>
                         )}
 
                         <OverlayTrigger placement="bottom" overlay={<Tooltip>Download</Tooltip>}>
-                            <button onClick={handleDownload} className="btn icon-hover">
-                                {/* <FeatherIcon icon="download" size={20} /> */}
+                            <button onClick={handleDownload} className="btn-hover-gray">
+                                <InteractiveIcon
+                                    defaultIcon={downloadIcon}
+                                    width={24}
+                                    alt=""
+                                />
                             </button>
                         </OverlayTrigger>
 
                         <OverlayTrigger placement="bottom" overlay={<Tooltip>Close</Tooltip>}>
-                            <button onClick={onClose} className="btn icon-hover">
-                                {/* <FeatherIcon icon="x" size={20} /> */}
+                            <button onClick={onClose} className="btn-hover-gray">
+                               <InteractiveIcon
+                                    defaultIcon={closeIcon}
+                                    width={24}
+                                    alt=""
+                                />
                             </button>
                         </OverlayTrigger>
                     </div>

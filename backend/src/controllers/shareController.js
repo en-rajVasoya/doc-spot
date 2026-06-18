@@ -164,6 +164,7 @@ export const unshareItem = async (req, res) => {
         const incomingItemIds = itemIds || itemId;
         const normalizedItemIds = Array.isArray(incomingItemIds) ? incomingItemIds : (incomingItemIds ? [incomingItemIds] : []);
         const normalizedUserIds = Array.isArray(userIds) ? userIds : [userIds];
+        normalizedUserIds.push(currentUserId.toString());
 
         // #########################################################
         // ── STEP 2: Validate inputs ─────────────────────────────

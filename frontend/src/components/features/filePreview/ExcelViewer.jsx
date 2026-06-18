@@ -64,7 +64,7 @@ function ExcelViewer({ file }) {
                     ? parseInt(contentLength) / (1024 * 1024)
                     : null;
 
-                if (sizeMB && sizeMB > 10) {
+                if (sizeMB && sizeMB > 20) {
                     setTooBig(true);
                     setTooBigMB(sizeMB);
                     setLoading(false);

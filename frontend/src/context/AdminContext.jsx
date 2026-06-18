@@ -1,13 +1,16 @@
 import { createContext, useContext, useState, useEffect } from "react";
 import axiosApi from "../utils/api.js";
 import { useNotification } from "./NotificationContext.jsx";
+import { useAuth } from "./AuthContext.jsx";
 
 
 const AdminContext = createContext(null)
 
 export function AdminAuthProvider({ children }) {
+    const { user: loggedInUser, setUser } = useAuth();
     const [isLoading, setIsLoading] = useState(true)
     const [users, setUsers] = useState([])
+
 
     // for pagination state
     const [pagination, setPagination] = useState({ total: 0, page: 1, limit: 25, totalPages: 0 })
@@ -18,13 +21,14 @@ export function AdminAuthProvider({ children }) {
     // for select users 
     const [selectedIds, setSelectedIds] = useState(new Set())
 
-    const [sortBy, setSortBy] = useState("name")
-    const [sortOrder, setSortOrder] = useState("asc")
+    const [sortBy, setSortBy] = useState("createdAt")
+    const [sortOrder, setSortOrder] = useState("desc")
+
+    //  for seelct all users checkbox
+    const [allMatchingIds, setAllMatchingIds] = useState([])
 
     //  notifiation toaster
     const { showNotification } = useNotification();
-
-
 
 
 
@@ -44,6 +48,7 @@ export function AdminAuthProvider({ children }) {
             })
             setUsers(res.data.users)
             setPagination(res.data.pagination)
+            setAllMatchingIds(res.data.allIds)
         } catch (error) {
             showNotification(error.resposne?.data?.message)
         } finally {
@@ -52,34 +57,13 @@ export function AdminAuthProvider({ children }) {
     }
 
 
+    useEffect(() => {
+        fetchUsers()
+    }, [searchQuery, roleFilter, activeFilter, pagination.page, pagination.limit, sortBy, sortOrder])  // add sortBy, sortOrder
 
-    //     const fetchUsers = async () => {
-    //     try {
-    //         const res = await axiosApi.get("/admin/get_users", {
-    //             params: {
-    //                 page: Number(pagination.page),
-    //                 limit: Number(pagination.limit),
-    //                 search: searchQuery,
-    //                 role: roleFilter,
-    //                 is_active: activeFilter,
-    //                 sortField: sortBy,
-    //                 sortOrder,
-    //             }
-    //         })
-    //         setUsers(res.data.users)
-    //         // only update total and totalPages, NOT page and limit
-    //         setPagination(prev => ({
-    //             ...prev,
-    //             total: res.data.pagination.total,
-    //             totalPages: res.data.pagination.totalPages,
-    //         }))
-    //     } catch (error) {
-    //         showNotification(error.response?.data?.message)
-    //     } finally {
-    //         setIsLoading(false)
-    //     }
-    // }
-
+    const selectAllAcrossPages = () => {
+        setSelectedIds(new Set(allMatchingIds))
+    }
 
     //  Admin create user
     const createUser = async (formData) => {
@@ -89,7 +73,7 @@ export function AdminAuthProvider({ children }) {
             })
 
             // add new user to top of the list
-            setUsers(prev => [res.data.user, ...prev])
+            setUsers(prev => [res.data.userResponse, ...prev])
 
             // update total count
             setPagination(prev => ({ ...prev, total: prev.total + 1 }))
@@ -103,18 +87,34 @@ export function AdminAuthProvider({ children }) {
     }
 
 
-    useEffect(() => {
-        fetchUsers()
-    }, [searchQuery, roleFilter, activeFilter, pagination.page, pagination.limit, sortBy, sortOrder])  // add sortBy, sortOrder
+    //  Admin update the user data
+    const updateUser = async (update_user_id, formData) => {
+    try {
+        const res = await axiosApi.patch(`/admin/update_user/${update_user_id}`, formData, {
+            headers: { "Content-Type": "multipart/form-data" }
+        });
 
+        setUsers(prev => prev.map(u =>
+            u._id === res.data.data._id ? res.data.data : u
+        ));
 
+        if (loggedInUser?._id === res.data.data._id) {
+            setUser(res.data.data);
+        }
+
+        showNotification("User updated successfully", "success", "bottom-center");
+    } catch (error) {
+        showNotification(error.response?.data?.message || "Update user failed", "error", "bottom-center");
+        throw error;
+    }
+};
 
     //  here this function is used for the when user select on the main check box so select all users here
     const toggleSelectAll = () => {
         if (selectedIds.size === users.length) {
             setSelectedIds(new Set())
         } else {
-            setSelectedIds(new Set(users.map(u => u.user._id)))
+            setSelectedIds(new Set(users.map(u => u._id)))
         }
     }
 
@@ -122,7 +122,7 @@ export function AdminAuthProvider({ children }) {
     //  when user select one user 
     const toggleSelect = (id) => {
         setSelectedIds(prev => {
-            const next = newSet(prev)
+            const next = new Set(prev)
             next.has(id) ? next.delete(id) : next.add(id)
             return next
         })
@@ -155,6 +155,11 @@ export function AdminAuthProvider({ children }) {
                 setRoleFilter,
                 activeFilter,
                 setActiveFilter,
+
+                createUser,
+                updateUser,
+                allMatchingIds,        // add this
+        selectAllAcrossPages,
             }}>
             {children}
         </AdminContext.Provider>

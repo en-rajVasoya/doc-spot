@@ -43,9 +43,9 @@ export const processProfileImage = async (file) => {
 
         // step - 7: return all file names so the caller can store them
         return {
-            original_url: `/${path.relative(process.cwd(), localFilePath).replace(/\\/g, "/")}`,
-            compressed_url: `compressed/${compressedFileName}`,
-            thumbnail_url: `thumbnail/${thumbFileName}`,
+            original_url: `uploadimage/profilepic/${path.relative(process.cwd(), localFilePath).replace(/\\/g, "/")}`,
+            compressed_url: `uploadimage/profilepic/compressed/${compressedFileName}`,
+            thumbnail_url: `uploadimage/profilepic/thumbnail/${thumbFileName}`,
         }
     } catch (error) {
         logger.error("processProfileImage error:", error)

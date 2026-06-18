@@ -432,15 +432,10 @@ function TrashContentView({ view, setModal, onItemRefsReady, dragRootRef }) {
                             <div
                                 className="drag-selection-box"
                                 style={{
-                                    position: "fixed",
                                     left: dragRect.x,
                                     top: dragRect.y,
                                     width: dragRect.width,
                                     height: dragRect.height,
-                                    backgroundColor: "rgba(0, 123, 255, 0.2)",
-                                    border: "1px solid rgba(0, 123, 255, 0.5)",
-                                    pointerEvents: "none",
-                                    zIndex: 9999,
                                 }}
                             />
                         )}

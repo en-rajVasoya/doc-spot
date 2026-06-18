@@ -210,7 +210,7 @@ export default function ImageViewer({ file }) {
     }, [file, src]);
 
     // ── Wheel zoom ───────────────────────────────
-     useEffect(() => {
+    useEffect(() => {
         const el = containerRef.current;
         if (!el) return;
         const handleWheel = (e) => {
@@ -257,18 +257,18 @@ export default function ImageViewer({ file }) {
     };
 
     const reset = () => {
-    const isFitView = Math.abs(scale - fitScale) < 0.1
-    if (isFitView) {
-        setScale(1)
-    } else {
-        setScale(fitScale)
-        setPos({ x: 0, y: 0 })  // ← add this
+        const isFitView = Math.abs(scale - fitScale) < 0.1
+        if (isFitView) {
+            setScale(1)
+        } else {
+            setScale(fitScale)
+            setPos({ x: 0, y: 0 })  // ← add this
+        }
     }
-}
     const zoom = (delta) => {
         setScale((prev) => {
             const next = clampScale(prev + delta);
-            
+
             if (next <= fitScale) {
                 setPos({ x: 0, y: 0 });
             } else if (prev > fitScale) {
@@ -279,7 +279,7 @@ export default function ImageViewer({ file }) {
                     y: p.y * ratio
                 }));
             }
-            
+
             return next;
         });
     };
@@ -406,35 +406,35 @@ export default function ImageViewer({ file }) {
             {/* Zoom controls */}
             <div className="image-preview-bar">
                 <div className="new-preview-zoom-controls-sub after-line-horizontal">
-                    <button 
-                        className="image-preview-btn" 
+                    <button
+                        className="image-preview-btn"
                         onClick={() => zoom(scale > 1 ? -0.25 : -0.05)}
                         disabled={scale <= 0.03}
-                        style={{ 
+                        style={{
                             opacity: scale <= 0.03 ? 0.35 : 1,
                             cursor: scale <= 0.05 ? "not-allowed" : "pointer" // <-- Show not-allowed cursor
                         }}
                     >
-                        <InteractiveIcon 
-                            defaultIcon={nagativIcon} 
-                            width={24} 
-                            alt="" 
+                        <InteractiveIcon
+                            defaultIcon={nagativIcon}
+                            width={24}
+                            alt=""
                             customStyle={{ cursor: scale <= 0.05 ? "not-allowed" : "pointer" }} // <-- Override internal pointer cursor
                         />
                     </button>
-                    <button 
-                        className="image-preview-btn" 
+                    <button
+                        className="image-preview-btn"
                         onClick={() => zoom(scale >= 1 ? 0.25 : 0.05)}
                         disabled={scale >= 5}
-                        style={{ 
+                        style={{
                             opacity: scale >= 5 ? 0.35 : 1,
                             cursor: scale >= 5 ? "not-allowed" : "pointer" // <-- Show not-allowed cursor
                         }}
                     >
-                        <InteractiveIcon 
-                            defaultIcon={plusIcon} 
-                            width={24} 
-                            alt="" 
+                        <InteractiveIcon
+                            defaultIcon={plusIcon}
+                            width={24}
+                            alt=""
                             customStyle={{ cursor: scale >= 5 ? "not-allowed" : "pointer" }} // <-- Override internal pointer cursor
                         />
                     </button>

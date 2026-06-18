@@ -67,6 +67,8 @@ function ShareUserModal({ data, onClose }) {
     const [password, setPassword] = useState("")
     const [passwordShow, setPasswordShow] = useState(false)
 
+    const [isFocused, setIsFocused] = useState(false);
+
 
 
     //  this state is used for the suggested user show in this modal when user click on the input
@@ -344,13 +346,13 @@ function ShareUserModal({ data, onClose }) {
                 <div ref={modalRef}>
                     <Modal.Header className="border-0">
                         <Modal.Title>Shared with people</Modal.Title>
-                         <Tooltip text="Close" offset={8}>
-                        <button
-                            className="btn-only-icon"
-                            onClick={onClose}
-                        >
-                            <InteractiveIcon defaultIcon={closeIcon} width={24} alt="add" />
-                        </button>
+                        <Tooltip text="Close" offset={8}>
+                            <button
+                                className="btn-only-icon"
+                                onClick={onClose}
+                            >
+                                <InteractiveIcon defaultIcon={closeIcon} width={24} alt="add" />
+                            </button>
                         </Tooltip>
                     </Modal.Header>
                     <Modal.Body>
@@ -387,11 +389,19 @@ function ShareUserModal({ data, onClose }) {
                                                 {filteredSuggestedUsers.slice(0, 5).map(user => (
                                                     <li key={user._id} onClick={() => handleSelectUser(user)}>
                                                         <div className="share-user-list-dd d-flex align-items-center cursor-pointer p-2">
-                                                            <InteractiveIcon
-                                                                defaultIcon={`${BASE_URL}${user.profilePic}`}
-                                                                width={48}
-                                                                height={48}
-                                                            />
+                                                            <div className='profile-single-box'>
+                                                                {user.thumbnail_profile_pic || user.compressed_profile_pic ? (
+                                                                    <img
+                                                                        src={`${import.meta.env.VITE_BACKEND_URL}/${user.thumbnail_profile_pic || user.compressed_profile_pic}`}
+                                                                        alt=""
+                                                                        className="user-avatar"
+                                                                    />
+                                                                ) : (
+                                                                    <div className="user-avatar-initials">
+                                                                        {user.name?.trim().charAt(0).toUpperCase() || "?"}
+                                                                    </div>
+                                                                )}
+                                                            </div>
                                                             <div className="ms-2 ps-1">
                                                                 <p className="user-name mb-0">{user.name}</p>
                                                                 <p className="user-email mb-0 small text-muted">{user.email}</p>
@@ -730,7 +740,7 @@ function ShareUserModal({ data, onClose }) {
                             {accessType === "public" && (
                                 <div className={`create-link-items ${passwordProtect ? "" : "disable"}`}>
                                     <div className="create-link-items-content">
-                                        <div className="form-check-group m-0">
+                                        <div className="form-check-group m-0" onClick={generateRandomPassword}>
                                             <label htmlFor="password-protect" style={{ cursor: 'pointer' }}>
                                                 <InteractiveIcon defaultIcon={checkboxIcon} alt="" />
                                             </label>
@@ -757,12 +767,60 @@ function ShareUserModal({ data, onClose }) {
                                         </div>
 
                                         <div className="link-expirtation-day" onClick={(e) => e.stopPropagation()}>
-                                            {/* If unticked, just show text */}
                                             {!passwordProtect ? (
                                                 <p className="modal-tag d-none">No password</p>
                                             ) : (
                                                 <>
-                                                    <Form.Group className="mb-0" controlId="formPassword">
+                                                    <Form.Group className="mb-0 position-relative" controlId="formPassword">
+
+                                                        {/* Requirements box + strength bar */}
+                                                        {password.length > 0 && (() => {
+                                                            const checks = [
+                                                                /[A-Z]/.test(password),
+                                                                /[a-z]/.test(password),
+                                                                /[0-9]/.test(password),
+                                                                /[@$!%*?&]/.test(password),
+                                                                password.length >= 8,
+                                                            ];
+                                                            const passed = checks.filter(Boolean).length;
+                                                            const allPassed = checks.every(Boolean);
+                                                            const strengthClass = passed <= 2 ? "weak" : passed <= 4 ? "medium" : "strong";
+
+                                                            return (
+                                                                <>
+                                                                    {/* Requirements box — focus ho aur saare pass na hue ho tabhi dikhao */}
+                                                                    {!allPassed && isFocused && (
+                                                                        <div className="pwd-requirements-box">
+                                                                            <p className="pwd-req-title">Password requirements</p>
+                                                                            <ul className="pwd-req-list">
+                                                                                <li className={`pwd-req-item ${checks[0] ? "pass" : "fail"}`}>
+                                                                                    <span className="pwd-req-icon">{checks[0] ? "✓" : "✕"}</span>
+                                                                                    Password must include at least one uppercase letter.
+                                                                                </li>
+                                                                                <li className={`pwd-req-item ${checks[1] ? "pass" : "fail"}`}>
+                                                                                    <span className="pwd-req-icon">{checks[1] ? "✓" : "✕"}</span>
+                                                                                    Password must include at least one lowercase letter.
+                                                                                </li>
+                                                                                <li className={`pwd-req-item ${checks[2] ? "pass" : "fail"}`}>
+                                                                                    <span className="pwd-req-icon">{checks[2] ? "✓" : "✕"}</span>
+                                                                                    Password must include at least one number.
+                                                                                </li>
+                                                                                <li className={`pwd-req-item ${checks[3] ? "pass" : "fail"}`}>
+                                                                                    <span className="pwd-req-icon">{checks[3] ? "✓" : "✕"}</span>
+                                                                                    Password must include at least one special character.
+                                                                                </li>
+                                                                                <li className={`pwd-req-item ${checks[4] ? "pass" : "fail"}`}>
+                                                                                    <span className="pwd-req-icon">{checks[4] ? "✓" : "✕"}</span>
+                                                                                    Password must be at least eight characters long.
+                                                                                </li>
+                                                                            </ul>
+                                                                        </div>
+                                                                    )}
+                                                                </>
+                                                            );
+                                                        })()}
+
+                                                        {/* Input */}
                                                         <div className='form-control-single-icon'>
                                                             <InteractiveIcon
                                                                 defaultIcon={passwordShow ? viewIcon : viewHideIcon}
@@ -776,9 +834,36 @@ function ShareUserModal({ data, onClose }) {
                                                                 className='custom-form-control h-34'
                                                                 value={password}
                                                                 onChange={(e) => setPassword(e.target.value)}
+                                                                onFocus={() => setIsFocused(true)}
+                                                                onBlur={() => setIsFocused(false)}
                                                             />
                                                         </div>
+
+                                                        {/* Strength bar — input ke niche */}
+                                                        {password.length > 0 && (() => {
+                                                            const checks = [
+                                                                /[A-Z]/.test(password),
+                                                                /[a-z]/.test(password),
+                                                                /[0-9]/.test(password),
+                                                                /[@$!%*?&]/.test(password),
+                                                                password.length >= 8,
+                                                            ];
+                                                            const passed = checks.filter(Boolean).length;
+                                                            const strengthClass = passed <= 2 ? "weak" : passed <= 4 ? "medium" : "strong";
+                                                            return (
+                                                                <div className="pwd-strength-bar-wrapper">
+                                                                    {[1, 2, 3, 4, 5].map((i) => (
+                                                                        <div
+                                                                            key={i}
+                                                                            className={`pwd-strength-bar-segment ${i <= passed ? strengthClass : ""}`}
+                                                                        />
+                                                                    ))}
+                                                                </div>
+                                                            );
+                                                        })()}
+
                                                     </Form.Group>
+
                                                     <button className="btn-black btn-lg m-0" type="button" onClick={generateRandomPassword}>
                                                         Generate
                                                     </button>

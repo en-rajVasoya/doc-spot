@@ -4,6 +4,7 @@ import { useState, useRef } from "react";
 import { useTrash } from "../../context/TrashContext";
 import InteractiveIcon from "../layout/InteractiveIcon";
 import closeIcon from "@images/icon/close-icon.svg"
+import Tooltip from "../layout/Tooltip";
 
 
 function DeleteForeverModal({ data, onClose }) {
@@ -56,15 +57,17 @@ function DeleteForeverModal({ data, onClose }) {
                 <div ref={modalRef}>
                     <Modal.Header className="border-0">
                         <Modal.Title>Delete forever?</Modal.Title>
+                        <Tooltip text="Close" offset={8}>
                         <button
                             className="btn-only-icon"
                             onClick={onClose}
                         >
                             <InteractiveIcon defaultIcon={closeIcon} width={24} alt="close" />
                         </button>
+                        </Tooltip>
                     </Modal.Header>
                     <Modal.Body>
-                         <p className="m-0 message">
+                         <p className="m-0 message-delete-modal">
                             {deleteMessage}
                         </p>
 
