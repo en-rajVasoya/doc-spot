@@ -19,6 +19,8 @@ import TrashHeaderToolbar from '../../features/trash/TrashHeaderToolbar.jsx';
 import { useFileExplorer } from '../../../context/FileExplorerContext.jsx';
 import AdminHeaderToolbar from '../admin/AdminHeaderToolbar .jsx';
 import UserAvatar from '../UserAvatar.jsx';
+import axiosApi from "../../../utils/api.js";
+import { useSocket } from "../../../context/SocketContext.jsx";
 
 //  getiing backend url for getting profile pic of user
 const BASE_URL = import.meta.env.VITE_API_URL?.replace(/\/api\/?$/, "") || "";
@@ -29,6 +31,11 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
     const { logout, user } = useAuth()
     const navigate = useNavigate()
     const { selectedIds } = useFileExplorer()
+
+    const [notifications, setNotifications] = useState([]);
+    const [unreadCount, setUnreadCount] = useState(0);
+    const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+    const { socket, socketRef } = useSocket()
 
 
     // close search bar when an item is selected so toolbar can show
@@ -48,6 +55,63 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
             console.log("Logout error", error.message)
         }
     }
+
+    const loadNotifications = async () => {
+        try {
+            const res = await axiosApi.get("/notifications")
+
+            setNotifications(res.data.notifications);
+            setUnreadCount(res.data.unreadCount);
+
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    useEffect(() => {
+        loadNotifications();
+    }, []);
+
+    useEffect(() => {
+
+        if (!socket) return;
+
+        socket.on("new_notification", (notification) => {
+
+            setNotifications(prev => [
+                notification,
+                ...prev
+            ]);
+
+            setUnreadCount(prev => prev + 1);
+        });
+
+        return () => {
+            socket.off("new_notification");
+        };
+
+    }, [socket]);
+
+    const markAllRead = async () => {
+
+        try {
+            if (unreadCount === 0) return;
+
+            await axiosApi.post("/notifications/read_all")
+
+            setUnreadCount(0);
+
+            setNotifications(prev =>
+                prev.map(item => ({
+                    ...item,
+                    isRead: true
+                }))
+            );
+
+        } catch (err) {
+            console.error(err);
+        }
+    };
 
     const profileImage = user?.profilePic
         ? `${BASE_URL}${user.profilePic}`
@@ -91,25 +155,93 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                 {/* Profile */}
                 <div>
                     <ul className="d-flex align-items-center mb-0">
-                        {/* {!searchBarOpen && (
-                            <>
-                                <li>
-                                    <Tooltip text="Open Seachbar" placement="bottom">
-                                        <InteractiveIcon
-                                            defaultIcon={searchIcon}
-                                            className="header-search"
-                                            width={20}
-                                            height={20}
-                                            alt="Search"
-                                            onClick={(e) => { setSearchBarOpen(prev => !prev); }}
-                                        />
-                                    </Tooltip>
-                                </li>
-                                <li>
-                                    <div className="divider" />
-                                </li>
-                            </>
-                        )} */}
+                        <li>
+                            <Tooltip text="Open Seachbar" placement="bottom">
+                                <Dropdown
+                                    className="notification-dropdown"
+                                    onToggle={(isOpen) => {
+
+                                        setIsNotificationOpen(isOpen);
+
+                                        if (isOpen) {
+                                            markAllRead();
+                                        }
+                                    }}
+                                >
+                                    <Dropdown.Toggle className="no-border-btn position-relative">
+                                        <span className="notification-icon-wrapper">
+                                            <i className="fas fa-bell"></i>
+                                        </span>
+                                        {unreadCount > 0 && (
+                                            <span className="notification-badge">
+                                                {unreadCount > 9 ? "9+" : unreadCount}
+                                            </span>
+                                        )}
+                                    </Dropdown.Toggle>
+
+                                    <Dropdown.Menu
+                                        align="end"
+                                        className="dropdown-menu-lg"
+                                    >
+
+                                        <div className="d-flex justify-content-between px-3 py-2">
+
+                                            <h6 className="mb-0">
+                                                Notifications
+                                            </h6>
+
+                                        </div>
+
+                                        <Dropdown.Divider />
+
+                                        {notifications.length === 0 ? (
+
+                                            <div className="text-center p-3">
+                                                No notifications
+                                            </div>
+
+                                        ) : (
+
+                                            notifications.map(notification => (
+
+                                                <Dropdown.Item
+                                                    key={notification._id}
+                                                    onClick={() => navigate("/trash-dashboard")}
+                                                    className={
+                                                        !notification.isRead
+                                                            ? "bg-light"
+                                                            : ""
+                                                    }
+                                                >
+                                                    <div>
+                                                        <strong className="text-capitalize">
+                                                            {notification.actor?.name}
+                                                        </strong>
+                                                    </div>
+
+                                                    <div>
+                                                        <div dangerouslySetInnerHTML={{ __html: notification.message }} />
+                                                    </div>
+
+                                                    <small>
+                                                        {new Date(
+                                                            notification.createdAt
+                                                        ).toLocaleString()}
+                                                    </small>
+                                                </Dropdown.Item>
+
+                                            ))
+
+                                        )}
+
+                                    </Dropdown.Menu>
+
+                                </Dropdown>
+                            </Tooltip>
+                        </li>
+                        <li>
+                            <div className="divider" />
+                        </li>
 
 
 
@@ -223,8 +355,7 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                                         </>
                                     )}
 
-                                   
-
+                                    <Dropdown.Divider className='dot' />
 
                                  
                                 </Dropdown.Menu>

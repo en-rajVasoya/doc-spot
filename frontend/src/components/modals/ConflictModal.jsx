@@ -5,7 +5,7 @@ import InteractiveIcon from "../layout/InteractiveIcon"
 import closeIcon from "@images/icon/close-icon.svg"
 
 
-function ConflictModal(){
+function ConflictModal(onClose){
     const { conflictModalData, resolveConflict  } = useUpload()
     const [choice, setChoice] = useState("replace")
 

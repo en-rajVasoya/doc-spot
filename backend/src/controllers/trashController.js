@@ -1,7 +1,9 @@
 import fs from "fs"
+import _ from "lodash";
 
 //  models - schema
 import uploadModel from "#models/uploadModel";
+import notificationModel from "#models/notification";
 
 //  utils
 import { logger } from "#utils/logger";
@@ -83,51 +85,231 @@ import { getAbsolutePath } from "#utils/pathHelper";
 // }
 
 //  item's move to trash 
+// export const trashItem = async (req, res) => {
+//     try {
+//         let ids = req.body.ids || req.body.id;
+//         if (!Array.isArray(ids)) {
+//             ids = [ids];
+//         }
+
+//         const owner = req.user._id;
+//         const bulkOps = [];
+//         const parentsToNotify = new Set();
+//         const editorItemsMap = new Map(); // key: editorUserId, value: array of their items
+
+//         for (const id of ids) {
+//             if (!id) continue;
+
+//             const permission = await getUserPermission(owner, id);
+//             if (permission !== "owner") {
+//                 return res.status(403).json({ success: false, message: "Access denied" });
+//             }
+
+//             // Populate owner to ensure info is ready for socket payload
+//             const item = await uploadModel.findOne({ _id: id, isTrashed: { $ne: true } }).populate("owner", "_id name profilePic");
+
+//             if (!item || item.isTrashed) continue;
+
+//             const itemOwnerId = item.owner._id ? item.owner._id.toString() : item.owner.toString();
+
+//             const updateData = itemOwnerId !== owner.toString()
+//                 ? { parent: null, isTrashed: false, trashedAt: null }
+//                 : { isTrashed: true, trashedAt: new Date() }
+
+//             // Group and collect editor items
+//             if (itemOwnerId !== owner.toString()) {
+//                 const editorId = itemOwnerId;
+//                 if (!editorItemsMap.has(editorId)) {
+//                     editorItemsMap.set(editorId, []);
+//                 }
+
+//                 editorItemsMap.get(editorId).push({
+//                     itemId: item._id,
+//                     oldParent: item.parent,
+//                     movedItem: {
+//                         ...item.toObject(),
+//                         parent: null,
+//                         isTrashed: false,
+//                         owner: {
+//                             _id: item.owner._id,
+//                             name: item.owner.name,
+//                             profilePic: item.owner.profilePic
+//                         },
+//                         storagePath: item.storagePath ? `/${item.storagePath}` : null
+//                     }
+//                 });
+//             }
+
+//             bulkOps.push({
+//                 updateOne: {
+//                     filter: { _id: id },
+//                     update: { $set: updateData }
+//                 }
+//             });
+
+//             parentsToNotify.add(item.parent ? item.parent.toString() : "root");
+
+//             // If this is a folder owned by the main owner, walk all nested children
+//             if (item.type === "folder" && itemOwnerId === owner.toString()) {
+//                 let parentIds = [item._id];
+
+//                 while (parentIds.length > 0) {
+//                     // Populate owner and fetch all fields to prevent empty displays on editor side
+//                     const children = await uploadModel.find({
+//                         parent: { $in: parentIds },
+//                         isTrashed: { $ne: true }
+//                     }).populate("owner", "_id name profilePic").lean();
+
+//                     const editorChildren = children.filter(c => {
+//                         const childOwnerId = c.owner._id ? c.owner._id.toString() : c.owner.toString();
+//                         return childOwnerId !== owner.toString();
+//                     });
+
+//                     const ownerChildren = children.filter(c => {
+//                         const childOwnerId = c.owner._id ? c.owner._id.toString() : c.owner.toString();
+//                         return childOwnerId === owner.toString();
+//                     });
+
+//                     // Collect editor children grouped by editor
+//                     editorChildren.forEach(child => {
+//                         bulkOps.push({
+//                             updateOne: {
+//                                 filter: { _id: child._id },
+//                                 update: { $set: { parent: null, isTrashed: false, trashedAt: null } }
+//                             }
+//                         });
+
+//                         const editorId = child.owner._id ? child.owner._id.toString() : child.owner.toString();
+//                         if (!editorItemsMap.has(editorId)) {
+//                             editorItemsMap.set(editorId, []);
+//                         }
+
+//                         editorItemsMap.get(editorId).push({
+//                             itemId: child._id,
+//                             oldParent: child.parent,
+//                             movedItem: {
+//                                 ...child,
+//                                 parent: null,
+//                                 isTrashed: false,
+//                                 owner: {
+//                                     _id: child.owner._id,
+//                                     name: child.owner.name,
+//                                     profilePic: child.owner.profilePic
+//                                 },
+//                                 storagePath: child.storagePath ? `/${child.storagePath}` : null
+//                             }
+//                         });
+//                     });
+
+//                     // Only recurse into owner folders
+//                     parentIds = ownerChildren
+//                         .filter(c => c.type === "folder")
+//                         .map(c => c._id);
+//                 }
+//             }
+//         }
+
+//         if (bulkOps.length > 0) {
+//             await uploadModel.bulkWrite(bulkOps);
+//         }
+
+//         // Emit socket events optimized for bulk/single moves
+//         editorItemsMap.forEach((items, editorId) => {
+//             items.forEach(({ itemId, oldParent, movedItem }) => {
+//                 req.emitToUser(editorId, "item_moved", {
+//                     itemId,
+//                     oldParent,
+//                     newParent: null,
+//                     movedItem
+//                 })
+//             })
+//         })
+
+//         for (const pId of parentsToNotify) {
+//             const actualParentId = pId === "root" ? null : pId;
+//             await notifySharedUsers(actualParentId || ids[0], "item_trashed", { parentId: actualParentId, ids }, req.emitToUser);
+//         }
+
+//         res.json({ success: true });
+
+//     } catch (error) {
+//         logger.error(error);
+//         res.status(500).json({ success: false, message: error.message });
+//     }
+// }
+
 export const trashItem = async (req, res) => {
     try {
         let ids = req.body.ids || req.body.id;
-        if (!Array.isArray(ids)) {
-            ids = [ids];
-        }
+        if (!Array.isArray(ids)) ids = [ids];
 
-        const owner = req.user._id;
+        const deletedBy = req.user._id;
         const bulkOps = [];
         const parentsToNotify = new Set();
-        const editorItemsMap = new Map(); // key: editorUserId, value: array of their items
+        const notificationsToCreate = [];
+        // key: ownerId, value: array of their items trashed by someone else
+        const crossUserItemsMap = new Map();
 
         for (const id of ids) {
             if (!id) continue;
 
-            const permission = await getUserPermission(owner, id);
-            if (permission !== "owner") {
+            const permission = await getUserPermission(deletedBy, id);
+            if (permission !== "owner" && permission !== "editor") {
                 return res.status(403).json({ success: false, message: "Access denied" });
             }
 
-            // Populate owner to ensure info is ready for socket payload
-            const item = await uploadModel.findOne({ _id: id, isTrashed: { $ne: true } }).populate("owner", "_id name profilePic");
+            const item = await uploadModel
+                .findOne({ _id: id, isTrashed: { $ne: true } })
+                .populate("owner", "_id name profilePic");
 
             if (!item || item.isTrashed) continue;
 
-            const itemOwnerId = item.owner._id ? item.owner._id.toString() : item.owner.toString();
+            const itemOwnerId = item.owner._id
+                ? item.owner._id.toString()
+                : item.owner.toString();
 
-            const updateData = itemOwnerId !== owner.toString()
-                ? { parent: null, isTrashed: false, trashedAt: null }
-                : { isTrashed: true, trashedAt: new Date() }
+            const isOwnFile = itemOwnerId === deletedBy.toString();
 
-            // Group and collect editor items
-            if (itemOwnerId !== owner.toString()) {
-                const editorId = itemOwnerId;
-                if (!editorItemsMap.has(editorId)) {
-                    editorItemsMap.set(editorId, []);
+            // Always trash under the file's actual owner
+            bulkOps.push({
+                updateOne: {
+                    filter: { _id: id },
+                    update: { $set: { isTrashed: true, trashedAt: new Date() } }
                 }
+            });
 
-                editorItemsMap.get(editorId).push({
+            parentsToNotify.add(item.parent ? item.parent.toString() : "root");
+
+            // If deleted by someone OTHER than file owner → notify the file owner
+            if (!isOwnFile) {
+                const actorName = req.user.name || "Someone";
+                const message = `${_.startCase(actorName)} deleted your shared ${item.type} <b>${item.name}</b>`;
+                
+
+                notificationsToCreate.push({
+                    recipient: itemOwnerId,
+                    actor: deletedBy,
+                    type: item.type === "folder" ? "folder_deleted" : "file_deleted",
+                    message,
+                    metadata: {
+                        itemId: item._id,
+                        itemName: item.name,
+                        itemType: item.type,
+                        parentId: item.parent
+                    }
+                });
+
+                if (!crossUserItemsMap.has(itemOwnerId)) {
+                    crossUserItemsMap.set(itemOwnerId, []);
+                }
+                crossUserItemsMap.get(itemOwnerId).push({
                     itemId: item._id,
                     oldParent: item.parent,
+                    message,
                     movedItem: {
                         ...item.toObject(),
-                        parent: null,
-                        isTrashed: false,
+                        isTrashed: true,
+                        trashedAt: new Date(),
                         owner: {
                             _id: item.owner._id,
                             name: item.owner.name,
@@ -138,103 +320,139 @@ export const trashItem = async (req, res) => {
                 });
             }
 
-            bulkOps.push({
-                updateOne: {
-                    filter: { _id: id },
-                    update: { $set: updateData }
-                }
-            });
-
-            parentsToNotify.add(item.parent ? item.parent.toString() : "root");
-
-            // If this is a folder owned by the main owner, walk all nested children
-            if (item.type === "folder" && itemOwnerId === owner.toString()) {
+            // Walk nested children if folder
+            if (item.type === "folder") {
                 let parentIds = [item._id];
 
                 while (parentIds.length > 0) {
-                    // Populate owner and fetch all fields to prevent empty displays on editor side
-                    const children = await uploadModel.find({
-                        parent: { $in: parentIds },
-                        isTrashed: { $ne: true }
-                    }).populate("owner", "_id name profilePic").lean();
+                    const children = await uploadModel
+                        .find({ parent: { $in: parentIds }, isTrashed: { $ne: true } })
+                        .populate("owner", "_id name profilePic")
+                        .lean();
 
-                    const editorChildren = children.filter(c => {
-                        const childOwnerId = c.owner._id ? c.owner._id.toString() : c.owner.toString();
-                        return childOwnerId !== owner.toString();
-                    });
+                    const nextParentIds = [];
 
-                    const ownerChildren = children.filter(c => {
-                        const childOwnerId = c.owner._id ? c.owner._id.toString() : c.owner.toString();
-                        return childOwnerId === owner.toString();
-                    });
+                    for (const child of children) {
+                        const childOwnerId = child.owner._id
+                            ? child.owner._id.toString()
+                            : child.owner.toString();
 
-                    // Collect editor children grouped by editor
-                    editorChildren.forEach(child => {
                         bulkOps.push({
                             updateOne: {
                                 filter: { _id: child._id },
-                                update: { $set: { parent: null, isTrashed: false, trashedAt: null } }
+                                update: { $set: { isTrashed: true, trashedAt: new Date() } }
                             }
                         });
 
-                        const editorId = child.owner._id ? child.owner._id.toString() : child.owner.toString();
-                        if (!editorItemsMap.has(editorId)) {
-                            editorItemsMap.set(editorId, []);
+                        // Notify child's owner if they're not the deleter
+                        if (childOwnerId !== deletedBy.toString()) {
+                            const actorName = req.user.name || "Someone";
+                            const message = `${_.startCase(actorName)} deleted your shared ${child.type} <b>${child.name}</b>`;
+
+                            notificationsToCreate.push({
+                                recipient: childOwnerId,
+                                actor: deletedBy,
+                                type: child.type === "folder" ? "folder_deleted" : "file_deleted",
+                                message,
+                                metadata: {
+                                    itemId: child._id,
+                                    itemName: child.name,
+                                    itemType: child.type,
+                                    parentId: child.parent
+                                }
+                            });
+
+                            if (!crossUserItemsMap.has(childOwnerId)) {
+                                crossUserItemsMap.set(childOwnerId, []);
+                            }
+                            crossUserItemsMap.get(childOwnerId).push({
+                                itemId: child._id,
+                                oldParent: child.parent,
+                                message,
+                                movedItem: {
+                                    ...child,
+                                    isTrashed: true,
+                                    trashedAt: new Date(),
+                                    owner: {
+                                        _id: child.owner._id,
+                                        name: child.owner.name,
+                                        profilePic: child.owner.profilePic
+                                    },
+                                    storagePath: child.storagePath ? `/${child.storagePath}` : null
+                                }
+                            });
                         }
 
-                        editorItemsMap.get(editorId).push({
-                            itemId: child._id,
-                            oldParent: child.parent,
-                            movedItem: {
-                                ...child,
-                                parent: null,
-                                isTrashed: false,
-                                owner: {
-                                    _id: child.owner._id,
-                                    name: child.owner.name,
-                                    profilePic: child.owner.profilePic
-                                },
-                                storagePath: child.storagePath ? `/${child.storagePath}` : null
-                            }
-                        });
-                    });
+                        if (child.type === "folder") nextParentIds.push(child._id);
+                    }
 
-                    // Only recurse into owner folders
-                    parentIds = ownerChildren
-                        .filter(c => c.type === "folder")
-                        .map(c => c._id);
+                    parentIds = nextParentIds;
                 }
             }
         }
 
+        // Bulk write file updates
         if (bulkOps.length > 0) {
             await uploadModel.bulkWrite(bulkOps);
         }
 
-        // Emit socket events optimized for bulk/single moves
-        editorItemsMap.forEach((items, editorId) => {
-            items.forEach(({ itemId, oldParent, movedItem }) => {
-                req.emitToUser(editorId, "item_moved", {
+        // Save all notifications to DB
+        let savedNotifications = [];
+        if (notificationsToCreate.length > 0) {
+            savedNotifications = await notificationModel.insertMany(notificationsToCreate);
+        }
+
+        // Populate actor info for socket payload
+        const populatedActor = {
+            _id: req.user._id,
+            name: req.user.name,
+            profilePic: req.user.profilePic
+        };
+
+        // Emit item_trashed + new_notification to each affected file owner
+        crossUserItemsMap.forEach((items, ownerId) => {
+            items.forEach(({ itemId, oldParent, movedItem, message }) => {
+                // Update the trash view
+                req.emitToUser(ownerId, "item_trashed", {
                     itemId,
                     oldParent,
-                    newParent: null,
                     movedItem
-                })
-            })
-        })
+                });
+            });
+
+            // Find and emit all notifications for this owner
+            const ownerNotifs = savedNotifications.filter(
+                n => n.recipient.toString() === ownerId
+            );
+            ownerNotifs.forEach(notif => {
+                req.emitToUser(ownerId, "new_notification", {
+                    _id: notif._id,
+                    type: notif.type,
+                    message: notif.message,
+                    metadata: notif.metadata,
+                    actor: populatedActor,
+                    isRead: false,
+                    createdAt: notif.createdAt
+                });
+            });
+        });
 
         for (const pId of parentsToNotify) {
             const actualParentId = pId === "root" ? null : pId;
-            await notifySharedUsers(actualParentId || ids[0], "item_trashed", { parentId: actualParentId, ids }, req.emitToUser);
+            await notifySharedUsers(
+                actualParentId || ids[0],
+                "item_trashed",
+                { parentId: actualParentId, ids },
+                req.emitToUser
+            );
         }
 
         res.json({ success: true });
-
     } catch (error) {
         logger.error(error);
         res.status(500).json({ success: false, message: error.message });
     }
-}
+};
 
 //  here when user restore item so it need to restore it to original location here
 export const restoreItem = async (req, res) => {

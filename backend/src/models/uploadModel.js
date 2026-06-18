@@ -1,7 +1,7 @@
 import mongoose, { Mongoose } from "mongoose"
 
 const uploadSchema = mongoose.Schema({
-    
+
     //  file or folder name
     name: {
         type: String,
@@ -81,7 +81,7 @@ const uploadSchema = mongoose.Schema({
 
     //  sharing field 
     //  shared with which users
-    sharedWith:[
+    sharedWith: [
         {
             //  which user
             userId: {
@@ -96,10 +96,10 @@ const uploadSchema = mongoose.Schema({
                 type: String,
                 enum: ["viewer", "editor"],
                 required: true
-            }   
+            }
         }
     ],
-    
+
     //  only flag for faster query 
     isShared: {
         type: Boolean,
@@ -142,7 +142,7 @@ const uploadSchema = mongoose.Schema({
         default: null
     },
 
-}, { timestamps: true })
+}, { versionKey: false, timestamps: true })
 
 
 //  indexing for faster queries
@@ -153,7 +153,7 @@ uploadSchema.index({ uploadId: 1 })
 
 //  shared 
 uploadSchema.index({ "sharedWith.userId": 1, parent: 1 })
-uploadSchema.index({ owner: 1, isShared: 1})
+uploadSchema.index({ owner: 1, isShared: 1 })
 
 
 //  trashed faster wuery here
