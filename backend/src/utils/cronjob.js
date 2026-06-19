@@ -4,6 +4,7 @@ import cron from "node-cron";
 
 import Upload from "#models/uploadModel";
 import SharedLink from "#models/sharedLinksModel";
+import notificationModel from "#models/notification";
 
 import { deleteForver } from "#controllers/trashController";
 
@@ -11,7 +12,8 @@ import { deleteItemPermanently } from '#utils/index';
 import { logger } from "#utils/logger";
 
 // cronjob to clear trash afte 30 days and run at midnight daily at 12 AM
-export const startTrashCleanup = () => {
+export const startTrashCleanup = (emitToUser) => {
+
     cron.schedule("0 0 * * *", async () => {
         logger.info("[Trash cleanup] Starting at midnight...")
         try {
@@ -30,7 +32,58 @@ export const startTrashCleanup = () => {
 
             logger.info(`[TRASH CLEANUP] Found ${expiredItems.length} expired items`)
 
-            // Delete each item permanently (without Express req/res)
+            // Collect all IDs including nested children of expired folders
+            const allItemIds = [];
+
+            for (const item of expiredItems) {
+                allItemIds.push(item._id);
+
+                if (item.type === "folder") {
+                    let parentIds = [item._id];
+                    while (parentIds.length > 0) {
+                        const children = await Upload.find({
+                            parent: { $in: parentIds }
+                        }).select("_id type").lean();
+
+                        for (const child of children) {
+                            allItemIds.push(child._id);
+                        }
+
+                        parentIds = children
+                            .filter(c => c.type === "folder")
+                            .map(c => c._id);
+                    }
+                }
+            }
+
+            // Find notifications for all expired items, emit removal, then delete
+            const notifsToDelete = await notificationModel.find({
+                type: { $in: ["file_deleted", "folder_deleted"] },
+                "metadata.itemId": { $in: allItemIds }
+            }).lean();
+
+            if (notifsToDelete.length > 0) {
+                // Group by recipient
+                const recipientMap = new Map();
+                notifsToDelete.forEach(n => {
+                    const rid = n.recipient.toString();
+                    if (!recipientMap.has(rid)) recipientMap.set(rid, []);
+                    recipientMap.get(rid).push(n._id);
+                });
+
+                await notificationModel.deleteMany({
+                    _id: { $in: notifsToDelete.map(n => n._id) }
+                });
+
+                // Emit to each recipient so their UI clears instantly
+                recipientMap.forEach((notifIds, recipientId) => {
+                    emitToUser(recipientId, "notifications_removed", { ids: notifIds });
+                });
+
+                logger.info(`[TRASH CLEANUP] Removed ${notifsToDelete.length} notifications`)
+            }
+
+            // Delete each item permanently
             for (const item of expiredItems) {
                 try {
                     await deleteItemPermanently(item)
@@ -42,7 +95,7 @@ export const startTrashCleanup = () => {
 
             logger.info(`[TRASH CLEANUP] Done — deleted ${expiredItems.length} items`)
         } catch (error) {
-            logger.error("[TRASH CLEANUP] Error:", error.message)
+            logger.error("[TRASH CLEANUP] Error:", error)
         }
     })
 }

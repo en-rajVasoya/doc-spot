@@ -26,7 +26,7 @@ import notificationRoutes from "./routes/notification.js";
 // ===================================
 connectDB()
 // initClamAV()
-startTrashCleanup() // Cron job that deletes trash files/folders periodically
+startTrashCleanup(emitToUser) // Cron job that deletes trash files/folders periodically
 startExpiredLinksCleanup()
 
 // ===================================

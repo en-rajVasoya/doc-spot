@@ -89,8 +89,20 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
             setUnreadCount(prev => prev + 1);
         });
 
+        socket.on("notifications_removed", ({ ids }) => {
+            const removedSet = new Set(ids.map(id => id.toString()));
+            setNotifications(prev => {
+                const removedUnread = prev.filter(
+                    n => removedSet.has(n._id.toString()) && !n.isRead
+                ).length;
+                setUnreadCount(count => Math.max(0, count - removedUnread));
+                return prev.filter(n => !removedSet.has(n._id.toString()));
+            });
+        });
+
         return () => {
             socket.off("new_notification");
+            socket.off("notifications_removed");
         };
 
     }, [socket]);
@@ -114,6 +126,38 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
         } catch (err) {
             console.error(err);
         }
+    };
+
+    const deleteNotifications = async (ids) => {
+        try {
+            await axiosApi.delete("/notifications/remove_notification", {
+                data: { ids }
+            });
+
+            // Update state immediately without waiting for socket
+            const removedSet = new Set(ids.map(id => id.toString()));
+            setNotifications(prev => {
+                const removedUnread = prev.filter(
+                    n => removedSet.has(n._id.toString()) && !n.isRead
+                ).length;
+                setUnreadCount(count => Math.max(0, count - removedUnread));
+                return prev.filter(n => !removedSet.has(n._id.toString()));
+            });
+
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    const handleClearAll = () => {
+        if (notifications.length === 0) return;
+        const allIds = notifications.map(n => n._id);
+        deleteNotifications(allIds);
+    };
+
+    const handleDeleteSingle = (e, notificationId) => {
+        e.stopPropagation(); // prevent triggering the notification click/navigate
+        deleteNotifications([notificationId]);
     };
 
     const profileImage = user?.profilePic
@@ -278,7 +322,7 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
 
                                         <div className="notification-header">
                                             <h6 className="notification-title">Notifications</h6>
-                                            <button className='clear-btn'>Clear all</button>
+                                            <button className='clear-btn' onClick={handleClearAll}>Clear all</button>
                                         </div>
 
                                         <div className="notification-divider" />
@@ -327,7 +371,9 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                                                                         <strong className="notification-message-name">
                                                                             {notification.actor?.name}
                                                                         </strong>
-                                                                        <button className='btn-only-icon'>
+                                                                        <button className='btn-only-icon'
+                                                                            onClick={(e) => handleDeleteSingle(e, notification._id)}
+                                                                        >
                                                                             <InteractiveIcon
                                                                                 defaultIcon={closeIcon}
                                                                                 alt=""
@@ -341,7 +387,7 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
 
 
                                                                     <small className="notification-message-time">
-                                                                       
+
                                                                         {new Date(notification.createdAt).toLocaleString()}
                                                                     </small>
                                                                 </div>

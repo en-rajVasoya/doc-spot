@@ -82,10 +82,10 @@ export const deleteItemPermanently = async (item) => {
 
                     if (count === 0 && absPath && fs.existsSync(absPath)) {
                         await fs.promises.unlink(absPath)
-                        logger.infp(`[BACKGROUND DELETE] Unlinked: ${absPath}`)
+                        logger.info(`[BACKGROUND DELETE] Unlinked: ${absPath}`)
                     }
                 } catch (err) {
-                    logger.error(`[BACKGROUND DELETE ERROR] ${file.storagePath}:`, err.message)
+                    logger.error(`[BACKGROUND DELETE ERROR] ${file.storagePath}:`, err)
                 }
             }
         })()
