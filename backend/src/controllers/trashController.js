@@ -493,6 +493,37 @@ export const restoreItem = async (req, res) => {
             return res.status(400).json({ success: false, message: "Item is not in trash" })
         }
 
+        // -------------------------------------------------------------
+        //  --- here when we restore the folder so mark all nested child is trashed false
+        // ---------------------------------------------------------------------
+        if (item.type === "folder") {
+            let currentLevelParentIds = [item._id];
+            while (currentLevelParentIds.length > 0) {
+                // Find all nested items (files and folders) inside these parents that are currently in the trash
+                const nestedChildren = await uploadModel.find({
+                    parent: { $in: currentLevelParentIds },
+                    isTrashed: true
+                }).select("_id type").lean();
+                if (nestedChildren.length > 0) {
+                    // Extract just the IDs so we can update them in the database
+                    const nestedChildIds = nestedChildren.map(child => child._id);
+
+                    // Free all these children from the trash!
+                    await uploadModel.updateMany(
+                        { _id: { $in: nestedChildIds } },
+                        { $set: { isTrashed: false, trashedAt: null } }
+                    );
+                    // For the next loop iteration, we only want to dig deeper into the FOLDERS we just found
+                    currentLevelParentIds = nestedChildren
+                        .filter(child => child.type === "folder")
+                        .map(folder => folder._id);
+                } else {
+                    // No more nested items found, stop the loop
+                    currentLevelParentIds = [];
+                }
+            }
+        }
+
         if (item.parent) {
             // Find parent without restricting to owner so shared folders are found
             const parentFolder = await uploadModel.findOne({ _id: item.parent })
@@ -619,8 +650,10 @@ export const getTrashedItems = async (req, res) => {
         // ------------------------------------------
         // --- STEP - 5 - fetch root level trashed items
         // -----------------------------------------
-        // fetch all items that are trashed and have no parent (root level of trash)
-        const items = await uploadModel.find({
+
+        // 1 ) so now here in trash item here we are doing also nested of fodler is trashed tru flag here 
+        // so in getting trash item here i need ot make sure here that if fiitem parent is alsready in trash so dont show here
+        const allTrashedItems = await uploadModel.find({
             owner: userId,
             isTrashed: true,
             $or: [{ type: "folder" }, { type: "file", uploadStatus: "completed" }]
@@ -628,15 +661,25 @@ export const getTrashedItems = async (req, res) => {
             .select("name type fileSize fileType createdAt updatedAt parent color owner storagePath isTrashed trashedAt")
             .populate("owner", "_id name")
             .sort(sortArray)
-            .collation({ locale: "en", strength: 2 }) // makes alphabetical sorting case-insensitive
-            .lean()
+            .collation({ locale: "en", strength: 2 })
+            .lean();
 
-        // return the root trashed items
+        // 2. Create a fast list (Set) of all trashed item IDs
+        const trashIds = new Set(allTrashedItems.map(item => item._id.toString()))
+
+        //  filter only keep item in the trash root if their parent is not in the trash here
+        const rootItems = allTrashedItems.filter(item => {
+            if (!item.parent) return true;
+            if (!trashIds.has(item.parent.toString())) return true
+            return false
+        })
+
         return res.json({
             success: true,
-            items: items.map(fixPath),
-            total: items.length
+            items: rootItems.map(fixPath),
+            total: rootItems.length
         });
+
 
     } catch (error) {
         logger.error(error);

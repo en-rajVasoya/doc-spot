@@ -14,9 +14,31 @@ import retryIcon from "@images/icon/retry-icon.svg"
 import deleteIcon from "@images/icon/trash.svg"
 import { useDownload } from "../../../context/DownloadContext.jsx";
 import { useNotification } from "../../../context/NotificationContext.jsx";
+import { useLocation } from "react-router-dom";
 
 
 function TrashContentView({ view, setModal, onItemRefsReady, dragRootRef }) {
+    const location = useLocation()
+    const [highlightedId, setHighlightedId] = useState(null)
+    
+    useEffect(() => {
+        if (location.state?.highlightId) {
+            setHighlightedId(location.state.highlightId);
+            setTimeout(() => setHighlightedId(null), 2000);
+            window.history.replaceState({}, document.title);
+        }
+    }, [location.state]);
+
+    // Auto-scroll to highlighted item
+    useEffect(() => {
+        if (highlightedId && itemRefs.current[highlightedId]) {
+            itemRefs.current[highlightedId].scrollIntoView({
+                behavior: "smooth",
+                block: "center"
+            });
+        }
+    }, [highlightedId]);
+
     const [filePreview, setFilePreview] = useState(null)
     const { downloadFile, downloadFolder, downloadMultiple } = useDownload()
     const { showNotification } = useNotification()
@@ -355,7 +377,7 @@ function TrashContentView({ view, setModal, onItemRefsReady, dragRootRef }) {
                                 }}
                             >
                                 <div
-                                    className={`table-row-inner ${selectedIds.has(item._id) ? "selected" : ""}`}
+                                    className={`table-row-inner ${selectedIds.has(item._id) ? "selected" : ""} ${highlightedId === item._id ? "highlight-pulse" : ""}`}
                                     onClick={(e) => {
                                         if (e.ctrlKey || e.metaKey || e.shiftKey) {
                                             handleCheckboxClick(e, item._id)

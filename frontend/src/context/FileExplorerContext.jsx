@@ -874,7 +874,6 @@ export function FileExplorerProvider({ children }) {
         socket.off("item_moved")
         socket.off("item_copied")
         socket.off("item_restored")
-        socket.off("item_trashed")
         socket.off("scan_complete")
         socket.off("item_folder_created")
 
@@ -1012,7 +1011,7 @@ export function FileExplorerProvider({ children }) {
 
 
         //  here if user trash someting notify user 2 
-        socket.on("item_trashed", (data) => {
+        const handleItemTrashed = (data) => {
             const { parentId, ids, itemId, oldParent } = data;
 
             if (ids) {
@@ -1028,8 +1027,16 @@ export function FileExplorerProvider({ children }) {
                 if (String(currentFolderId) === String(oldParent) || (!currentFolderId && !oldParent)) {
                     setItems(prev => prev.filter(item => item._id.toString() !== itemId.toString()));
                 }
+
+                // If the editor deleted the folder the owner is currently looking at, kick the owner out to root!
+                if (String(itemId) === String(currentFolderId)) {
+                    navigate(getPathPrefix());
+                }
+
             }
-        });
+        };
+
+        socket.on("item_trashed", handleItemTrashed);
 
         //  here when user restor something it main screeen socket event
         socket.on("item_restored", ({ parentId }) => {
@@ -1061,7 +1068,7 @@ export function FileExplorerProvider({ children }) {
             socket.off("item_moved")
             socket.off("item_copied")
             socket.off("item_restored")
-            socket.off("item_trashed")
+            socket.off("item_trashed", handleItemTrashed)
             socket.off("scan_complete")
             socket.off("item_folder_created")
 

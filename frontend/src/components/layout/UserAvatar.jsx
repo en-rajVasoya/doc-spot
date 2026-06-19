@@ -38,7 +38,7 @@ function UserAvatar({ user, name, src, className = "", style = {} }) {
             <div className='user-profile-single-box'>
                 <img
                     src={finalSrc}
-                    alt={user?.name || name || ""}
+                
                     className={`user-avatar ${className}`}
                     style={style}
                 />
@@ -62,7 +62,7 @@ function UserAvatar({ user, name, src, className = "", style = {} }) {
             >
             <span className='user-avatar-initials-text'>
                 {hasName ? initials : (
-                    <span className='btn-only-icon'><img src={profileImageIcon} alt="" width={20} /></span>
+                    <span className='btn-only-icon'><img src={profileImageIcon}  width={20} /></span>
                 )}
             </span>
             </div>

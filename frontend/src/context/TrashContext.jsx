@@ -137,27 +137,17 @@ export function TrashProvider({ children }) {
         if (!user?._id) return;
         if (!socketRef.current) return;
 
-        //  socket event here
-        socketRef.current.off("item_trashed")
-        // socketRef.current.off("item_restored")
-
         //  if any item get trashed trash page refresh
-        socketRef.current.on("item_trashed", ({ parentId }) => {
+        const handleItemTrashedForTrash = () => {
             if (!currentFolderId) {
                 fetchTrashedItems()
             }
-        })
+        }
 
-        //  here if any item is restored then refresh page
-        // socketRef.current.on("item_restored", ({ parentId }) => {
-        //     if (currentFolderId === parentId || (!currentFolderId && !parentId)) {
-        //         fetchTrashedItems()
-        //     }
-        // })
+        socketRef.current.on("item_trashed", handleItemTrashedForTrash)
 
         return () => {
-            socketRef.current.off("item_trashed")
-            // socketRef.current.off("item_restored")
+            socketRef.current.off("item_trashed", handleItemTrashedForTrash)
         }
 
     }, [user?._id, currentFolderId, fetchTrashedItems])

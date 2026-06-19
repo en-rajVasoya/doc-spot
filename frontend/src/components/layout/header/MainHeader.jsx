@@ -9,6 +9,7 @@ import userIcon from "@images/icon/user.svg";
 import logOutIcon from "@images/icon/power.svg";
 import BrandSmallIcon from "@images/small-logo.svg";
 import menuIcon from "@images/icon/menu-icon.svg";
+import notificationIcon from "@images/icon/notification.svg";
 import HeaderToolbar from './HeaderToolbar';
 import { Dropdown } from 'react-bootstrap';
 import { useAuth } from '../../../context/AuthContext';
@@ -21,6 +22,8 @@ import AdminHeaderToolbar from '../admin/AdminHeaderToolbar .jsx';
 import UserAvatar from '../UserAvatar.jsx';
 import axiosApi from "../../../utils/api.js";
 import { useSocket } from "../../../context/SocketContext.jsx";
+import CustomScroll from '../CustomScroll.jsx';
+import closeIcon from "@images/icon/close-icon.svg"
 
 //  getiing backend url for getting profile pic of user
 const BASE_URL = import.meta.env.VITE_API_URL?.replace(/\/api\/?$/, "") || "";
@@ -30,7 +33,7 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
 
     const { logout, user } = useAuth()
     const navigate = useNavigate()
-    const { selectedIds } = useFileExplorer()
+    const { selectedIds, triggerHighlight } = useFileExplorer()
 
     const [notifications, setNotifications] = useState([]);
     const [unreadCount, setUnreadCount] = useState(0);
@@ -124,13 +127,16 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                 {/* Logo */}
 
                 <div className="logo-section">
-                    <button className="sidebar2-Mobile-toggle-btn btn-only-icon" onClick={onMobileSidebarNavclick}>
-                        <InteractiveIcon
-                            defaultIcon={menuIcon}
-                            alt=""
-                            width={24}
-                        />
-                    </button>
+                    {!isAdmin && (
+                        <button className="sidebar2-Mobile-toggle-btn btn-only-icon" onClick={onMobileSidebarNavclick}>
+                            <InteractiveIcon
+                                defaultIcon={menuIcon}
+                                alt=""
+                                width={24}
+                            />
+                        </button>
+                    )}
+
                     <a className="logo" onClick={() => navigate("/dashboard")}>
                         <InteractiveIcon
                             defaultIcon={logoIcon}
@@ -155,7 +161,7 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                 {/* Profile */}
                 <div>
                     <ul className="d-flex align-items-center mb-0">
-                        <li>
+                        {/* <li>
                             <Tooltip text="Open Seachbar" placement="bottom">
                                 <Dropdown
                                     className="notification-dropdown"
@@ -239,6 +245,121 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
 
                                 </Dropdown>
                             </Tooltip>
+                        </li> */}
+
+                        <li className='d-flex'>
+                            <div className="notification-wrapper">
+
+                                {/* Bell Icon */}
+                                <div className="notification-bell " onClick={() => {
+                                    const next = !isNotificationOpen;
+                                    setIsNotificationOpen(next);
+                                    if (next) markAllRead();
+                                }}>
+
+                                    <span className='btn-only-icon'>
+                                        <InteractiveIcon
+                                            defaultIcon={notificationIcon}
+                                            alt=""
+                                            width={22}
+                                        />
+                                    </span>
+
+                                    {unreadCount > 0 && (
+                                        <div className="notification-badge">
+                                            <span>{unreadCount > 9 ? "9+" : unreadCount}</span>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Notification Panel */}
+                                {isNotificationOpen && (
+                                    <div className={`notification-panel ${isNotificationOpen ? "show" : ""}`}>
+
+                                        <div className="notification-header">
+                                            <h6 className="notification-title">Notifications</h6>
+                                            <button className='clear-btn'>Clear all</button>
+                                        </div>
+
+                                        <div className="notification-divider" />
+
+                                        <div className='notification-panel-custom-scroll-wrapper'>
+                                            <CustomScroll className="notification-panel-custom-scroll" showBottomBlur={false} showTopBlur={true}>
+                                                {notifications.length === 0 ? (
+
+                                                    <div className="notification-empty">
+                                                        No notifications
+                                                    </div>
+
+                                                ) : (
+
+                                                    notifications.map(notification => (
+
+                                                        <div
+                                                            key={notification._id}
+                                                            onClick={() => {
+                                                                const metadata = notification.metadata || {};
+                                                                const isTrashNotification = notification.type === "file_deleted" || notification.type === "folder_deleted";
+
+                                                                if (isTrashNotification) {
+                                                                    navigate("/trash-dashboard", { state: { highlightId: metadata.itemId } });
+                                                                } else {
+                                                                    // Navigate to specific folder or root
+                                                                    if (metadata.parentId) {
+                                                                        navigate(`/dashboard/folder/${metadata.parentId}`);
+                                                                    } else {
+                                                                        navigate("/dashboard");
+                                                                    }
+
+                                                                    // Trigger the pulse class highlight on the specific item!
+                                                                    if (metadata.itemId) {
+                                                                        triggerHighlight(metadata.itemId);
+                                                                    }
+                                                                }
+                                                                setIsNotificationOpen(false); // Close dropdown
+                                                            }}
+                                                            className={`notification-message ${!notification.isRead ? "notification-message-unread" : ""}`}
+                                                        >
+                                                            <div className="notification-message-user">
+                                                                <UserAvatar user={notification.metadata} />
+                                                                <div className='notification-message-content-wrapper'>
+                                                                    <div className='notification-message-name-date'>
+                                                                        <strong className="notification-message-name">
+                                                                            {notification.actor?.name}
+                                                                        </strong>
+                                                                        <button className='btn-only-icon'>
+                                                                            <InteractiveIcon
+                                                                                defaultIcon={closeIcon}
+                                                                                alt=""
+                                                                                width={16}
+                                                                            />
+                                                                        </button>
+
+                                                                    </div>
+
+                                                                    <div className='notification-message-text' dangerouslySetInnerHTML={{ __html: notification.message }} />
+
+
+                                                                    <small className="notification-message-time">
+                                                                       
+                                                                        {new Date(notification.createdAt).toLocaleString()}
+                                                                    </small>
+                                                                </div>
+                                                            </div>
+
+
+                                                        </div>
+
+                                                    ))
+
+                                                )}
+                                            </CustomScroll>
+                                        </div>
+
+                                    </div>
+                                )}
+
+                            </div>
                         </li>
                         <li>
                             <div className="divider" />
@@ -262,7 +383,7 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                                                 {user.name?.trim().charAt(0).toUpperCase() || "?"}
                                             </div>
                                         )} */}
-                                        <UserAvatar user={user} />
+                                            <UserAvatar user={user} />
                                         </div>
                                         <div className="dd_arrow btn-only-icon">
                                             <img src={arrowDownIcon} alt="" width={18} />
@@ -291,7 +412,7 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                                                     height={100}
                                                     alt=""
                                                 /> */}
-                                                
+
                                                 <UserAvatar user={user} />
                                             </span>
                                         </div>
@@ -303,7 +424,7 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                                         <>
                                             <Dropdown.Item className="dropdown-item d-flex align-items-center" onClick={() => navigate("/dashboard")}>
                                                 <InteractiveIcon
-                                                    defaultIcon={userIcon} 
+                                                    defaultIcon={userIcon}
                                                     width={24}
                                                     height={24}
                                                     alt="My Docspot"
@@ -358,7 +479,7 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
 
                                     <Dropdown.Divider className='dot' />
 
-                                 
+
                                 </Dropdown.Menu>
                             </Dropdown>
                         </li>
