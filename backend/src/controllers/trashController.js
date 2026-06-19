@@ -322,6 +322,7 @@ export const trashItem = async (req, res) => {
             }
 
             // Walk nested children if folder
+            // Walk nested children if folder
             if (item.type === "folder") {
                 let parentIds = [item._id];
 
@@ -344,47 +345,7 @@ export const trashItem = async (req, res) => {
                                 update: { $set: { isTrashed: true, trashedAt: new Date() } }
                             }
                         });
-
-                        // Notify child's owner if they're not the deleter
-                        if (childOwnerId !== deletedBy.toString()) {
-                            const actorName = req.user.name || "Someone";
-                            const message = `${_.startCase(actorName)} deleted your shared ${child.type} <b>${child.name}</b>`;
-
-                            notificationsToCreate.push({
-                                recipient: childOwnerId,
-                                actor: deletedBy,
-                                type: child.type === "folder" ? "folder_deleted" : "file_deleted",
-                                message,
-                                metadata: {
-                                    itemId: child._id,
-                                    itemName: child.name,
-                                    itemType: child.type,
-                                    parentId: child.parent,
-                                    profilePic: req.user.thumbnail_profile_pic || req.user.profilePic
-                                }
-                            });
-
-                            if (!crossUserItemsMap.has(childOwnerId)) {
-                                crossUserItemsMap.set(childOwnerId, []);
-                            }
-                            crossUserItemsMap.get(childOwnerId).push({
-                                itemId: child._id,
-                                oldParent: child.parent,
-                                message,
-                                movedItem: {
-                                    ...child,
-                                    isTrashed: true,
-                                    trashedAt: new Date(),
-                                    owner: {
-                                        _id: child.owner._id,
-                                        name: child.owner.name,
-                                        profilePic: child.owner.profilePic
-                                    },
-                                    storagePath: child.storagePath ? `/${child.storagePath}` : null
-                                }
-                            });
-                        }
-
+                        
                         if (child.type === "folder") nextParentIds.push(child._id);
                     }
 
@@ -457,6 +418,86 @@ export const trashItem = async (req, res) => {
 };
 
 //  here when user restore item so it need to restore it to original location here
+// export const restoreItem = async (req, res) => {
+//     try {
+//         const { id } = req.body;
+//         const owner = req.user._id
+
+//         const permission = await getUserPermission(owner, id)
+//         if (permission !== "owner") {
+//             return res.status(403).json({ success: false, message: "Access denied" })
+//         }
+
+//         const item = await uploadModel.findOne({ _id: id })
+//         if (!item) {
+//             return res.status(404).json({ success: false, message: "Item not found" });
+//         }
+
+//         // walk parent chain to check if item or any ancestor is trashed
+//         let isEffectivelyTrashed = item.isTrashed;
+//         let isParentEffectivelyTrashed = false;
+
+//         if (item.parent) {
+//             let curr = await uploadModel.findById(item.parent).select("isTrashed parent")
+//             while (curr) {
+//                 if (curr.isTrashed) {
+//                     isParentEffectivelyTrashed = true;
+//                     isEffectivelyTrashed = true;
+//                     break
+//                 }
+//                 if (!curr.parent) break;
+//                 curr = await uploadModel.findById(curr.parent).select("isTrashed parent")
+//             }
+//         }
+
+//         if (!isEffectivelyTrashed) {
+//             return res.status(400).json({ success: false, message: "Item is not in trash" })
+//         }
+
+//         if (item.parent) {
+//             // Find parent without restricting to owner so shared folders are found
+//             const parentFolder = await uploadModel.findOne({ _id: item.parent })
+
+//             // Check if the user still has permission to see and edit the destination folder
+//             const parentPermission = await getUserPermission(owner, item.parent)
+//             const lostAccess = !parentPermission || !["owner", "editor"].includes(parentPermission)
+
+//             // If parent is missing, trashed, or user lost access, send to root
+//             if (!parentFolder || isParentEffectivelyTrashed || lostAccess) {
+//                 await uploadModel.updateOne(
+//                     { _id: id },
+//                     { $set: { isTrashed: false, trashedAt: null, parent: null } }
+//                 )
+//                 await notifySharedUsers(id, "item_restored", { itemId: id, parentId: null }, req.emitToUser)
+//                 return res.json({ success: true, restoredToRoot: true })
+//             }
+//         }
+
+//         await uploadModel.updateOne(
+//             { _id: id },
+//             { $set: { isTrashed: false, trashedAt: null } }
+//         )
+
+//         if (item.type === "folder" && item.sharedWith?.length > 0) {
+//             const fileIdsToRestore = item.sharedWith.flatMap(entry => entry.file_ids || []);
+
+//             if (fileIdsToRestore.length > 0) {
+//                 await uploadModel.updateMany(
+//                     { _id: { $in: fileIdsToRestore }, parent: null },
+//                     { $set: { parent: id } }
+//                 )
+//             }
+//         }
+
+//         await notifySharedUsers(id, "item_restored", { itemId: id, parentId: item.parent }, req.emitToUser)
+//         res.json({ success: true, restoredToRoot: false });
+
+//     } catch (error) {
+//         logger.error(error);
+//         res.status(500).json({ success: false, message: error.message });
+//     }
+// }
+
 export const restoreItem = async (req, res) => {
     try {
         const { id } = req.body;
@@ -493,51 +534,81 @@ export const restoreItem = async (req, res) => {
             return res.status(400).json({ success: false, message: "Item is not in trash" })
         }
 
+        // Collect all item IDs to clean up notifications (item + nested children if folder)
+        const itemIdsToClean = [item._id];
+
         // -------------------------------------------------------------
         //  --- here when we restore the folder so mark all nested child is trashed false
         // ---------------------------------------------------------------------
         if (item.type === "folder") {
             let currentLevelParentIds = [item._id];
             while (currentLevelParentIds.length > 0) {
-                // Find all nested items (files and folders) inside these parents that are currently in the trash
                 const nestedChildren = await uploadModel.find({
                     parent: { $in: currentLevelParentIds },
                     isTrashed: true
                 }).select("_id type").lean();
+
                 if (nestedChildren.length > 0) {
-                    // Extract just the IDs so we can update them in the database
                     const nestedChildIds = nestedChildren.map(child => child._id);
 
-                    // Free all these children from the trash!
+                    // Collect for notification cleanup
+                    itemIdsToClean.push(...nestedChildIds);
+
+                    // Restore all children
                     await uploadModel.updateMany(
                         { _id: { $in: nestedChildIds } },
                         { $set: { isTrashed: false, trashedAt: null } }
                     );
-                    // For the next loop iteration, we only want to dig deeper into the FOLDERS we just found
+
                     currentLevelParentIds = nestedChildren
                         .filter(child => child.type === "folder")
                         .map(folder => folder._id);
                 } else {
-                    // No more nested items found, stop the loop
                     currentLevelParentIds = [];
                 }
             }
         }
 
-        if (item.parent) {
-            // Find parent without restricting to owner so shared folders are found
-            const parentFolder = await uploadModel.findOne({ _id: item.parent })
+        // Helper: find notifications, emit removal to each recipient, then delete
+        const deleteAndEmitNotifications = async () => {
+            const notifsToDelete = await notificationModel.find({
+                type: { $in: ["file_deleted", "folder_deleted"] },
+                "metadata.itemId": { $in: itemIdsToClean }
+            }).lean();
 
-            // Check if the user still has permission to see and edit the destination folder
+            if (notifsToDelete.length === 0) return;
+
+            // Group notification IDs by recipient so we emit once per user
+            const recipientMap = new Map();
+            notifsToDelete.forEach(n => {
+                const rid = n.recipient.toString();
+                if (!recipientMap.has(rid)) recipientMap.set(rid, []);
+                recipientMap.get(rid).push(n._id);
+            });
+
+            await notificationModel.deleteMany({
+                _id: { $in: notifsToDelete.map(n => n._id) }
+            });
+
+            // Emit to each recipient so their UI removes the notifications instantly
+            recipientMap.forEach((notifIds, recipientId) => {
+                req.emitToUser(recipientId, "notifications_removed", { ids: notifIds });
+            });
+        };
+
+        if (item.parent) {
+            const parentFolder = await uploadModel.findOne({ _id: item.parent })
             const parentPermission = await getUserPermission(owner, item.parent)
             const lostAccess = !parentPermission || !["owner", "editor"].includes(parentPermission)
 
-            // If parent is missing, trashed, or user lost access, send to root
             if (!parentFolder || isParentEffectivelyTrashed || lostAccess) {
                 await uploadModel.updateOne(
                     { _id: id },
                     { $set: { isTrashed: false, trashedAt: null, parent: null } }
                 )
+
+                await deleteAndEmitNotifications();
+
                 await notifySharedUsers(id, "item_restored", { itemId: id, parentId: null }, req.emitToUser)
                 return res.json({ success: true, restoredToRoot: true })
             }
@@ -550,7 +621,6 @@ export const restoreItem = async (req, res) => {
 
         if (item.type === "folder" && item.sharedWith?.length > 0) {
             const fileIdsToRestore = item.sharedWith.flatMap(entry => entry.file_ids || []);
-
             if (fileIdsToRestore.length > 0) {
                 await uploadModel.updateMany(
                     { _id: { $in: fileIdsToRestore }, parent: null },
@@ -558,6 +628,8 @@ export const restoreItem = async (req, res) => {
                 )
             }
         }
+
+        await deleteAndEmitNotifications();
 
         await notifySharedUsers(id, "item_restored", { itemId: id, parentId: item.parent }, req.emitToUser)
         res.json({ success: true, restoredToRoot: false });
@@ -688,6 +760,122 @@ export const getTrashedItems = async (req, res) => {
 }
 
 //  here delete files and folder forever
+// export const deleteForver = async (req, res) => {
+//     try {
+//         let ids = req.body.ids || req.body.id;
+//         if (!Array.isArray(ids)) {
+//             ids = [ids];
+//         }
+//         const owner = req.user._id
+
+//         // Phase 1: Validation checks for all root items
+//         const itemsToProcess = [];
+//         for (const id of ids) {
+//             if (!id) continue;
+
+//             // permission check - only owner can delete forever
+//             const permission = await getUserPermission(owner, id);
+//             if (permission !== "owner") {
+//                 return res.status(403).json({ success: false, message: "Access denied" });
+//             }
+
+//             // find item
+//             const item = await uploadModel.findOne({ _id: id });
+//             if (!item) {
+//                 return res.status(404).json({ success: false, message: "Item not found" });
+//             }
+
+//             // check item is actually in trash (either directly or via a parent)
+//             let isItemTrashed = item.isTrashed;
+//             if (!isItemTrashed && item.parent) {
+//                 let curr = await uploadModel.findById(item.parent).select("isTrashed parent");
+//                 while (curr) {
+//                     if (curr.isTrashed) {
+//                         isItemTrashed = true;
+//                         break;
+//                     }
+//                     if (!curr.parent) break;
+//                     curr = await uploadModel.findById(curr.parent).select("isTrashed parent");
+//                 }
+//             }
+
+//             if (!isItemTrashed) {
+//                 return res.status(400).json({ success: false, message: "Item is not in trash" });
+//             }
+
+//             itemsToProcess.push(item);
+//         }
+
+//         // Phase 2: Collect all descendant documents for folder items
+//         const allMetadataIdsToDelete = [];
+//         const filesToUnlink = [];
+
+//         for (const item of itemsToProcess) {
+//             // socket notify before deleting
+//             await notifySharedUsers(item.parent || item._id, "item_deleted", { itemId: item._id, parentId: item.parent }, req.emitToUser);
+
+//             allMetadataIdsToDelete.push(item._id);
+
+//             if (item.type === "file") {
+//                 if (item.storagePath) {
+//                     filesToUnlink.push({ _id: item._id, storagePath: item.storagePath });
+//                 }
+//             } else {
+//                 // If it is a folder, use optimized level-by-level BFS to collect descendants
+//                 let parentIds = [item._id];
+//                 while (parentIds.length > 0) {
+//                     const children = await uploadModel.find({
+//                         parent: { $in: parentIds }
+//                     }).select("_id type storagePath").lean();
+
+//                     for (const child of children) {
+//                         allMetadataIdsToDelete.push(child._id);
+//                         if (child.type === "file" && child.storagePath) {
+//                             filesToUnlink.push({ _id: child._id, storagePath: child.storagePath });
+//                         }
+//                     }
+
+//                     parentIds = children
+//                         .filter(c => c.type === "folder")
+//                         .map(c => c._id);
+//                 }
+//             }
+//         }
+
+//         // Phase 3: Delete all MongoDB metadata records at once
+//         if (allMetadataIdsToDelete.length > 0) {
+//             await uploadModel.deleteMany({ _id: { $in: allMetadataIdsToDelete } });
+//         }
+
+//         // Phase 4: Respond to frontend immediately to clear spinner
+//         res.status(200).json({ success: true });
+
+//         // Phase 5: Asynchronously clean up files on disk in the background
+//         if (filesToUnlink.length > 0) {
+//             (async () => {
+//                 for (const file of filesToUnlink) {
+//                     try {
+//                         // Check if any remaining copy still references the storagePath in MongoDB
+//                         const count = await uploadModel.countDocuments({ storagePath: file.storagePath });
+//                         const absPath = getAbsolutePath(file.storagePath);
+//                         if (count === 0 && absPath && fs.existsSync(absPath)) {
+//                             await fs.promises.unlink(absPath);
+//                             console.log(`[BACKGROUND DELETE] Unlinked file: ${absPath}`);
+//                         }
+//                     } catch (err) {
+//                         logger.error(err);
+//                         console.error(`[BACKGROUND DELETE ERROR] Failed to delete file: ${file.storagePath}`, err.message);
+//                     }
+//                 }
+//             })();
+//         }
+
+//     } catch (error) {
+//         logger.error(error);
+//         res.status(500).json({ success: false, message: error.message });
+//     }
+// }
+
 export const deleteForver = async (req, res) => {
     try {
         let ids = req.body.ids || req.body.id;
@@ -701,19 +889,16 @@ export const deleteForver = async (req, res) => {
         for (const id of ids) {
             if (!id) continue;
 
-            // permission check - only owner can delete forever
             const permission = await getUserPermission(owner, id);
             if (permission !== "owner") {
                 return res.status(403).json({ success: false, message: "Access denied" });
             }
 
-            // find item
             const item = await uploadModel.findOne({ _id: id });
             if (!item) {
                 return res.status(404).json({ success: false, message: "Item not found" });
             }
 
-            // check item is actually in trash (either directly or via a parent)
             let isItemTrashed = item.isTrashed;
             if (!isItemTrashed && item.parent) {
                 let curr = await uploadModel.findById(item.parent).select("isTrashed parent");
@@ -739,7 +924,6 @@ export const deleteForver = async (req, res) => {
         const filesToUnlink = [];
 
         for (const item of itemsToProcess) {
-            // socket notify before deleting
             await notifySharedUsers(item.parent || item._id, "item_deleted", { itemId: item._id, parentId: item.parent }, req.emitToUser);
 
             allMetadataIdsToDelete.push(item._id);
@@ -749,7 +933,6 @@ export const deleteForver = async (req, res) => {
                     filesToUnlink.push({ _id: item._id, storagePath: item.storagePath });
                 }
             } else {
-                // If it is a folder, use optimized level-by-level BFS to collect descendants
                 let parentIds = [item._id];
                 while (parentIds.length > 0) {
                     const children = await uploadModel.find({
@@ -770,20 +953,43 @@ export const deleteForver = async (req, res) => {
             }
         }
 
-        // Phase 3: Delete all MongoDB metadata records at once
+        // Phase 3: Find & emit notification removals, then delete from DB
+        const notifsToDelete = await notificationModel.find({
+            type: { $in: ["file_deleted", "folder_deleted"] },
+            "metadata.itemId": { $in: allMetadataIdsToDelete }
+        }).lean();
+
+        if (notifsToDelete.length > 0) {
+            // Group by recipient so we emit once per user
+            const recipientMap = new Map();
+            notifsToDelete.forEach(n => {
+                const rid = n.recipient.toString();
+                if (!recipientMap.has(rid)) recipientMap.set(rid, []);
+                recipientMap.get(rid).push(n._id);
+            });
+
+            await notificationModel.deleteMany({
+                _id: { $in: notifsToDelete.map(n => n._id) }
+            });
+
+            recipientMap.forEach((notifIds, recipientId) => {
+                req.emitToUser(recipientId, "notifications_removed", { ids: notifIds });
+            });
+        }
+
+        // Phase 4: Delete all MongoDB metadata records at once
         if (allMetadataIdsToDelete.length > 0) {
             await uploadModel.deleteMany({ _id: { $in: allMetadataIdsToDelete } });
         }
 
-        // Phase 4: Respond to frontend immediately to clear spinner
+        // Phase 5: Respond to frontend immediately
         res.status(200).json({ success: true });
 
-        // Phase 5: Asynchronously clean up files on disk in the background
+        // Phase 6: Asynchronously clean up files on disk in the background
         if (filesToUnlink.length > 0) {
             (async () => {
                 for (const file of filesToUnlink) {
                     try {
-                        // Check if any remaining copy still references the storagePath in MongoDB
                         const count = await uploadModel.countDocuments({ storagePath: file.storagePath });
                         const absPath = getAbsolutePath(file.storagePath);
                         if (count === 0 && absPath && fs.existsSync(absPath)) {
