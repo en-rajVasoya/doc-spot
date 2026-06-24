@@ -1,5 +1,5 @@
 import { Modal, InputGroup, Form } from "react-bootstrap";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useFileExplorer } from "../../context/FileExplorerContext";
 import InteractiveIcon from "../layout/InteractiveIcon";
 import closeIcon from "@images/icon/close-icon.svg"
@@ -12,10 +12,30 @@ function RenameModal({ data, onClose }) {
 
     const [shake, setShake] = useState(false);
     const modalRef = useRef(null);
+    const inputRef = useRef(null);
 
     const [newName, setNewName] = useState(data?.name || "");
 
     const { renameItemApi } = useFileExplorer();
+
+    useEffect(() => {
+        if (inputRef.current) {
+            inputRef.current.focus();
+            const nameStr = data?.name || "";
+            const isFolder = data?.type === "folder";
+            
+            if (isFolder) {
+                inputRef.current.setSelectionRange(0, nameStr.length);
+            } else {
+                const lastDotIndex = nameStr.lastIndexOf(".");
+                if (lastDotIndex > 0) {
+                    inputRef.current.setSelectionRange(0, lastDotIndex);
+                } else {
+                    inputRef.current.setSelectionRange(0, nameStr.length);
+                }
+            }
+        }
+    }, [data]);
 
     const handleOutsideClick = (e) => {
         if (modalRef.current && !modalRef.current.contains(e.target)) {
@@ -56,6 +76,7 @@ function RenameModal({ data, onClose }) {
                     <Modal.Body>
                         <InputGroup className="mb-3">
                             <Form.Control
+                                ref={inputRef}
                                 type="text"
                                 placeholder="Folder name"
                                 className="custom-form-control h-38"

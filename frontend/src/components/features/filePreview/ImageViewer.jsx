@@ -319,12 +319,22 @@
 // }
 
 import { useEffect, useRef, useState } from "react";
-// import FeatherIcon from "feather-icons-react";
 import fileIcon from "@images/svgs/file.svg"
+import InteractiveIcon from "../../layout/InteractiveIcon";
+import plusIcon from "@images/icon/plus.svg";
+import nagativIcon from "@images/icon/negativ-icon.svg";
+import magnificationIcon from "@images/icon/magnification-icon.svg";
+import imgIcon from "@images/svgs/media/img-file.svg";
+import downloadIcon from "@images/icon/download.svg";
+import { useDownload } from "../../../context/DownloadContext.jsx";
+import magnificationIconNegative from "@images/icon/magnification-icon-negative.svg";
 
 const MAX_SIZE = 50 * 1024 * 1024; // 50 MB
 
+const clampScale = (n) => Math.min(Math.max(+n.toFixed(2), 0.05), 3);
+
 export default function ImageViewer({ file }) {
+    const { downloadFile } = useDownload();
     const BASE_URL = import.meta.env.VITE_API_URL;
     const src =
         file?.url ||
@@ -335,7 +345,7 @@ export default function ImageViewer({ file }) {
     const [drag, setDrag] = useState(false);
     const [loaded, setLoaded] = useState(false);
     const [ready, setReady] = useState(false);
-    const [err, setErr] = useState(false);
+    const [err, setErr] = useState(true);
     const [fitScale, setFitScale] = useState(1);
     const [tooBig, setTooBig] = useState(false);
 
@@ -344,8 +354,6 @@ export default function ImageViewer({ file }) {
     const imgRef = useRef(null);
 
     const PADDING = 50;
-
-    const clampScale = (n) => Math.min(Math.max(+n.toFixed(2), 0.05), 3);
 
     const calcFitScale = () => {
         const img = imgRef.current;
@@ -372,12 +380,13 @@ export default function ImageViewer({ file }) {
 
         if (!src) return;
 
-        if (file?.size && file.size > MAX_SIZE) {
+        const currentSize = file?.size || file?.fileSize;
+        if (currentSize && currentSize > MAX_SIZE) {
             setTooBig(true);
             return;
         }
 
-        if (!file?.size) {
+        if (!currentSize) {
             fetch(src, { method: "HEAD" })
                 .then(r => {
                     const size = Number(r.headers.get("content-length") || 0);
@@ -392,7 +401,7 @@ export default function ImageViewer({ file }) {
     // Wheel zoom
     useEffect(() => {
         const el = containerRef.current;
-        if (!el) return;
+        if (!el || !ready) return;
         const handleWheel = (e) => {
             e.preventDefault();
             const delta = e.deltaY < 0 ? 0.1 : -0.1;
@@ -401,7 +410,7 @@ export default function ImageViewer({ file }) {
                 if (next <= fitScale) {
                     setPos({ x: 0, y: 0 });
                 } else if (prev > fitScale) {
-                    const ratio = (next - fitScale) / (prev - fitScale);
+                    const ratio = next / prev;
                     setPos((p) => ({
                         x: p.x * ratio,
                         y: p.y * ratio
@@ -412,7 +421,7 @@ export default function ImageViewer({ file }) {
         };
         el.addEventListener("wheel", handleWheel, { passive: false });
         return () => el.removeEventListener("wheel", handleWheel);
-    }, [fitScale]);
+    }, [fitScale, ready]);
 
     // Recalculate fit on window resize
     useEffect(() => {
@@ -443,13 +452,26 @@ export default function ImageViewer({ file }) {
     };
 
     const reset = () => {
-        const isFitView = Math.abs(scale - fitScale) < 0.01;
-        if (isFitView) {
-            setScale(1);
-            setPos({ x: 0, y: 0 });
+        // If image is small (fitScale is 1), toggle between 1x and 3x
+        if (Math.abs(fitScale - 1) < 0.01) {
+            const isOriginal = Math.abs(scale - 1) < 0.01;
+            if (isOriginal) {
+                setScale(3);
+                setPos({ x: 0, y: 0 });
+            } else {
+                setScale(1);
+                setPos({ x: 0, y: 0 });
+            }
         } else {
-            setScale(fitScale);
-            setPos({ x: 0, y: 0 });
+            // Otherwise, toggle between fit-to-screen and 100% size
+            const isFitView = Math.abs(scale - fitScale) < 0.01;
+            if (isFitView) {
+                setScale(1);
+                setPos({ x: 0, y: 0 });
+            } else {
+                setScale(fitScale);
+                setPos({ x: 0, y: 0 });
+            }
         }
     };
 
@@ -459,7 +481,7 @@ export default function ImageViewer({ file }) {
             if (next <= fitScale) {
                 setPos({ x: 0, y: 0 });
             } else if (prev > fitScale) {
-                const ratio = (next - fitScale) / (prev - fitScale);
+                const ratio = next / prev;
                 setPos((p) => ({
                     x: p.x * ratio,
                     y: p.y * ratio
@@ -495,43 +517,41 @@ export default function ImageViewer({ file }) {
 
     const tf = `translate(${pos.x}px,${pos.y}px) scale(${scale})`;
 
-    const fileSizeMB = file?.size
-        ? (file.size / (1024 * 1024)).toFixed(1)
+    const currentSizeDisplay = file?.size || file?.fileSize || 0;
+    const fileSizeMB = currentSizeDisplay
+        ? (currentSizeDisplay / (1024 * 1024)).toFixed(1)
         : null;
 
-    const handleDownload = async () => {
-        try {
-            const BASE_URL = import.meta.env.VITE_API_URL;
-            const src = file?.url || (file?.storagePath ? `${BASE_URL}/files${file.storagePath}` : "");
-            if (!src) return;
-            const response = await fetch(src);
-            const blob = await response.blob();
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = file.name || "download";
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            window.URL.revokeObjectURL(url);
-        } catch (err) {
-            console.error("Download error:", err);
-        }
+    const handleDownload = () => {
+        downloadFile(file);
     };
 
-    // File too large
-    if (tooBig) return (
+    // File too large or error
+    if (tooBig || err) return (
         <div className="preview-toobig">
             <div className="txt-toobig-icon">
                 <img src={fileIcon} alt="" width={38} />
             </div>
-            <p className="preview-toobig-title m-0">File too large to preview</p>
-            <p className="mute-text">
-                {fileSizeMB ? `This file is ${fileSizeMB} MB. ` : ""}
-                Files larger than 50 MB cannot be previewed.
+            <p className="preview-toobig-title m-0">
+                {tooBig ? "File too large to preview" : "Preview unavailable"}
             </p>
-            <button className="btn-primary btn mt-2" onClick={handleDownload}>
-                {/* <FeatherIcon icon="download" size={16} className="me-2" /> */}
+            <p className="mute-text">
+                {tooBig ? (
+                    <>
+                        {fileSizeMB ? `This file is ${fileSizeMB} MB. ` : ""}
+                        Files larger than 50 MB cannot be previewed.
+                    </>
+                ) : (
+                    "We couldn't load a preview for this file. Please download it."
+                )}
+            </p>
+            <button className="preview-btn preview-btn-text" onClick={handleDownload}>
+                <InteractiveIcon
+                    defaultIcon={downloadIcon}
+                    width={20}
+                    height={20}
+                    alt=""
+                />
                 Download
             </button>
         </div>
@@ -550,19 +570,16 @@ export default function ImageViewer({ file }) {
                 overflow: "hidden",
             }}
         >
-            {/* Show loader until image is ready */}
+
             {!ready && !err && (
-                <div className='file-upload-loader-container'>
-                    <div className='file-upload-loader'></div>
+                <div className="loader-wrapper-box">
+                    <div className="cma-messages-are-loader-wrapper">
+                        <span className="loader"></span>
+                    </div>
                 </div>
             )}
 
-            {/* Error state */}
-            {err && (
-                <div className="preview-error">Failed to load image</div>
-            )}
 
-            {/* Hidden img for preloading — always in DOM to trigger onLoad */}
             <img
                 ref={imgRef}
                 src={src}
@@ -571,7 +588,7 @@ export default function ImageViewer({ file }) {
                 className="image-preview-img"
                 style={{
                     transform: tf,
-                    // Only apply transition AFTER ready — prevents flash on first paint
+
                     transition: (!ready || drag) ? "none" : "transform .18s cubic-bezier(.25,.46,.45,.94)",
                     opacity: ready ? 1 : 0,
                     maxWidth: "none",
@@ -596,7 +613,12 @@ export default function ImageViewer({ file }) {
                             cursor: scale <= 0.05 ? "not-allowed" : "pointer"
                         }}
                     >
-                        {/* <FeatherIcon icon="minus" size={20} /> */}
+                        <InteractiveIcon
+                            defaultIcon={nagativIcon}
+                            width={24}
+                            alt=""
+                            customStyle={{ cursor: scale <= 0.05 ? "not-allowed" : "pointer" }}
+                        />
                     </button>
                     <button
                         className="image-preview-btn"
@@ -607,15 +629,17 @@ export default function ImageViewer({ file }) {
                             cursor: scale >= 3 ? "not-allowed" : "pointer"
                         }}
                     >
-                        {/* <FeatherIcon icon="plus" size={20} /> */}
+                        <InteractiveIcon
+                            defaultIcon={plusIcon}
+                            width={24}
+                            alt=""
+                            customStyle={{ cursor: scale >= 5 ? "not-allowed" : "pointer" }}
+                        />
                     </button>
                 </div>
                 <div className="new-preview-zoom-controls-sub">
                     <button className="image-preview-btn" onClick={reset}>
-                        {/* <FeatherIcon
-                            icon={scale > fitScale ? "zoom-out" : "zoom-in"}
-                            size={20}
-                        /> */}
+                        <InteractiveIcon defaultIcon={scale > fitScale + 0.01 ? magnificationIconNegative : magnificationIcon} width={24} alt="" />
                     </button>
                 </div>
             </div>

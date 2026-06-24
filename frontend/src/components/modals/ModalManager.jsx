@@ -95,6 +95,8 @@ import AddUserAdminModal from './AddUserAdminModal';
 import CropImageModal from './CropImageModal';
 import EditAdminModal from './EditAdminModal';
 import ViewAdminModal from './ViewAdminModal';
+import AdminDeleteUser from "./AdminDeleteUser"
+import EditProfileModal from './EditProfileModal';
 
 const MODAL_COMPONENTS = {
     shareUser: ShareUserModal,
@@ -111,6 +113,8 @@ const MODAL_COMPONENTS = {
     cropImageModal: CropImageModal,
     editAdminModal: EditAdminModal,
     viewAdminModal: ViewAdminModal,
+    adminDeleteUser: AdminDeleteUser,
+    editProfileModal: EditProfileModal
 };
 
 function ModalManager({ modals, setModal }) {

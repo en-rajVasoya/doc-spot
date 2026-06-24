@@ -5,6 +5,8 @@ import { getAbsolutePath } from "#utils/pathHelper";
 import { logger } from "#utils/logger";
 
 import uploadModel from "#models/uploadModel";
+import SharedLink from "#models/sharedLinksModel";
+import { getUserPermission } from "#utils/userPermissionUtil";
 
 // search optimization function
 export const searchOptimize = (searchQuery) => {
@@ -90,4 +92,28 @@ export const deleteItemPermanently = async (item) => {
             }
         })()
     }
+}
+
+
+
+
+
+//  this is for downlaod controller when public link downloda happens so we can do download by verify the token here
+export const checkDownloadPermission = async (req, itemID) => {
+    // optionalAuth sets req.user as a string, authMiddleware sets it as an object
+    const userID = req.user?._id || req.user; 
+    
+    if (userID) {
+        const hasPerm = await getUserPermission(userID, itemID);
+        if (hasPerm) return true;
+    }
+
+    // check for public share token 
+    if(req.query.token){
+        const sharedLink = await SharedLink.findOne({ token: req.query.token })
+        if(sharedLink && !sharedLink.is_expired){
+            return true
+        }
+    }
+    return false
 }

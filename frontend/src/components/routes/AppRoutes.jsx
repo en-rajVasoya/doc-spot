@@ -109,6 +109,8 @@ import { AdminAuthProvider } from "../../context/AdminContext"
 import { getRoute } from "../../utils/getRoutes.js"
 import SharedPreview from "../pages/SharedPreview.jsx"
 import AdminDashboardPage from "../pages/AdminDashboardPage.jsx"
+import UpdateUserProfile from "../pages/UpdateUserProfile.jsx"
+import NotificationPage from "../pages/NotificationPage.jsx"
 
 function AppRoutes() {
   return (
@@ -122,6 +124,26 @@ function AppRoutes() {
 
       {/* now here protected routes */}
       <Route element={<ProtectedRoute />}>
+
+      {/*  update user profile code here */}
+      <Route path="/profile" element={
+          <FileExplorerProvider filter={getRoute.DASHBOARD}>
+            <UpdateUserProfile />
+          </FileExplorerProvider>
+        } />
+
+      <Route path="/notifications" element={
+          <FileExplorerProvider filter={getRoute.DASHBOARD}>
+            <NotificationPage />
+          </FileExplorerProvider>
+        } />
+
+      {/* My Docspot Dashboard */}
+        <Route path={getRoute.DASHBOARD} element={
+          <FileExplorerProvider filter={getRoute.DASHBOARD}>
+            <Dashboard />
+          </FileExplorerProvider>
+        } />
 
         {/* My Docspot Dashboard */}
         <Route path={getRoute.DASHBOARD} element={

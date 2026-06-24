@@ -8,11 +8,13 @@ import mongoose from "mongoose"
 
 // models
 import uploadModel from "#models/uploadModel"
+import SharedLink from "#models/sharedLinksModel"
 
 // helper
 import { logger } from "#utils/logger"
 import { getUserPermission } from "#utils/userPermissionUtil";
 import { getAbsolutePath } from "#utils/pathHelper";
+import { checkDownloadPermission } from "#utils/index"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -191,10 +193,10 @@ const startZipWorker = (zipId, zipPath, fileList, folderName) => {
 export const downloadFile = async (req, res) => {
     try {
         const { id } = req.params
-        const userID = req.user._id
 
-        // retrieve permission
-        const permission = await getUserPermission(userID, id);
+        //  here this is helper function it will take req adn find current user private link so find id
+        //  if this is public sharing so it will find the token from the query
+        const permission = await checkDownloadPermission(req, id);
 
         // check if no permission then return
         if (!permission) {
@@ -256,10 +258,10 @@ export const downloadFolder = async (req, res) => {
     try {
         const requestStartMs = nowMs()
         const { id } = req.params
-        const userID = req.user._id
 
-        // retrieve permission for user
-        const permission = await getUserPermission(userID, id)
+        //  here this is helper function it will take req adn find current user private link so find id
+        //  if this is public sharing so it will find the token from the query
+        const permission = await checkDownloadPermission(req, id);
 
         // check if no permission found then return error
         if (!permission) {
@@ -311,7 +313,6 @@ export const downloadMultiple = async (req, res) => {
     try {
         const requestStartMs = nowMs()
         const { ids } = req.body
-        const userID = req.user._id
 
         // convert ids into array here
         if (!ids || !Array.isArray(ids) || ids.length === 0) {
@@ -320,7 +321,9 @@ export const downloadMultiple = async (req, res) => {
 
         //  check permission here for safty not anyone can downloa dhere
         for (const id of ids) {
-            const permission = await getUserPermission(userID, id);
+            //  here this is helper function it will take req adn find current user private link so find id
+            //  if this is public sharing so it will find the token from the query
+            const permission = await checkDownloadPermission(req, id);
 
             if (!permission) {
                 return res.status(403).json({ success: false, message: "Access denied" })

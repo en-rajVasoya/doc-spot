@@ -8,6 +8,7 @@ import DragAndDrop from './components/features/DragAndDrop';
 import { SearchProvider } from './context/SearchContext';
 import { SocketProvider } from './context/SocketContext';
 import { useEffect } from 'react';
+import { BellNotificationProvider } from './context/BellNotificationContext';
 
 function App() {
 
@@ -27,7 +28,9 @@ useEffect(() => {
       <UploadProvider>
         <DownloadProvider>
           <SocketProvider>
-            <AppRoutes />
+            <BellNotificationProvider>
+              <AppRoutes />
+            </BellNotificationProvider>
           </SocketProvider>
         </DownloadProvider>
 

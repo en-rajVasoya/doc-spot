@@ -1,5 +1,5 @@
 import Modal from "react-bootstrap/Modal";
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo } from "react";
 import { Form } from "react-bootstrap";
 import InteractiveIcon from "../layout/InteractiveIcon";
 import Tooltip from "../layout/Tooltip";
@@ -12,6 +12,7 @@ import userIcon from "@images/icon/user.svg";
 import uploadeIcon from "@images/icon/uploade-icon.svg";
 import { useAdmin } from "../../context/AdminContext";
 import UserAvatar from "../layout/UserAvatar";
+import CustomScroll from "../layout/CustomScroll";
 
 
 function EditAdminModal({ onClose, setModal, data }) {
@@ -26,11 +27,23 @@ function EditAdminModal({ onClose, setModal, data }) {
     const [email, setEmail] = useState(data?.email || "");
     const [password, setPassword] = useState("••••••••");
     const [statusActive, setStatusActive] = useState(data?.is_active ?? true);
+    const [role, setRole] = useState(data?.role || "user");
     const [avatarUrl, setAvatarUrl] = useState(data?.thumbnail_profile_pic || data?.compressed_profile_pic || data?.profilePic || null);
 
     //  when modal first appear so password field is disabled here
     const [isPasswordLocked, setIsPasswordLocked] = useState(true);
     const [showPwd, setShowPwd] = useState(false);
+    const [pwdTouched, setPwdTouched] = useState(false);
+
+
+    // live password requirement checks - recalculates whenever `password` changes
+    const checks = useMemo(() => [
+        /[A-Z]/.test(password),           // checks[0] - uppercase
+        /[a-z]/.test(password),           // checks[1] - lowercase
+        /\d/.test(password),              // checks[2] - number
+        /[@$!%*?&]/.test(password),       // checks[3] - special char
+        password.length >= 8,             // checks[4] - min length
+    ], [password]);
 
     const fileInputRef = useRef(null);
 
@@ -84,10 +97,10 @@ function EditAdminModal({ onClose, setModal, data }) {
         if (!displayName.trim()) newErrors.displayName = "Display name is required.";
         if (!username.trim()) newErrors.username = "Username is required.";
 
-        if(!isPasswordLocked){
+        if (!isPasswordLocked) {
             //  is user not entered the password here
-            if(!password.trim()) newErrors.password = "Password is required"
-            
+            if (!password.trim()) newErrors.password = "Password is required"
+
             //  checking here the password regex 
             const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
             if (!passwordRegex.test(password)) {
@@ -98,7 +111,7 @@ function EditAdminModal({ onClose, setModal, data }) {
 
         //  email regex here
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if(!email.trim() || !emailRegex.test(email)) newErrors.email = "Valid email is required"
+        if (!email.trim() || !emailRegex.test(email)) newErrors.email = "Valid email is required"
 
         if (Object.keys(newErrors).length > 0) {
             setErrors(newErrors);
@@ -114,12 +127,16 @@ function EditAdminModal({ onClose, setModal, data }) {
             formData.append("is_active", statusActive)
 
             //  only send password here if they have unlock the password field from reset password
-            if(!isPasswordLocked){
+            if (!isPasswordLocked) {
                 formData.append("password", password)
             }
 
+            if (role !== data?.role) {
+                formData.append("role", role)
+            }
+
             // attach new profile pic if upladoed here
-            if(avatarFile){
+            if (avatarFile) {
                 formData.append("profilePic", avatarFile)
             }
 
@@ -142,7 +159,7 @@ function EditAdminModal({ onClose, setModal, data }) {
                 keyboard={false}
                 centered
                 dialogClassName={`modal-dialog-sm ${shake ? "shake" : ""}`}
-                className="add-user-admin-modal"
+                className="add-user-admin-modal edit-user-details-modal"
             >
                 <div ref={modalRef}>
                     <Modal.Header className="border-0">
@@ -154,167 +171,225 @@ function EditAdminModal({ onClose, setModal, data }) {
                         </Tooltip>
                     </Modal.Header>
 
-                    <Modal.Body>
-                        {/* Avatar row */}
-                        <div className="add-user-avatar-wrapper">
-                            <div className="profile-single-box">
-                                <UserAvatar user={data} src={avatarUrl} name={displayName} />
-                            </div>
+                    <Modal.Body className="p-0">
+                        <CustomScroll className="edit-user-details-custom-scroll-body" showBottomBlur={false} showTopBlur={false}>
+                            {/* Avatar row */}
+                            <div className="add-user-avatar-wrapper">
+                                <div className="profile-single-box">
+                                    <UserAvatar user={data} src={avatarUrl} name={displayName} />
+                                </div>
 
-                            <div className="d-flex gap-3">
-                                {/* Hidden file input to open the computer's file manager */}
-                                <input
-                                    type="file"
-                                    ref={fileInputRef}
-                                    style={{ display: "none" }}
-                                    accept="image/*"
-                                    onChange={handleImageUpload}
-                                />
-                                <button
-                                    className="btn-black btn-lg m-0"
-                                    onClick={() => fileInputRef.current?.click()}
-                                >
-                                    Upload Profile
-                                </button>
-                                {avatarUrl && (
-                                    <button className="btn-secondary btn-lg m-0" onClick={handleRemoveImage}>
-                                        Remove
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-
-                        {/* Username */}
-                        <Form.Group className="mb-3" controlId="addUserUsername">
-                            <Form.Label className="required-star">Username / ID</Form.Label>
-                            <div className={`form-control-single-icon${errors.username ? " has-error" : ""}`}>
-                                <InteractiveIcon
-                                    defaultIcon={userIcon}
-                                    alt=""
-                                    className="form-left-icon"
-                                    width={20}
-                                />
-                                <Form.Control
-                                    type="text"
-                                    autoComplete="new-password"
-                                    placeholder="Enter Username"
-                                    className={`custom-form-control h-34${errors.username ? " is-invalid" : ""}`}
-                                    value={username}
-                                    onChange={(e) => { setUsername(e.target.value); clearErr("username"); }}
-                                />
-                            </div>
-                            {errors.username && (
-                                <div className="invalid-feedback d-block">{errors.username}</div>
-                            )}
-                        </Form.Group>
-
-                        {/* Display Name */}
-                        <Form.Group className="mb-3" controlId="addUserDisplayName">
-                            <Form.Label className="required-star">Display Name</Form.Label>
-                            <div className={`form-control-single-icon${errors.displayName ? " has-error" : ""}`}>
-                                <InteractiveIcon
-                                    defaultIcon={userIcon}
-                                    alt=""
-                                    className="form-left-icon"
-                                    width={20}
-                                />
-                                <Form.Control
-                                    type="text"
-                                    placeholder="Enter Display Name"
-                                    className={`custom-form-control h-34${errors.displayName ? " is-invalid" : ""}`}
-                                    value={displayName}
-                                    onChange={(e) => { setDisplayName(e.target.value); clearErr("displayName"); }}
-                                />
-                            </div>
-                            {errors.displayName && (
-                                <div className="invalid-feedback d-block">{errors.displayName}</div>
-                            )}
-                        </Form.Group>
-
-                        {/* Email */}
-                        <Form.Group className="mb-3" controlId="addUserEmail">
-                            <Form.Label className="required-star">Email</Form.Label>
-                            <div className={`form-control-single-icon${errors.email ? " has-error" : ""}`}>
-                                <InteractiveIcon
-                                    defaultIcon={emailIcon}
-                                    alt=""
-                                    className="form-left-icon"
-                                    width={20}
-                                />
-                                <Form.Control
-                                    type="email"
-                                    autoComplete="new-password"
-                                    placeholder="Enter Email"
-                                    className={`custom-form-control h-34${errors.email ? " is-invalid" : ""}`}
-                                    value={email}
-                                    onChange={(e) => { setEmail(e.target.value); clearErr("email"); }}
-                                />
-                            </div>
-                            {errors.email && (
-                                <div className="invalid-feedback d-block">{errors.email}</div>
-                            )}
-                        </Form.Group>
-
-                        {/* Password */}
-                        <Form.Group className="mb-3" controlId="addUserPassword">
-                            <div className="d-flex align-items-center justify-content-between mb-2">
-                                <Form.Label className="required-star mb-0">Password</Form.Label>
-                                {isPasswordLocked && (
-                                    <span
-                                        className="reset-password-link"
-                                        onClick={() => { setIsPasswordLocked(false); setPassword(""); }}
-                                    >
-                                        Reset Password
-                                    </span>
-                                )}
-                            </div>
-
-                            {/* Dynamically adding the 'disabled' class here! */}
-                            <div className={`form-control-single-icon${errors.password ? " has-error" : ""}${isPasswordLocked ? " disabled" : ""}`}>
-                                <InteractiveIcon defaultIcon={passwordIcon} alt="" className="form-left-icon" width={20} />
-
-                                {!isPasswordLocked && (
-                                    <InteractiveIcon
-                                        defaultIcon={showPwd ? viewIcon : viewHideIcon}
-                                        alt=""
-                                        className="form-right-icon"
-                                        width={24}
-                                        onClick={() => setShowPwd((p) => !p)}
+                                <div className="d-flex gap-3">
+                                    {/* Hidden file input to open the computer's file manager */}
+                                    <input
+                                        type="file"
+                                        ref={fileInputRef}
+                                        style={{ display: "none" }}
+                                        accept="image/*"
+                                        onChange={handleImageUpload}
                                     />
+                                    <button
+                                        className="btn-black btn-lg m-0"
+                                        onClick={() => fileInputRef.current?.click()}
+                                    >
+                                        Upload Profile
+                                    </button>
+                                    {avatarUrl && (
+                                        <button className="btn-secondary btn-lg m-0" onClick={handleRemoveImage}>
+                                            Remove
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Username */}
+                            <Form.Group className="mb-3" controlId="addUserUsername">
+                                <Form.Label className="required-star">Username / ID</Form.Label>
+                                <div className={`form-control-single-icon${errors.username ? " has-error" : ""}`}>
+                                    <InteractiveIcon
+                                        defaultIcon={userIcon}
+                                        alt=""
+                                        className="form-left-icon"
+                                        width={20}
+                                    />
+                                    <Form.Control
+                                        type="text"
+                                        autoComplete="new-password"
+                                        placeholder="Enter Username"
+                                        className={`custom-form-control h-34${errors.username ? " is-invalid" : ""}`}
+                                        value={username}
+                                        onChange={(e) => { setUsername(e.target.value); clearErr("username"); }}
+                                    />
+                                </div>
+                                {errors.username && (
+                                    <div className="invalid-feedback d-block">{errors.username}</div>
                                 )}
+                            </Form.Group>
 
-                                <Form.Control
-                                    type={showPwd && !isPasswordLocked ? "text" : "password"}
-                                    autoComplete="new-password"
-                                    placeholder="Enter Password"
-                                    disabled={isPasswordLocked}
-                                    className={`custom-form-control h-34${errors.password ? " is-invalid" : ""}`}
-                                    value={password}
-                                    onChange={(e) => { setPassword(e.target.value); clearErr("password"); }}
-                                />
+                            {/* Display Name */}
+                            <Form.Group className="mb-3" controlId="addUserDisplayName">
+                                <Form.Label className="required-star">Display Name</Form.Label>
+                                <div className={`form-control-single-icon${errors.displayName ? " has-error" : ""}`}>
+                                    <InteractiveIcon
+                                        defaultIcon={userIcon}
+                                        alt=""
+                                        className="form-left-icon"
+                                        width={20}
+                                    />
+                                    <Form.Control
+                                        type="text"
+                                        placeholder="Enter Display Name"
+                                        className={`custom-form-control h-34${errors.displayName ? " is-invalid" : ""}`}
+                                        value={displayName}
+                                        onChange={(e) => { setDisplayName(e.target.value); clearErr("displayName"); }}
+                                    />
+                                </div>
+                                {errors.displayName && (
+                                    <div className="invalid-feedback d-block">{errors.displayName}</div>
+                                )}
+                            </Form.Group>
+
+                            {/* Email */}
+                            <Form.Group className="mb-3" controlId="addUserEmail">
+                                <Form.Label className="required-star">Email</Form.Label>
+                                <div className={`form-control-single-icon${errors.email ? " has-error" : ""}`}>
+                                    <InteractiveIcon
+                                        defaultIcon={emailIcon}
+                                        alt=""
+                                        className="form-left-icon"
+                                        width={20}
+                                    />
+                                    <Form.Control
+                                        type="email"
+                                        autoComplete="new-password"
+                                        placeholder="Enter Email"
+                                        className={`custom-form-control h-34${errors.email ? " is-invalid" : ""}`}
+                                        value={email}
+                                        onChange={(e) => { setEmail(e.target.value); clearErr("email"); }}
+                                    />
+                                </div>
+                                {errors.email && (
+                                    <div className="invalid-feedback d-block">{errors.email}</div>
+                                )}
+                            </Form.Group>
+
+                            {/* Password */}
+                            <Form.Group className="mb-3" controlId="addUserPassword">
+
+                                <Form.Label className=" form-label d-flex align-items-center justify-content-between">
+                                    <span className="required-star">Password</span>
+                                    {isPasswordLocked && (
+                                        <span
+                                            className="clear-btn"
+                                            onClick={() => { setIsPasswordLocked(false); setPassword(""); setPwdTouched(false); }}
+                                        >
+                                            Reset Password
+                                        </span>
+                                    )}
+                                </Form.Label>
+
+
+                                {/* Dynamically adding the 'disabled' class here! */}
+                                <div className={`form-control-single-icon${errors.password ? " has-error" : ""}${isPasswordLocked ? " disabled" : ""}`}>
+                                    <InteractiveIcon
+                                        defaultIcon={passwordIcon}
+                                        alt=""
+                                        className={`form-left-icon${isPasswordLocked ? " disabled-icon" : ""}`}
+                                        width={20}
+                                    />
+
+                                    {!isPasswordLocked && (
+                                        <InteractiveIcon
+                                            defaultIcon={showPwd ? viewIcon : viewHideIcon}
+                                            alt=""
+                                            className="form-right-icon"
+                                            width={24}
+                                            onClick={() => setShowPwd((p) => !p)}
+                                        />
+                                    )}
+
+                                    <Form.Control
+                                        type={showPwd && !isPasswordLocked ? "text" : "password"}
+                                        autoComplete="new-password"
+                                        placeholder="Enter Password"
+                                        disabled={isPasswordLocked}
+                                        className={`custom-form-control h-34${errors.password ? " is-invalid" : ""}`}
+                                        value={password}
+                                        onChange={(e) => {
+                                            setPassword(e.target.value);
+                                            clearErr("password");
+                                            if (!pwdTouched) setPwdTouched(true);
+                                        }}
+                                    />
+                                </div>
+                                {!isPasswordLocked && password.length > 0 && (
+                                    <div className="pwd-requirements-box">
+                                        <ul className="pwd-req-list">
+                                            <li className={`pwd-req-item ${checks[0] ? "pass" : "fail"}`}>
+                                                <span className="pwd-req-icon">{checks[0] ? "✓" : "✕"}</span>
+                                                Password must include at least one uppercase letter.
+                                            </li>
+                                            <li className={`pwd-req-item ${checks[1] ? "pass" : "fail"}`}>
+                                                <span className="pwd-req-icon">{checks[1] ? "✓" : "✕"}</span>
+                                                Password must include at least one lowercase letter.
+                                            </li>
+                                            <li className={`pwd-req-item ${checks[2] ? "pass" : "fail"}`}>
+                                                <span className="pwd-req-icon">{checks[2] ? "✓" : "✕"}</span>
+                                                Password must include at least one number.
+                                            </li>
+                                            <li className={`pwd-req-item ${checks[3] ? "pass" : "fail"}`}>
+                                                <span className="pwd-req-icon">{checks[3] ? "✓" : "✕"}</span>
+                                                Password must include at least one special character.
+                                            </li>
+                                            <li className={`pwd-req-item ${checks[4] ? "pass" : "fail"}`}>
+                                                <span className="pwd-req-icon">{checks[4] ? "✓" : "✕"}</span>
+                                                Password must be at least eight characters long.
+                                            </li>
+                                        </ul>
+                                    </div>
+                                )}
+                            </Form.Group>
+
+                            {/* User Status toggle */}
+                            <div className="mb-3">
+                                <Form.Label className="required-star d-block">User Status</Form.Label>
+                                <div className="user-status-box">
+                                    <button
+                                        role="switch"
+                                        aria-checked={statusActive}
+                                        aria-label="User status"
+                                        className={`add-user-status-toggle${statusActive ? " active" : ""}`}
+                                        onClick={() => setStatusActive((s) => !s)}
+                                    >
+                                        <span className="add-user-status-toggle-knob" />
+                                    </button>
+                                    <span className="add-user-status-label ">
+                                        {statusActive ? "Active" : "Inactive"}
+                                    </span>
+
+                                </div>
                             </div>
-                            {errors.password && <div className="invalid-feedback d-block">{errors.password}</div>}
-                        </Form.Group>
 
-                        {/* User Status toggle */}
-                        <div className="mb-3">
-                            <Form.Label className="required-star d-block">User Status</Form.Label>
-                            <div className="user-status-box">
-                                <button
-                                    role="switch"
-                                    aria-checked={statusActive}
-                                    aria-label="User status"
-                                    className={`add-user-status-toggle${statusActive ? " active" : ""}`}
-                                    onClick={() => setStatusActive((s) => !s)}
-                                >
-                                    <span className="add-user-status-toggle-knob" />
-                                </button>
-                                <span className="add-user-status-label ">
-                                    {statusActive ? "Active" : "Inactive"}
-                                </span>
-
+                            {/* user role */}
+                            <div className="mb-3">
+                                <Form.Label className="required-star d-block">User Role</Form.Label>
+                                <div className="user-status-box">
+                                    <button
+                                        type="button"
+                                        role="switch"
+                                        aria-checked={role === "admin"}
+                                        aria-label="User role"
+                                        className={`add-user-status-toggle${role === "admin" ? " active" : ""}`}
+                                        onClick={() => setRole((r) => r === "admin" ? "user" : "admin")}
+                                    >
+                                        <span className="add-user-status-toggle-knob" />
+                                    </button>
+                                    <span className="add-user-status-label ">
+                                        {role === "admin" ? "Admin" : "User"}
+                                    </span>
+                                </div>
                             </div>
-                        </div>
+                        </CustomScroll>
                     </Modal.Body>
 
                     <Modal.Footer className="d-flex align-items-center justify-content-between border-0">

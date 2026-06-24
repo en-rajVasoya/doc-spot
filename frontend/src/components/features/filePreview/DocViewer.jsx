@@ -4,7 +4,10 @@ import InteractiveIcon from "../../layout/InteractiveIcon";
 import plusIcon from "@images/icon/plus.svg";
 import nagativIcon from "@images/icon/negativ-icon.svg";
 import magnificationIcon from "@images/icon/magnification-icon.svg";
-import fileIcon from "@images/svgs/file.svg"
+import magnificationIconNegative from "@images/icon/magnification-icon-negative.svg";
+import fileIcon from "@images/svgs/file.svg";
+import downloadIcon from "@images/icon/download.svg";
+import { useDownload } from "../../../context/DownloadContext.jsx";
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024
 const LoadingScreen = () => (
@@ -340,24 +343,13 @@ async function injectCharts(containerEl, blob) {
     }
 }
 function DocViewer({ file: fileData }) {
+    const { downloadFile } = useDownload();
     const containerRef = useRef(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
     const [isLegacyDoc, setIsLegacyDoc] = useState(false)
     const [scale, setScale] = useState(1)
     const blobRef = useRef(null)
-    const handleDownload = useCallback(() => {
-        if (!fileData) return
-        const url = fileData instanceof File || fileData instanceof Blob
-            ? URL.createObjectURL(fileData)
-            : fileData?.storagePath ? fileData.storagePath : fileData
-        if (!url) return
-        const a = document.createElement("a")
-        a.href = url
-        a.download = fileData?.name || "document"
-        a.click()
-        if (fileData instanceof File || fileData instanceof Blob) URL.revokeObjectURL(url)
-    }, [fileData])
     useEffect(() => {
         if (!fileData) return
         setLoading(true)
@@ -372,8 +364,9 @@ function DocViewer({ file: fileData }) {
                     setLoading(false)
                     return
                 }
-                if (fileData?.fileSize > MAX_FILE_SIZE) {
-                    setError("File is too large to preview. Maximum size is 55MB.")
+                const currentSize = fileData?.size || fileData?.fileSize;
+                if (currentSize && currentSize > MAX_FILE_SIZE) {
+                    setError("File is too large to preview. Maximum size is 50MB.")
                     setLoading(false)
                     return
                 }
@@ -431,14 +424,20 @@ function DocViewer({ file: fileData }) {
     const clampScale = (v) => Math.min(Math.max(v, 0.5), 3)
     const zoomIn = () => setScale(prev => clampScale(Math.round((prev + 0.2) * 10) / 10))
     const zoomOut = () => setScale(prev => clampScale(Math.round((prev - 0.2) * 10) / 10))
-    const resetZoom = () => setScale(1)
+    const resetZoom = () => {
+        if (scale !== 1) {
+            setScale(1)
+        } else {
+            setScale(1.5)
+        }
+    }
     if (isLegacyDoc) {
         return (
             <div className="preview-toobig">
                 <div className="txt-toobig-icon"><img src={fileIcon} alt="" width={38} /></div>
                 <p className="preview-toobig-title m-0">{fileData?.name || "Document"}</p>
                 <p className="mute-text">Legacy .doc files cannot be previewed. Download the file to open it in MS Word or LibreOffice.</p>
-                <button className="btn-primary btn mt-2" onClick={handleDownload}>
+                <button className="btn-primary btn mt-2" onClick={() => downloadFile(fileData)}>
                     <InteractiveIcon
                         defaultIcon={downloadIcon}
                         width={24}
@@ -454,7 +453,7 @@ function DocViewer({ file: fileData }) {
                 <div className="txt-toobig-icon"><img src={fileIcon} alt="" width={38} /></div>
                 <p className="preview-toobig-title m-0">Preview not available</p>
                 <p className="mute-text">{error}</p>
-                <button className="btn-primary btn mt-2" onClick={handleDownload}>
+                <button className="btn-primary btn mt-2" onClick={() => downloadFile(fileData)}>
                     <InteractiveIcon
                         defaultIcon={downloadIcon}
                         width={24}
@@ -512,7 +511,7 @@ function DocViewer({ file: fileData }) {
                     <div className="new-preview-zoom-controls-sub">
                         <button className="image-preview-btn" onClick={resetZoom} title="Reset Zoom">
                             <InteractiveIcon
-                                defaultIcon={magnificationIcon}
+                                defaultIcon={scale > 1 ? magnificationIconNegative : magnificationIcon}
                                 width={24}
                             />
                         </button>

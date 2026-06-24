@@ -300,7 +300,7 @@ import getFileIcon from "../../../utils/getFileIcon";
 import getFolderIcon from "../../../utils/getFolderIconColor";
 import noFilesFound from "@images/icon/no-files-found.svg";
 import downloadIcon from "@images/icon/download.svg";
-import excelFileIcon from "@images/svgs/media/zip-file.svg";
+import zipFileIcon from "@images/svgs/media/zip-file.svg";
 import { useDownload } from "../../../context/DownloadContext";
 
 
@@ -355,20 +355,41 @@ const loadZip = async (zipBlob, pathPrefix = "", mapRef = { "": [] }) => {
 }
 function ZipViewer({ file }) {
     const { downloadFile } = useDownload()
-    const zipUrl = `${file.storagePath}`
+    const zipUrl = file?.url || file?.storagePath || "";
     const [fsMap, setFsMap] = useState({})
     const [currentPath, setCurrentPath] = useState("")
     const [trail, setTrail] = useState([])
-    const [loading, setLoading] = useState(true)
+
+    const [checkingSize, setCheckingSize] = useState(!(file?.size || file?.fileSize))
+    const [tooBig, setTooBig] = useState(() => {
+        const size = file?.size || file?.fileSize || 0
+        return size ? size > ZIP_PREVIEW_LIMIT : false
+    })
+    const [loading, setLoading] = useState(false)
     const [error, setError] = useState(null)
+
     useEffect(() => {
         const init = async () => {
             try {
-                if (file.fileSize > ZIP_PREVIEW_LIMIT) {
-                    setError("File is too large to preview.")
-                    setLoading(false)
-                    return
+                let currentSize = file?.size || file?.fileSize;
+
+                // 1. Check size if missing
+                if (!currentSize) {
+                    try {
+                        const r = await fetch(zipUrl, { method: "HEAD" });
+                        currentSize = Number(r.headers.get("content-length") || 0);
+                    } catch (e) { }
                 }
+
+                setCheckingSize(false);
+
+                if (currentSize > ZIP_PREVIEW_LIMIT) {
+                    setTooBig(true);
+                    return;
+                }
+
+                setLoading(true);
+
                 const res = await fetch(zipUrl)
                 const blob = await res.blob()
                 // zip bomb check
@@ -378,7 +399,7 @@ function ZipViewer({ file }) {
                     totalUncompressed += zipEntry._data?.uncompressedSize || 0
                 })
                 if (totalUncompressed > 200 * 1024 * 1024) {
-                    setError("ZIP contents are too large to preview.")
+                    setTooBig(true);
                     setLoading(false)
                     return
                 }
@@ -398,8 +419,12 @@ function ZipViewer({ file }) {
                 setLoading(false)
             }
         }
+
+        setError(null);
+        setTooBig(false);
+        setCheckingSize(!(file?.size || file?.fileSize));
         init()
-    }, [file])
+    }, [file, zipUrl])
     const formatSize = (bytes) => {
         if (!bytes) return ""
         if (bytes < 1024) return bytes + " B"
@@ -422,40 +447,57 @@ function ZipViewer({ file }) {
         setTrail([])
         setCurrentPath("")
     }
-    if (loading) {
-        return (
-            <div className="excel-loader">
-                <div className="cma-messages-are-loader-wrapper">
-                    <span className="loader"></span>
-                </div>
-            </div>
-        )
-    }
-    if (error) {
+    if (tooBig || error) {
+        const sizeToDisplay = file?.size || file?.fileSize;
+        const fileSizeMB = sizeToDisplay ? (sizeToDisplay / (1024 * 1024)).toFixed(1) : null;
+
         return (
             <div className="preview-toobig">
                 <div className="txt-toobig-icon">
                     <InteractiveIcon
-                        defaultIcon={excelFileIcon}
+                        defaultIcon={zipFileIcon}
                         width={36}
                         height={42}
                         alt=""
                     />
                 </div>
-                <p className="preview-toobig-title m-0">File too large to preview</p>
-                <p className="mute-text">{error}</p>
+                <p className="preview-toobig-title m-0">
+                    {tooBig ? "File too large to preview" : "Could not load ZIP"}
+                </p>
+                <p className="mute-text">
+                    {tooBig ? (
+                        <>
+                            {fileSizeMB ? `This file is ${fileSizeMB} MB. ` : ""}
+                            Files larger than 50 MB cannot be previewed.
+                        </>
+                    ) : (
+                        error || "This file could not be parsed. Download it to view on your device."
+                    )}
+                </p>
                 <button
                     className="preview-btn preview-btn-text"
                     onClick={() => downloadFile(file)}
                 >
                     <InteractiveIcon
                         defaultIcon={downloadIcon}
-                        width={24}
-                        height={24}
+                        width={22}
+                        height={22}
                         alt=""
                     />
                     Download
                 </button>
+            </div>
+        )
+    }
+
+    if (checkingSize || loading) {
+        return (
+            <div className="excel-loader">
+                <div className="loader-wrapper-box">
+                    <div className="cma-messages-are-loader-wrapper">
+                        <span className="loader"></span>
+                    </div>
+                </div>
             </div>
         )
     }
@@ -495,7 +537,7 @@ function ZipViewer({ file }) {
                                         entry.isDir
                                             ? getFolderIcon("red", "list", false)
                                             : entry.isNestedZip
-                                                ? excelFileIcon
+                                                ? zipFileIcon
                                                 : getFileIcon(entry.name)
                                     }
                                     width={32}

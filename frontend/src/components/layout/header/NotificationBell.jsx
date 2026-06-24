@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { useSocket } from "../../../context/SocketContext"; // adjust path
 import bellIcon from "@images/icon/bell.svg"; // add a bell icon
 
+import UserAvatar from "../UserAvatar";
+
 function NotificationBell() {
     const [notifications, setNotifications] = useState([]);
     const [unreadCount, setUnreadCount] = useState(0);
@@ -163,7 +165,7 @@ function NotificationBell() {
 
                                     {/* Actor avatar */}
                                     <div className="notif-avatar">
-                                        {notif.actor?.profilePic ? (
+                                        {/* {notif.actor?.profilePic ? (
                                             <img
                                                 src={notif.actor.profilePic}
                                                 alt={notif.actor.name}
@@ -172,7 +174,8 @@ function NotificationBell() {
                                             <span className="notif-avatar-initials">
                                                 {notif.actor?.name?.[0]?.toUpperCase() || "?"}
                                             </span>
-                                        )}
+                                        )} */}
+                                         <UserAvatar user={notif.actor} />
                                     </div>
 
                                     {/* Message + time */}

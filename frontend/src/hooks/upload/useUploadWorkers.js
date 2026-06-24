@@ -1,6 +1,6 @@
 //  here this file start uplaodihn all files and folder here 
 import axiosApi from "../../utils/api";
-import { isBlockedFile } from "../../utils/blockFileTypes.js";
+import { isBlockedFile, checkZipContainsBlocked } from "../../utils/blockFileTypes.js";
 
 
 const CHUNK_SIZE = 4 * 1024 * 1024
@@ -62,6 +62,16 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
                     message: "File type not allowed"
                 }, f.status)
                 continue
+            }
+            if (f.file.name.endsWith(".zip") || f.file.type === "application/zip") {
+                const hasBlocked = await checkZipContainsBlocked(f.file);
+                if (hasBlocked) {
+                    updateFile(sessionId, f.filekey, {
+                        status: "blocked",
+                        message: "Zip contains blocked files"
+                    }, f.status)
+                    continue
+                }
             }
             safeBatch.push(f)
         }
@@ -222,6 +232,13 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
             if (isBlockedFile(file.name)) {
                 updateFile(sessionId, filekey, { status: "blocked", message: "File type is not allowed" })
                 return
+            }
+            if (file.name.endsWith(".zip") || file.type === "application/zip") {
+                const hasBlocked = await checkZipContainsBlocked(file);
+                if (hasBlocked) {
+                    updateFile(sessionId, filekey, { status: "blocked", message: "Zip contains blocked files" })
+                    return
+                }
             }
             const fileHeader = await getFileHeader(file)
 

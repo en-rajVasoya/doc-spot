@@ -80,7 +80,7 @@ function ViewAdminModal({ onClose, setModal, data }) {
                                 <InteractiveIcon
                                     defaultIcon={userIcon}
                                     alt=""
-                                    className="form-left-icon"
+                                    className="form-left-icon disabled-icon"
                                     width={20}
                                 />
                                 <Form.Control
@@ -90,6 +90,7 @@ function ViewAdminModal({ onClose, setModal, data }) {
                                     className={`custom-form-control h-34${errors.username ? " is-invalid" : ""}`}
                                     value={username}
                                     onChange={(e) => { setUsername(e.target.value); clearErr("username"); }}
+                                    disabled
                                 />
                             </div>
                             {errors.username && (
@@ -104,7 +105,7 @@ function ViewAdminModal({ onClose, setModal, data }) {
                                 <InteractiveIcon
                                     defaultIcon={userIcon}
                                     alt=""
-                                    className="form-left-icon"
+                                    className="form-left-icon disabled-icon"
                                     width={20}
                                 />
                                 <Form.Control
@@ -113,6 +114,7 @@ function ViewAdminModal({ onClose, setModal, data }) {
                                     className={`custom-form-control h-34${errors.displayName ? " is-invalid" : ""}`}
                                     value={displayName}
                                     onChange={(e) => { setDisplayName(e.target.value); clearErr("displayName"); }}
+                                    disabled
                                 />
                             </div>
                             {errors.displayName && (
@@ -127,7 +129,7 @@ function ViewAdminModal({ onClose, setModal, data }) {
                                 <InteractiveIcon
                                     defaultIcon={emailIcon}
                                     alt=""
-                                    className="form-left-icon"
+                                    className="form-left-icon disabled-icon"
                                     width={20}
                                 />
                                 <Form.Control
@@ -137,6 +139,7 @@ function ViewAdminModal({ onClose, setModal, data }) {
                                     className={`custom-form-control h-34${errors.email ? " is-invalid" : ""}`}
                                     value={email}
                                     onChange={(e) => { setEmail(e.target.value); clearErr("email"); }}
+                                    disabled
                                 />
                             </div>
                             {errors.email && (
@@ -151,14 +154,6 @@ function ViewAdminModal({ onClose, setModal, data }) {
                         <div className="mb-3">
                             <Form.Label className="required-star d-block">User Status</Form.Label>
                             <div className="user-status-box">
-                                <button
-                                    role="switch"
-                                    aria-checked={statusActive}
-                                    aria-label="User status"
-                                    className={`add-user-status-toggle${statusActive ? " active" : ""}`}
-                                >
-                                    <span className="add-user-status-toggle-knob" />
-                                </button>
                                 <span className="add-user-status-label ">
                                     {statusActive ? "Active" : "Inactive"}
                                 </span>                                
@@ -167,8 +162,8 @@ function ViewAdminModal({ onClose, setModal, data }) {
                     </Modal.Body>
 
                     <Modal.Footer className="d-flex align-items-center justify-content-between border-0">
-                        <button className="btn-secondary btn-lg m-0" onClick={onClose}>Cancel</button>
-                        <button className="btn-black btn-lg m-0" >Save</button>
+                        {/* <button className="btn-secondary btn-lg m-0" onClick={onClose}>Cancel</button>
+                        <button className="btn-black btn-lg m-0" >Save</button> */}
                     </Modal.Footer>
                 </div>
             </Modal>

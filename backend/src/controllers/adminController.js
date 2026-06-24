@@ -260,7 +260,7 @@ export const getUsers = async (req, res) => {
 // ----------------------------- UPDATE USER ----------------------------------
 export const updateUser = async (req, res) => {
     try {
-        const { name, email, user_id, password, is_active } = req.body;
+        const { name, email, user_id, password, is_active, role  } = req.body;
         const { update_user_id } = req.params;
         const userData = await userModel.findById(update_user_id);
 
@@ -304,6 +304,15 @@ export const updateUser = async (req, res) => {
 
         if (is_active) {
             userData.is_active = is_active;
+        }
+
+        if(role){
+            // validate the role
+            if(role === "admin" || role === "user"){
+                userData.role = role
+            } else {
+                return res.status(400).json({ message: "Invalid role" });
+            }
         }
 
         if (password) {
@@ -539,5 +548,29 @@ export const importUsers = async (req, res) => {
         }
 
         return res.status(500).json({ message: "Import failed" });
+    }
+};
+
+// ----------------------------- CHECK AVAILABILITY ---------------------------
+//  when admin create new user and input box of user id and email show this message 
+export const checkAvailability = async (req, res) => {
+    try {
+        const { user_id, email } = req.query;
+        let exists = false;
+
+        if (user_id) {
+            const normalizedUserId = user_id.trim();
+            const user = await userModel.findOne({ user_id: normalizedUserId });
+            if (user) exists = true;
+        } else if (email) {
+            const normalizedEmail = email.trim().toLowerCase();
+            const user = await userModel.findOne({ email: normalizedEmail });
+            if (user) exists = true;
+        }
+
+        return res.status(200).json({ success: true, exists });
+    } catch (error) {
+        logger.error("Check availability error: ", error);
+        return res.status(500).json({ success: false, message: error.message });
     }
 };

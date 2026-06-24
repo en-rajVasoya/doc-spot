@@ -79,35 +79,34 @@ export const accessLink = async (req, res) => {
 
         const sharedLink = await SharedLink.findOne({ token });
         if (!sharedLink) {
-            return res.status(404).json({ success: false, message: "Link not found" });
+            return res.status(404).json({ success: false, is_not_found: true, message: "Link not found" });
         }
 
         if (sharedLink.is_expired) {
-            return res.status(410).json({ success: false, message: "Link has expired" });
+            return res.status(410).json({ success: false, is_expired: true, message: "Link has expired" });
         }
 
         if (sharedLink.expire_date && new Date() > new Date(sharedLink.expire_date)) {
             await SharedLink.findByIdAndUpdate(sharedLink._id, { is_expired: true });
-            return res.status(410).json({ success: false, message: "Link has expired" });
+            return res.status(410).json({ success: false, is_expired: true,  message: "Link has expired" });
         }
 
         if (!sharedLink.is_public) {
 
             if (!req.user) {
-                return res.status(401).json({ success: false, message: "Login required to access this link" });
+                return res.status(401).json({ success: false, is_login_required: true, message: "Login required to access this link" });
             }
 
             const hasAccess = sharedLink.permissions_users.some(
                 (id) => id.toString() === req.user.toString()
             );
             if (!hasAccess) {
-                return res.status(403).json({ success: false, message: "You don't have access to this link" });
+                return res.status(403).json({ success: false, is_access_denied: true, message: "You don't have access to this link" });
             }
         }
 
         // Password protected — tell frontend to show password prompt
         if (sharedLink.password) {
-            7
             return res.status(200).json({
                 success: true,
                 password_required: true,        //frontend checks this
@@ -143,6 +142,7 @@ export const accessLink = async (req, res) => {
                 type: "folder",
                 data: folderData,
                 folder_data: folderContents,
+                is_public: sharedLink.is_public
             });
         }
 
@@ -209,6 +209,7 @@ export const verifyLinkPassword = async (req, res) => {
                 type: "folder",
                 data: folderData,
                 folder_data: folderContents,
+                is_public: sharedLink.is_public
             });
         }
 

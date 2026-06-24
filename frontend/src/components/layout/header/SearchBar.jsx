@@ -63,7 +63,9 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
                     value: u._id,
                     label: u.name,
                     email: u.email,
-                    profilePic: u.profilePic
+                    profilePic: u.profilePic,
+                    thumbnail_profile_pic: u.thumbnail_profile_pic,
+                    compressed_profile_pic: u.compressed_profile_pic
                 }));
                 setUserOptions(options);
             });
@@ -235,7 +237,7 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
             });
             return;
         }
-        
+
         if (inputValue.trim().length < 2) return;
 
         searchUsersApi(inputValue).then((users) => {

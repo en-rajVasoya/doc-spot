@@ -1,8 +1,5 @@
-
-
-
-
 import InteractiveIcon from "../InteractiveIcon";
+import UserAvatar from "../../layout/UserAvatar.jsx";
 import checkboxIcon from "@images/icon/checkbox-check.svg";
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useFileExplorer } from "../../../context/FileExplorerContext";
@@ -26,6 +23,8 @@ import searchIcon from "@images/icon/search.svg";
 import closeIcon from "@images/icon/close-icon.svg";
 import fileInfoIcon from "@images/icon/file-info.svg";
 import trashEmptyIcon from "@images/icon/trash-icon.svg";
+import noFilesFound from "@images/icon/no-files-found.svg";
+
 
 
 
@@ -97,6 +96,7 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
     // ---- STEP 5: Scroll reference --------------------
     // ##################################################
     const scrollRef = useRef(null)
+    const autoScrollRef = useRef(null);
 
 
     //  sorting in list view
@@ -115,64 +115,92 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
     const isDragSelectingRef = useRef(false)
     const gridContainerRef = useRef(null)
 
+    const lastMousePos = useRef({ clientX: 0, clientY: 0 })
+
     const handleMouseDown = (e) => {
-        // do not start marquee from MainHeader area
         if (e.target.closest(".master-header")) return
         if (e.target.closest(".file-preview-modal")) return;
-
-        // only start drag on empty background not on any item
         if (e.target.closest(".table-row")) return
         if (e.target.closest(".table-header")) return
         if (e.target.closest("button, input, textarea, select, a, .custom-context-menu, .search-suggestion-chip")) return
         if (e.button !== 0) return
-
-        // Mark the drag selection process as currently active
         isDragSelectingRef.current = true
-        // Record the exact starting X and Y coordinates of the mouse click
-        setDragStart({ x: e.clientX, y: e.clientY })
-        // Reset any previous drag rectangle shape
+
+        // 1. Save the exact physical mouse position
+        lastMousePos.current = { clientX: e.clientX, clientY: e.clientY }
+        // 2. Calculate drag start relative to the scroll container's content
+        const containerRect = gridContainerRef.current.getBoundingClientRect()
+        const relativeX = e.clientX - containerRect.left + gridContainerRef.current.scrollLeft
+        const relativeY = e.clientY - containerRect.top + gridContainerRef.current.scrollTop
+        setDragStart({ x: relativeX, y: relativeY })
         setDragRect(null)
-        // Clear any previously selected items before starting a new drag selection
         setSelectedIds(new Set())
     }
 
-    const handleMouseMove = useCallback((e) => {
-        if (!isDragSelectingRef.current || !dragStart) return
+    const updateSelection = useCallback(() => {
+        if (!isDragSelectingRef.current || !dragStart || !gridContainerRef.current) return;
 
-        // Calculate the dynamic rectangle shape based on mouse movement
-        // Using Math.min and Math.abs allows dragging in any direction (up/down/left/right)
-        const rect = {
-            x: Math.min(e.clientX, dragStart.x),
-            y: Math.min(e.clientY, dragStart.y),
-            width: Math.abs(e.clientX - dragStart.x),
-            height: Math.abs(e.clientY - dragStart.y),
-        }
+        const { clientX, clientY } = lastMousePos.current;
+        const container = gridContainerRef.current;
+        const containerRect = container.getBoundingClientRect();
 
-        // Update the visual rectangle box on the screen
-        setDragRect(rect)
+        // 1. Calculate current mouse position relative to the container
+        // Constrain the mouse Y position so it cannot go above the container (into the headers)
+        const boundedClientY = Math.max(clientY, containerRect.top);
 
-        // check which items overlap with drag rectangle
-        const newSelected = new Set()
+        const currentX = clientX - containerRect.left + container.scrollLeft;
+        const currentY = boundedClientY - containerRect.top + container.scrollTop;
+
+        // 2. Calculate the abstract rectangle in container coordinates
+        const containerBox = {
+            x: Math.min(currentX, dragStart.x),
+            y: Math.min(currentY, dragStart.y),
+            width: Math.abs(currentX - dragStart.x),
+            height: Math.abs(currentY - dragStart.y),
+        };
+
+        // 3. Convert the rectangle BACK to viewport coordinates for collision checking
+        const viewportBox = {
+            x: containerBox.x + containerRect.left - container.scrollLeft,
+            y: containerBox.y + containerRect.top - container.scrollTop,
+            width: containerBox.width,
+            height: containerBox.height,
+            left: containerBox.x + containerRect.left - container.scrollLeft,
+            top: containerBox.y + containerRect.top - container.scrollTop,
+            right: containerBox.x + containerBox.width + containerRect.left - container.scrollLeft,
+            bottom: containerBox.y + containerBox.height + containerRect.top - container.scrollTop,
+            containerTop: containerRect.top,
+        };
+
+        // Render using fixed viewport coordinates so it doesn't get cropped by the container!
+        setDragRect(viewportBox);
+
+        const newSelected = new Set();
         Object.entries(itemRefs.current).forEach(([id, el]) => {
-            if (!el) return
+            if (!el) return;
+            const itemRect = el.getBoundingClientRect();
 
-            // Get the bounding box of each individual file/folder item
-            const itemRect = el.getBoundingClientRect()
-
-            // Calculate if the item's box intersects with our drag rectangle
             const overlaps =
-                itemRect.left < rect.x + rect.width &&
-                itemRect.right > rect.x &&
-                itemRect.top < rect.y + rect.height &&
-                itemRect.bottom > rect.y
+                itemRect.left < viewportBox.right &&
+                itemRect.right > viewportBox.left &&
+                itemRect.top < viewportBox.bottom &&
+                itemRect.bottom > viewportBox.top;
 
-            // If it overlaps, add this item's ID to our new selection set
-            if (overlaps) newSelected.add(id)
-        })
+            if (overlaps) newSelected.add(id);
+        });
 
-        // Update the global state with all currently overlapping items
-        setSelectedIds(newSelected)
-    }, [dragStart])
+        setSelectedIds(newSelected);
+    }, [dragStart, setSelectedIds]);
+
+    const scrollFrameRef = useRef(null);
+
+    const handleMouseMove = useCallback((e) => {
+        lastMousePos.current = {
+            clientX: e.clientX,
+            clientY: e.clientY
+        };
+        updateSelection();
+    }, [updateSelection]);
 
     const handleMouseUp = useCallback(() => {
         // Stop the drag selection process
@@ -186,22 +214,46 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
         onItemRefsReady?.(itemRefs.current)
     })
 
-
     useEffect(() => {
-        // If dragging hasn't started, don't bind any window events
         if (!dragStart) return
+        const container = gridContainerRef.current;
+        if (!container) return;
 
-        // Listen for the mouse moving anywhere on the screen to draw the drag rectangle
+        const autoScroll = () => {
+            if (!isDragSelectingRef.current) return;
+
+            const { clientY } = lastMousePos.current;
+            const rect = container.getBoundingClientRect();
+            const edge = 60;
+            const speed = 15;
+
+            if (clientY > rect.bottom - edge) {
+                container.scrollTop += speed;
+            } else if (clientY < rect.top + edge) {
+                container.scrollTop -= speed;
+            }
+
+            scrollFrameRef.current = requestAnimationFrame(autoScroll);
+        };
+
+        scrollFrameRef.current = requestAnimationFrame(autoScroll);
+
+        // When the container scrolls, update the selection using the last known mouse position
+        const onScroll = () => {
+            updateSelection();
+        };
+        
         window.addEventListener("mousemove", handleMouseMove)
-        // Listen for the mouse button being released to stop dragging
         window.addEventListener("mouseup", handleMouseUp)
-
-        // Cleanup function to remove event listeners when the component unmounts or drag finishes
+        container.addEventListener("scroll", onScroll)
+        
         return () => {
+            if (scrollFrameRef.current) cancelAnimationFrame(scrollFrameRef.current);
             window.removeEventListener("mousemove", handleMouseMove)
             window.removeEventListener("mouseup", handleMouseUp)
+            container.removeEventListener("scroll", onScroll)
         }
-    }, [dragStart, handleMouseMove, handleMouseUp])
+    }, [dragStart, handleMouseMove, handleMouseUp, updateSelection])
 
     useEffect(() => {
         // Grab the container element for the main content area
@@ -518,18 +570,16 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
             >
 
                 {dragRect && dragRect.width > 5 && dragRect.height > 5 && (
-                    <div
+                    <div className="drag-selection-box"
                         style={{
                             position: "fixed",
+                            zIndex: 10,
                             left: dragRect.x,
-                            top: dragRect.y,
+                            top: Math.max(dragRect.y, dragRect.containerTop || 0),
                             width: dragRect.width,
-                            height: dragRect.height,
-                            backgroundColor: "rgba(26, 115, 232, 0.1)",
-                            border: "1px solid rgba(26, 115, 232, 0.8)",
-                            borderRadius: "2px",
-                            pointerEvents: "none",
-                            zIndex: 9999
+                            height: dragRect.y < (dragRect.containerTop || 0) 
+                                ? Math.max(0, dragRect.height - ((dragRect.containerTop || 0) - dragRect.y)) 
+                                : dragRect.height,
                         }}
                     />
                 )}
@@ -608,9 +658,9 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
                         {displayItems.length === 0 && !loading && (
                             <div className="no-data-found-single-box-wrapper">
                                 <div className="no-data-found-single-box">
-                                    <InteractiveIcon defaultIcon={trashEmptyIcon} alt="No folders" />
+                                    <InteractiveIcon defaultIcon={noFilesFound} alt="No folders" />
                                     <p className="text-center text-muted py-3 m-0">
-                                        Dashboard is 
+                                        No items found
                                     </p>
                                 </div>
                             </div>
@@ -724,18 +774,8 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
                                     <div className="table-cell">
                                         <div className="folder-name-single-box">
                                             <div className='profile-single-box'>
-                                            {user.thumbnail_profile_pic || user.compressed_profile_pic ? (
-                                            <img
-                                                src={`${import.meta.env.VITE_BACKEND_URL}/${user.thumbnail_profile_pic || user.compressed_profile_pic}`}
-                                                alt=""
-                                                className="user-avatar"
-                                            />
-                                        ) : (
-                                            <div className="user-avatar-initials">
-                                                {user.name?.trim().charAt(0).toUpperCase() || "?"}
+                                                <UserAvatar user={item.owner} />
                                             </div>
-                                        )}
-                                        </div>
                                             <span>{user._id === item.owner._id ? "Me" : item.owner.name}</span>
                                         </div>
                                     </div>
@@ -795,13 +835,8 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
                     ref={contextMenuRef}
                     className="custom-context-menu"
                     style={{
-                        position: "fixed",
                         top: itemContextMenu.y,
                         left: itemContextMenu.x,
-                        overflow: "visible",
-                        zIndex: 99999,
-                        opacity: 0,
-                        pointerEvents: "none"
                     }}
                     onClick={() => {
                         setItemContextMenu({ visible: false })
@@ -809,8 +844,7 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
                     }}>
 
                     {/*  all menu */}
-                    <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
-
+                    <ul>
                         {/* share */}
                         <li
                             style={{ opacity: itemContextMenu.isViewerItem ? 0.6 : 1, cursor: itemContextMenu.isViewerItem ? "not-allowed" : "pointer" }}
@@ -1004,6 +1038,7 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
 }
 
 export default ContentView
+
 
 
 

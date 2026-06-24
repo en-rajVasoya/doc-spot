@@ -1420,6 +1420,22 @@ export function FileExplorerProvider({ children }) {
         }
     }
 
+
+    //  this function is used for in list view shared filed to update the user list there 
+    const updateSharedWith = (itemId, sharedWithArray, isShared) => {
+        const formattedSharedWith = sharedWithArray.map(s => ({
+            ...s,
+            userId: typeof s.userId === 'object' && s.userId !== null
+                ? s.userId
+                : { _id: s.userId, name: s.name, email: s.email, profilePic: s.profilePic }
+        }));
+        setItems(prev =>
+            prev.map(item =>
+                item._id === itemId ? { ...item, sharedWith: formattedSharedWith, isShared } : item
+            )
+        );
+    };
+
     const clearSelection = () => setSelectedIds(new Set())
 
 
@@ -1451,6 +1467,7 @@ export function FileExplorerProvider({ children }) {
             createFolderApi,
             currentFolderMeta,
             getSuggestedUsersApi,
+            updateSharedWith,
 
 
             //  sorting 

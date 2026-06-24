@@ -155,12 +155,12 @@ function CopyModal({ data, onClose }) {
                     <Modal.Header className="border-0">
                         <Modal.Title>Copy to</Modal.Title>
                         <Tooltip text="Close" offset={8}>
-                        <button
-                            className="btn-only-icon"
-                            onClick={onClose}
-                        >
-                            <InteractiveIcon defaultIcon={closeIcon} width={24} alt="close" />
-                        </button>
+                            <button
+                                className="btn-only-icon"
+                                onClick={onClose}
+                            >
+                                <InteractiveIcon defaultIcon={closeIcon} width={24} alt="close" />
+                            </button>
                         </Tooltip>
                     </Modal.Header>
 
@@ -173,7 +173,6 @@ function CopyModal({ data, onClose }) {
                                 onHomeClick={() => setTrail([])}
                                 maxVisible={3}
                                 rootLabel="Home"
-                                actions={["newFolder"]}
                                 onNewFolder={() => setNewFolderMode(true)}
                             />
                         </div>
@@ -257,8 +256,8 @@ function CopyModal({ data, onClose }) {
 
                     {/* SAME FIXED FOOTER */}
                     <Modal.Footer >
-                        <button 
-                            className="modal-add-new-btn" 
+                        <button
+                            className="modal-add-new-btn"
                             onClick={() => {
                                 setNewFolderName("Untitled Folder");
                                 setNewFolderMode(true);

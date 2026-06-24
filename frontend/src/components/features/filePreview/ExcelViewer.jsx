@@ -23,16 +23,21 @@ const getColumnName = (n) => {
     return name;
 };
 
+const EXCEL_PREVIEW_LIMIT = 20 * 1024 * 1024; // 20 MB
+
 function ExcelViewer({ file }) {
 
     const { downloadFile } = useDownload();
-    const fileUrl = `${file.storagePath}`;
+    const fileUrl = file?.url || file?.storagePath || "";
 
-    const [tooBig, setTooBig] = useState(false);
-    const [tooBigMB, setTooBigMB] = useState(null);
+    const [checkingSize, setCheckingSize] = useState(!(file?.size || file?.fileSize));
+    const [tooBig, setTooBig] = useState(() => {
+        const size = file?.size || file?.fileSize || 0;
+        return size ? size > EXCEL_PREVIEW_LIMIT : false;
+    });
     const [workbook, setWorkbook] = useState(null);
     const [activeSheet, setActiveSheet] = useState("");
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
 
     const [scrollTop, setScrollTop] = useState(0);
@@ -54,30 +59,30 @@ function ExcelViewer({ file }) {
     useEffect(() => {
         const loadExcel = async () => {
             try {
-                setLoading(true);
+                let currentSize = file?.size || file?.fileSize;
 
-                const res = await fetch(fileUrl);
+                if (!currentSize) {
+                    try {
+                        const r = await fetch(fileUrl, { method: "HEAD" });
+                        currentSize = Number(r.headers.get("content-length") || 0);
+                    } catch (e) { }
+                }
 
-                // Content-Length se size check
-                const contentLength = res.headers.get("Content-Length");
-                const sizeMB = contentLength
-                    ? parseInt(contentLength) / (1024 * 1024)
-                    : null;
+                setCheckingSize(false);
 
-                if (sizeMB && sizeMB > 20) {
+                if (currentSize > EXCEL_PREVIEW_LIMIT) {
                     setTooBig(true);
-                    setTooBigMB(sizeMB);
-                    setLoading(false);
                     return;
                 }
 
+                setLoading(true);
+
+                const res = await fetch(fileUrl);
                 const buffer = await res.arrayBuffer();
 
-                // agar Content-Length nahi tha to buffer size se check
                 const bufferSizeMB = buffer.byteLength / (1024 * 1024);
                 if (bufferSizeMB > 20) {
                     setTooBig(true);
-                    setTooBigMB(bufferSizeMB);
                     setLoading(false);
                     return;
                 }
@@ -94,8 +99,11 @@ function ExcelViewer({ file }) {
             }
         };
 
+        setError(null);
+        setTooBig(false);
+        setCheckingSize(!(file?.size || file?.fileSize));
         loadExcel();
-    }, [fileUrl]);
+    }, [file, fileUrl]);
 
     // viewport height
     useEffect(() => {
@@ -119,12 +127,46 @@ function ExcelViewer({ file }) {
             setMaxCols(cached.cols);
         } else {
             const ws = workbook.Sheets[activeSheet];
-            const range = XLSX.utils.decode_range(ws["!ref"] || "A1");
+
+            // 1. Manually find the TRUE range of cells that actually contain data
+            // This completely bypasses the "Phantom Cells" freezing problem!
+            let maxR = -1;
+            let maxC = -1;
+
+            for (const key in ws) {
+                if (key[0] === "!") continue; // skip metadata
+                const cellObj = ws[key];
+
+                // Only count cells that actually have text or numbers
+                if (cellObj && cellObj.v !== undefined && cellObj.v !== null && cellObj.v !== "") {
+                    const cell = XLSX.utils.decode_cell(key);
+                    if (cell.r > maxR) maxR = cell.r;
+                    if (cell.c > maxC) maxC = cell.c;
+                }
+            }
+
+            // 2. Override the corrupted sheet range with the true, tight bounds
+            let finalCols = 26; // Default fallback
+            if (maxR >= 0 && maxC >= 0) {
+                // Hard cap columns to 500 and rows to 50,000 for extreme safety
+                const safeMaxC = Math.min(maxC, 500);
+                const safeMaxR = Math.min(maxR, 50000);
+
+                ws["!ref"] = XLSX.utils.encode_range({
+                    s: { c: 0, r: 0 },
+                    e: { c: safeMaxC, r: safeMaxR }
+                });
+                finalCols = safeMaxC + 1; // Only show exactly the columns that have data!
+            } else {
+                ws["!ref"] = "A1:Z1";
+            }
+
+            // 3. Now we can safely use sheet_to_json and it will be lightning fast!
             const allData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
-            const cols = range.e.c + 1;
-            sheetCache.current[activeSheet] = { data: allData, cols };
+
+            sheetCache.current[activeSheet] = { data: allData, cols: finalCols };
             setSheetData(allData);
-            setMaxCols(cols);
+            setMaxCols(finalCols);
         }
 
         setScrollTop(0);
@@ -232,47 +274,58 @@ function ExcelViewer({ file }) {
         document.body.style.cursor = "default";
     };
 
-    if (loading) return (
+    if (checkingSize || loading) return (
         <div className="excel-loader">
-            <div className="cma-messages-are-loader-wrapper">
-                <span className="loader"></span>
+            <div className="loader-wrapper-box">
+                <div className="cma-messages-are-loader-wrapper">
+                    <span className="loader"></span>
+                </div>
             </div>
         </div>
     );
 
-    if (tooBig) return (
-        <div className="preview-toobig">
-            <div className="txt-toobig-icon">
-                <InteractiveIcon
-                    defaultIcon={excelFileIcon}
-                    width={36}
-                    height={42}
-                    alt=""
-                />
-            </div>
-            <p className="preview-toobig-title m-0">File too large to preview</p>
-            <p className="mute-text">
-                {tooBigMB ? `This file is ${tooBigMB.toFixed(1)} MB. ` : ""}
-                Files larger than 10 MB cannot be previewed.
-            </p>
-            <button
-                className="preview-btn preview-btn-text"
-                onClick={() => downloadFile(file)}
-            >
-                <InteractiveIcon
-                    defaultIcon={downloadIcon}
-                    width={24}
-                    height={24}
-                    alt=""
-                />
-                Download
-            </button>
-        </div>
-    );
+    if (tooBig || error) {
+        const sizeToDisplay = file?.size || file?.fileSize;
+        const fileSizeMB = sizeToDisplay ? (sizeToDisplay / (1024 * 1024)).toFixed(1) : null;
 
-    if (error) return (
-        <div className="excel-error">{error}</div>
-    );
+        return (
+            <div className="preview-toobig">
+                <div className="txt-toobig-icon">
+                    <InteractiveIcon
+                        defaultIcon={excelFileIcon}
+                        width={36}
+                        height={42}
+                        alt=""
+                    />
+                </div>
+                <p className="preview-toobig-title m-0">
+                    {tooBig ? "File too large to preview" : "Could not load spreadsheet"}
+                </p>
+                <p className="mute-text">
+                    {tooBig ? (
+                        <>
+                            {fileSizeMB ? `This file is ${fileSizeMB} MB. ` : ""}
+                            Files larger than 20 MB cannot be previewed.
+                        </>
+                    ) : (
+                        error || "This file could not be parsed. Download it to view on your device."
+                    )}
+                </p>
+                <button
+                    className="preview-btn preview-btn-text"
+                    onClick={() => downloadFile(file)}
+                >
+                    <InteractiveIcon
+                        defaultIcon={downloadIcon}
+                        width={20}
+                        height={20}
+                        alt=""
+                    />
+                    Download
+                </button>
+            </div>
+        );
+    }
 
     return (
         <div className="excel-preview">
@@ -324,9 +377,8 @@ function ExcelViewer({ file }) {
                                 {Array.from({ length: maxCols }).map((_, i) => (
                                     <th
                                         key={i}
-                                        className={`header-cell col-header ${
-                                            selection.type === "col" && selection.c === i ? "active-header" : ""
-                                        }`}
+                                        className={`header-cell col-header ${selection.type === "col" && selection.c === i ? "active-header" : ""
+                                            }`}
                                         onClick={() => {
                                             setRangeSelection(null);
                                             setSelection({ type: "col", c: i, r: -1 });

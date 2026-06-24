@@ -17,6 +17,8 @@ import viewHideIcon from "@images/icon/view-hide.svg";
 import copyLinkIcon from "@images/icon/copy-link.svg";
 import closeIcon from "@images/icon/close-icon.svg"
 
+import UserAvatar from "../layout/UserAvatar.jsx";
+
 //  helper to copy link 
 import { generateShareLinks } from "../../utils/generateShareLinks.js";
 import { useNotification } from "../../context/NotificationContext.jsx";
@@ -26,7 +28,7 @@ const BASE_URL = import.meta.env.VITE_API_URL?.replace(/\/api\/?$/, "") || "";
 
 function ShareUserModal({ data, onClose }) {
     const [loading, setLoading] = useState(true);
-    const { searchUsersApi, getSharedUsersApi, shareItemApi, unshareItemApi, selectedIds, getSuggestedUsersApi } = useFileExplorer()
+    const { searchUsersApi, getSharedUsersApi, shareItemApi, unshareItemApi, selectedIds, getSuggestedUsersApi, updateSharedWith } = useFileExplorer()
     const { user } = useAuth()
     const { showNotification } = useNotification()
 
@@ -224,6 +226,7 @@ function ShareUserModal({ data, onClose }) {
         if (updated) {
             setOwner(updated.owner)
             setSharedWith(updated.sharedWith)
+            updateSharedWith(itemId, updated.sharedWith, updated.sharedWith.length > 0)
         }
 
         // clear the selection and close the modal
@@ -237,7 +240,11 @@ function ShareUserModal({ data, onClose }) {
         const itemIds = allSelectedIds.length > 1 ? allSelectedIds : [itemId]
         await unshareItemApi(itemIds, [userId])
         // instantly remove them from the UI
-        setSharedWith(prev => prev.filter(s => s.userId !== userId))
+        setSharedWith(prev => {
+            const next = prev.filter(s => s.userId !== userId)
+            updateSharedWith(itemId, next, next.length > 0)
+            return next
+        })
     }
 
 
@@ -390,17 +397,7 @@ function ShareUserModal({ data, onClose }) {
                                                     <li key={user._id} onClick={() => handleSelectUser(user)}>
                                                         <div className="share-user-list-dd d-flex align-items-center cursor-pointer p-2">
                                                             <div className='profile-single-box'>
-                                                                {user.thumbnail_profile_pic || user.compressed_profile_pic ? (
-                                                                    <img
-                                                                        src={`${import.meta.env.VITE_BACKEND_URL}/${user.thumbnail_profile_pic || user.compressed_profile_pic}`}
-                                                                        alt=""
-                                                                        className="user-avatar"
-                                                                    />
-                                                                ) : (
-                                                                    <div className="user-avatar-initials">
-                                                                        {user.name?.trim().charAt(0).toUpperCase() || "?"}
-                                                                    </div>
-                                                                )}
+                                                                <UserAvatar user={user} />
                                                             </div>
                                                             <div className="ms-2 ps-1">
                                                                 <p className="user-name mb-0">{user.name}</p>
@@ -420,11 +417,12 @@ function ShareUserModal({ data, onClose }) {
                                                 {filteredSearchResults.map(user => (
                                                     <li key={user._id} onClick={() => handleSelectUser(user)}>
                                                         <div className="share-user-list-dd d-flex align-items-center cursor-pointer p-2">
-                                                            <InteractiveIcon
+                                                            {/* <InteractiveIcon
                                                                 defaultIcon={`${BASE_URL}${user.profilePic}`}
                                                                 width={48}
                                                                 height={48}
-                                                            />
+                                                            /> */}
+                                                            <UserAvatar user={user} />
                                                             <div className="ms-2 ps-1">
                                                                 <p className="user-name mb-0">{user.name}</p>
                                                                 <p className="user-email mb-0 small text-muted">{user.email}</p>
@@ -451,11 +449,12 @@ function ShareUserModal({ data, onClose }) {
                                                         <div className="share-user-list d-flex justify-content-between align-items-center">
                                                             <div className="d-flex align-items-center">
                                                                 <div className="share-user-profilepic">
-                                                                    <InteractiveIcon
+                                                                    {/* <InteractiveIcon
                                                                         defaultIcon={`${BASE_URL}${user.profilePic}`}
                                                                         width={48}
                                                                         height={48}
-                                                                    />
+                                                                    /> */}
+                                                                    <UserAvatar user={user} />
                                                                 </div>
                                                                 <div className="ms-2 ps-1">
                                                                     <p className="user-name mb-0">{user.name}</p>
@@ -501,11 +500,12 @@ function ShareUserModal({ data, onClose }) {
                                                 <div className="share-user-list d-flex justify-content-between align-items-center">
                                                     <div className="d-flex align-items-center">
                                                         <div className="share-user-profilepic">
-                                                            <InteractiveIcon
+                                                            {/* <InteractiveIcon
                                                                 defaultIcon={owner.profilePic ? `${BASE_URL}${owner.profilePic}` : userProfileIcon}
                                                                 width={48}
                                                                 height={48}
-                                                            />
+                                                            /> */}
+                                                            <UserAvatar user={owner} />
                                                         </div>
                                                         <div className="ms-2 ps-1">
                                                             <p className="user-name mb-0">{owner.name}</p>
@@ -523,11 +523,12 @@ function ShareUserModal({ data, onClose }) {
                                                 <div className="share-user-list d-flex justify-content-between align-items-center">
                                                     <div className="d-flex align-items-center">
                                                         <div className="share-user-profilepic">
-                                                            <InteractiveIcon
+                                                            {/* <InteractiveIcon
                                                                 defaultIcon={s.profilePic ? `${BASE_URL}${s.profilePic}` : userProfileIcon}
                                                                 width={48}
                                                                 height={48}
-                                                            />
+                                                            /> */}
+                                                            <UserAvatar user={s} />
                                                         </div>
                                                         <div className="ms-2 ps-1">
                                                             <p className="user-name mb-0">{s.name}</p>
@@ -585,11 +586,12 @@ function ShareUserModal({ data, onClose }) {
                                             <div className="share-user-list d-flex justify-content-between align-items-center">
                                                 <div className="d-flex align-items-center">
                                                     <div className="share-user-profilepic">
-                                                        <InteractiveIcon
+                                                        {/* <InteractiveIcon
                                                             defaultIcon={owner.profilePic ? `${BASE_URL}${owner.profilePic}` : userProfileIcon}
                                                             width={48}
                                                             height={48}
-                                                        />
+                                                        /> */}
+                                                        <UserAvatar user={owner} />
                                                     </div>
                                                     <div className="ms-2 ps-1">
                                                         <p className="user-name mb-0">{owner.name}</p>

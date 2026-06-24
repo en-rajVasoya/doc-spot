@@ -179,7 +179,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useDownload } from "../../../context/DownloadContext.jsx";
 import InteractiveIcon from "../../layout/InteractiveIcon";
-import videoIcon   from "@images/svgs/media/video-file.svg";
+import videoIcon from "@images/svgs/media/video-file.svg";
 import downloadIcon from "@images/icon/download.svg";
 
 const MAX_SIZE = 100 * 1024 * 1024; // 100 MB
@@ -201,48 +201,48 @@ export default function VideoViewer({ file }) {
   const videoRef = useRef();
   const hideTimer = useRef();
 
-  const [playing, setPlaying]   = useState(false);
-  const [current, setCurrent]   = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [current, setCurrent] = useState(0);
   const [duration, setDuration] = useState(0);
   const [buffered, setBuffered] = useState(0);
-  const [volume, setVolume]     = useState(1);
-  const [muted, setMuted]       = useState(false);
-  const [speed, setSpeed]       = useState(1);
-  const [loading, setLoading]   = useState(true);
+  const [volume, setVolume] = useState(1);
+  const [muted, setMuted] = useState(false);
+  const [speed, setSpeed] = useState(1);
+  const [loading, setLoading] = useState(false);
   const [controls, setControls] = useState(true);
   const [playHint, setPlayHint] = useState(false);
-  const [tooBig, setTooBig]     = useState(false);
-  const [err, setErr]           = useState(false);
+  const [checkingSize, setCheckingSize] = useState(!(file?.size || file?.fileSize));
+  const [tooBig, setTooBig] = useState(() => {
+    const s = file?.size || file?.fileSize || 0;
+    return s > MAX_SIZE;
+  });
+  const [err, setErr] = useState(false);
 
   // ── Size check on mount ──────────────────────
   useEffect(() => {
-    setTooBig(false);
     setErr(false);
-    setLoading(true);
 
     if (!src) return;
 
-    // 1. file.size se direct check
-    if (file?.size && file.size > MAX_SIZE) {
-      setTooBig(true);
-      setLoading(false);
+    const currentSize = file?.size || file?.fileSize;
+    if (currentSize) {
+      setTooBig(currentSize > MAX_SIZE);
+      setCheckingSize(false);
       return;
     }
 
-    // 2. file.size nahi hai — HEAD request se check
-    if (!file?.size) {
-      fetch(src, { method: "HEAD" })
-        .then(r => {
-          const size = Number(r.headers.get("content-length") || 0);
-          if (size > MAX_SIZE) {
-            setTooBig(true);
-            setLoading(false);
-          }
-        })
-        .catch(() => {
-          // HEAD fail — normal load karne do
-        });
-    }
+    // HEAD request check
+    fetch(src, { method: "HEAD" })
+      .then(r => {
+        const size = Number(r.headers.get("content-length") || 0);
+        if (size > MAX_SIZE) {
+          setTooBig(true);
+        }
+      })
+      .catch(() => { })
+      .finally(() => {
+        setCheckingSize(false);
+      });
   }, [file, src]);
 
   // ── Video event listeners ────────────────────
@@ -257,18 +257,18 @@ export default function VideoViewer({ file }) {
           setBuffered(v.buffered.end(v.buffered.length - 1));
       },
       loadedmetadata: () => { setDuration(v.duration); setLoading(false); },
-      waiting:        () => setLoading(true),
-      canplay:        () => setLoading(false),
-      ended:          () => { setPlaying(false); setControls(true); },
-      play:           () => setPlaying(true),
-      pause:          () => setPlaying(false),
-      error:          () => { setErr(true); setLoading(false); },
+      waiting: () => setLoading(true),
+      canplay: () => setLoading(false),
+      ended: () => { setPlaying(false); setControls(true); },
+      play: () => setPlaying(true),
+      pause: () => setPlaying(false),
+      error: () => { setErr(true); setLoading(false); },
     };
 
     Object.entries(handlers).forEach(([e, h]) => v.addEventListener(e, h));
     return () =>
       Object.entries(handlers).forEach(([e, h]) => v.removeEventListener(e, h));
-  }, []);
+  }, [checkingSize]);
 
   const showControls = () => {
     setControls(true);
@@ -303,12 +303,13 @@ export default function VideoViewer({ file }) {
     setMuted(!muted);
   };
 
-  const fileSizeMB = file?.size
-    ? (file.size / (1024 * 1024)).toFixed(1)
+  const currentSizeDisplay = file?.size || file?.fileSize || 0;
+  const fileSizeMB = currentSizeDisplay
+    ? (currentSizeDisplay / (1024 * 1024)).toFixed(1)
     : null;
 
-  // ── Too Big UI ───────────────────────────────
-  if (tooBig) return (
+  // ── Too Big or Error UI ───────────────────────────────
+  if (tooBig || err) return (
     <div className="preview-toobig">
       <div className="txt-toobig-icon">
         <InteractiveIcon
@@ -318,10 +319,18 @@ export default function VideoViewer({ file }) {
           alt=""
         />
       </div>
-      <p className="preview-toobig-title m-0">File too large to preview</p>
+      <p className="preview-toobig-title m-0">
+        {tooBig ? "File too large to preview" : "Could not load video"}
+      </p>
       <p className="mute-text">
-        {fileSizeMB ? `This file is ${fileSizeMB} MB. ` : ""}
-        Files larger than 100 MB cannot be previewed.
+        {tooBig ? (
+          <>
+            {fileSizeMB ? `This file is ${fileSizeMB} MB. ` : ""}
+            Files larger than 100 MB cannot be previewed.
+          </>
+        ) : (
+          "This file could not be played. Download it to watch on your device."
+        )}
       </p>
       <button
         className="preview-btn preview-btn-text"
@@ -329,38 +338,8 @@ export default function VideoViewer({ file }) {
       >
         <InteractiveIcon
           defaultIcon={downloadIcon}
-          width={24}
-          height={24}
-          alt=""
-        />
-        Download
-      </button>
-    </div>
-  );
-
-  // ── Error UI ─────────────────────────────────
-  if (err) return (
-    <div className="preview-toobig">
-      <div className="txt-toobig-icon">
-        <InteractiveIcon
-          defaultIcon={videoIcon}
-          width={36}
-          height={42}
-          alt=""
-        />
-      </div>
-      <p className="preview-toobig-title m-0">Could not load video</p>
-      <p className="mute-text">
-        This file could not be played. Download it to watch on your device.
-      </p>
-      <button
-        className="preview-btn preview-btn-text"
-        onClick={() => downloadFile(file)}
-      >
-        <InteractiveIcon
-          defaultIcon={downloadIcon}
-          width={24}
-          height={24}
+          width={22}
+          height={22}
           alt=""
         />
         Download
@@ -369,6 +348,18 @@ export default function VideoViewer({ file }) {
   );
 
   // ── Normal viewer ────────────────────────────
+  if (checkingSize) {
+    return (
+      <div className="video-preview-root-wrapper">
+        <div className="loader-wrapper-box">
+          <div className="cma-messages-are-loader-wrapper">
+            <span className="loader"></span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="video-preview-root-wrapper">
       <div
@@ -377,8 +368,10 @@ export default function VideoViewer({ file }) {
         onMouseLeave={() => playing && setControls(false)}
       >
         {loading && (
-          <div className="video-preview-loading">
-            <div className="video-preview-spinner" />
+          <div className="loader-wrapper-box">
+            <div className="cma-messages-are-loader-wrapper">
+              <span className="loader"></span>
+            </div>
           </div>
         )}
 

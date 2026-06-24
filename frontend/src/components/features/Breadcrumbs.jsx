@@ -18,6 +18,7 @@ import retryIcon from "@images/icon/retry-icon.svg"
 import deleteIcon from "@images/icon/trash.svg"
 import colorIcon from "@images/icon/color.svg";
 import fileInfoIcon from "@images/icon/file-info.svg";
+import getFolderIcon from "../../utils/getFolderIconColor.js";
 
 
 const Breadcrumbs = memo(function Breadcrumbs({
@@ -421,7 +422,7 @@ const Breadcrumbs = memo(function Breadcrumbs({
                                                     onNavigate?.(trail.indexOf(folder) + 1)
                                                     setShowActionDropdown(false)
                                                 }}>
-                                                <InteractiveIcon defaultIcon={listFolder9Icon} width={20} className="me-2" />
+                                                <InteractiveIcon defaultIcon={getFolderIcon(folder.color, "list", folder.isSharedWithMe || folder.isShared)} width={20} className="me-2" />
                                                 {folder.name}
                                             </Dropdown.Item>
                                         ))}

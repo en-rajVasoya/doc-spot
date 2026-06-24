@@ -1,12 +1,19 @@
 import React, { useMemo } from 'react';
 import profileImageIcon from "@images/icon/profile-image-icon.svg";
 
-// Use your specific backend URL variable!
+// Vite tells us if we are running 'npm run dev' or a production build
+const isDevMode = import.meta.env.DEV;
+
+// Backend URL only matters in production (separate server case)
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "";
 
+// In dev -> empty string (Vite proxy handles same-origin forwarding)
+// In prod -> full backend URL (works whether same server or separate server)
+const basePath = isDevMode ? "" : BACKEND_URL;
+
 const AVATAR_COLORS = [
-    "#FFC400", "#FF8A00", "#49BA14", "#EA3843", "#398415",
-    "#263DB8", "#00A3EF", 
+    "#FFC400A8", "#FF8A00A8", "#49BA14A8", "#EA3843A8", "#398415A8",
+    "#263DB8A8", "#00A3EFA8", 
 ];
 
 const getColorFromName = (name) => {
@@ -29,10 +36,11 @@ function UserAvatar({ user, name, src, className = "", style = {} }) {
 
     // 3. Render image if it exists
     if (extractedSrc) {
-        // If it's a raw File object URL (blob) from the upload, don't append BACKEND_URL
+        // blob / http(s) / data URLs are already complete -> use as-is
+        // otherwise prefix with basePath (empty in dev, full backend URL in prod)
         const finalSrc = extractedSrc.startsWith("blob:") || extractedSrc.startsWith("http") || extractedSrc.startsWith("data:")
             ? extractedSrc
-            : `${BACKEND_URL}${extractedSrc.startsWith('/') ? '' : '/'}${extractedSrc}`;
+            : `${basePath}${extractedSrc.startsWith('/') ? '' : '/'}${extractedSrc}`;
 
         return (
             <div className='user-profile-single-box'>

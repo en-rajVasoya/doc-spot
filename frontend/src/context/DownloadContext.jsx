@@ -294,7 +294,8 @@ export function DownloadProvider({ children }) {
     // YOUR EXISTING downloadFile - UNTOUCHED
     // just calls the shared downloadInChunks function now
     // -------------------------------------------------------
-    const downloadFile = async (file) => {
+    const downloadFile = async (file, token = null) => {
+        const activeToken = token || new URLSearchParams(window.location.search).get("token");
         const { _id: fileId, name, fileSize, fileType } = file
 
         if (sessions.some(s => s.fileId === fileId && (s.status === "downloading" || s.status === "assembling" || s.status === "creating"))) return
@@ -325,7 +326,7 @@ export function DownloadProvider({ children }) {
 
         await downloadInChunks(
             fileId,
-            `/download/file/${fileId}`,
+            `/download/file/${fileId}${activeToken ? `?token=${activeToken}` : ""}`,
             fileSize,
             name,
             fileType,
@@ -342,7 +343,8 @@ export function DownloadProvider({ children }) {
     // Phase 2 - download zip in chunks exactly like a file
     // resume works because zipId and fileSize saved to IndexedDB
     // -------------------------------------------------------
-    const downloadFolder = async (folder) => {
+    const downloadFolder = async (folder, token = null) => {
+        const activeToken = token || new URLSearchParams(window.location.search).get("token");
         const { _id: folderId, name } = folder
 
         if (sessions.some(s => s.fileId === folderId && (s.status === "downloading" || s.status === "assembling" || s.status === "creating"))) return
@@ -389,7 +391,7 @@ export function DownloadProvider({ children }) {
             } else {
                 updateSession(sessionId, { status: "creating" })
 
-                const { data: createData } = await axiosApi.post(`/download/folder/${folderId}`)
+                const { data: createData } = await axiosApi.post(`/download/folder/${folderId}${activeToken ? `?token=${activeToken}` : ""}`)
 
                 if (!createData.success) {
                     updateSession(sessionId, { status: "error" })
@@ -443,7 +445,7 @@ export function DownloadProvider({ children }) {
 
             await downloadInChunks(
                 zipId,
-                `/download/zip/${zipId}`,
+                `/download/zip/${zipId}${activeToken ? `?token=${activeToken}` : ""}`,
                 fileSize,
                 `${folderName}.zip`,
                 "application/zip",
@@ -467,7 +469,8 @@ export function DownloadProvider({ children }) {
 
 
     //  her ethis si when user select multiple file then  zip it and download her 
-    const downloadMultiple = async (selectedItems) => {
+    const downloadMultiple = async (selectedItems, token = null) => {
+        const activeToken = token || new URLSearchParams(window.location.search).get("token");
         // selectedItems = array of { _id, name, type } objects
 
         // stable key — sort ids so same selection always gives same key
@@ -524,7 +527,7 @@ export function DownloadProvider({ children }) {
                 // send all selected ids to backend
                 const ids = selectedItems.map(i => i._id)
 
-                const { data: createData } = await axiosApi.post("/download/multiple", { ids })
+                const { data: createData } = await axiosApi.post(`/download/multiple${activeToken ? `?token=${activeToken}` : ""}`, { ids })
 
                 if (!createData.success) {
                     updateSession(sessionId, { status: "error" })
@@ -579,7 +582,7 @@ export function DownloadProvider({ children }) {
             // download in chunks — exactly same as folder download
             await downloadInChunks(
                 zipId,
-                `/download/zip/${zipId}`,
+                `/download/zip/${zipId}${activeToken ? `?token=${activeToken}` : ""}`,
                 fileSize,
                 `${folderName}.zip`,
                 "application/zip",

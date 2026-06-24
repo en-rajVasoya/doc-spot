@@ -489,14 +489,20 @@ export const getFolderPath = async (req, res) => {
       const folderData = await uploadModel.findOne({
         _id: currentId,
         type: "folder"
-      }).select("_id name parent owner sharedWith").lean();
+      }).select("_id name parent owner sharedWith color isShared").lean();
 
       if (!folderData) break;
 
       const permission = await getUserPermission(userID, folderData._id)
       if (!permission) break;
 
-      trail.unshift({ id: folderData._id, name: folderData.name })
+      trail.unshift({ 
+        id: folderData._id, 
+        name: folderData.name,
+        color: folderData.color,
+        isShared: folderData.isShared,
+        isSharedWithMe: permission !== "owner"
+      })
       currentId = folderData.parent
     }
 

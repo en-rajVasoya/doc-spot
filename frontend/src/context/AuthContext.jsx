@@ -58,7 +58,7 @@ export function AuthProvider({ children }) {
                 throw new Error(res.data?.message || "Login Failed")
             }
             // fetch full user from DB including role - no need to set user from login response
-        await checkAuthStatus()
+            await checkAuthStatus()
             return res.data
         } catch (error) {
             showNotification(error.response.data.message, "error", "bottom-center");
@@ -78,6 +78,33 @@ export function AuthProvider({ children }) {
         }
     }
 
+
+
+    //  here this fucntion is for the update user profile 
+    const updateProfile = async (formData) => {
+        try {
+            const res = await axiosApi.post("/auth/edit_profile", formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data'
+                }
+            })
+
+            if (res.data.success || res.status === 200) {
+                showNotification(res.data.message || "Profile updated successfully!", "success", "bottom-center");
+
+                if (res.data.data) {
+                    setUser(res.data.data)
+                }
+
+                return { success: true, data: res.data };
+            }
+
+        } catch (error) {
+            showNotification(error.response?.data?.message || "Failed to update profile", "error", "bottom-center");
+            return { success: false, error: error };
+        }
+    }
+
     // return all this function to every file
     const value = {
         user,
@@ -85,7 +112,8 @@ export function AuthProvider({ children }) {
         setUser,
         login,
         checkAuthStatus,
-        logout
+        logout,
+        updateProfile
     }
 
     return (

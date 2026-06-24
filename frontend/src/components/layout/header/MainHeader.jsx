@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import InteractiveIcon from '../InteractiveIcon';
 import logoIcon from "@images/logo.svg";
 import searchIcon from "@images/icon/search.svg";
@@ -24,6 +24,9 @@ import axiosApi from "../../../utils/api.js";
 import { useSocket } from "../../../context/SocketContext.jsx";
 import CustomScroll from '../CustomScroll.jsx';
 import closeIcon from "@images/icon/close-icon.svg"
+import AdminSearchBar from '../admin/AdminSearchBar.jsx';
+import enterIcon from "@images/icon/enter-icon.svg";
+import { useBellNotification } from '../../../context/BellNotificationContext.jsx';
 
 //  getiing backend url for getting profile pic of user
 const BASE_URL = import.meta.env.VITE_API_URL?.replace(/\/api\/?$/, "") || "";
@@ -35,10 +38,26 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
     const navigate = useNavigate()
     const { selectedIds, triggerHighlight } = useFileExplorer()
 
-    const [notifications, setNotifications] = useState([]);
-    const [unreadCount, setUnreadCount] = useState(0);
+    const { notifications, unreadCount, markAllRead, deleteNotifications } = useBellNotification();
     const [isNotificationOpen, setIsNotificationOpen] = useState(false);
-    const { socket, socketRef } = useSocket()
+    const notificationRef = useRef(null);
+
+    // Click outside close the notifications
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (notificationRef.current && !notificationRef.current.contains(event.target)) {
+                setIsNotificationOpen(false);
+            }
+        };
+
+        if (isNotificationOpen) {
+            document.addEventListener('mousedown', handleClickOutside);
+        }
+
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [isNotificationOpen]);
 
 
     // close search bar when an item is selected so toolbar can show
@@ -58,96 +77,6 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
             console.log("Logout error", error.message)
         }
     }
-
-    const loadNotifications = async () => {
-        try {
-            const res = await axiosApi.get("/notifications")
-
-            setNotifications(res.data.notifications);
-            setUnreadCount(res.data.unreadCount);
-
-        } catch (err) {
-            console.error(err);
-        }
-    };
-
-    useEffect(() => {
-        loadNotifications();
-    }, []);
-
-    useEffect(() => {
-
-        if (!socket) return;
-
-        socket.on("new_notification", (notification) => {
-
-            setNotifications(prev => [
-                notification,
-                ...prev
-            ]);
-
-            setUnreadCount(prev => prev + 1);
-        });
-
-        socket.on("notifications_removed", ({ ids }) => {
-            const removedSet = new Set(ids.map(id => id.toString()));
-            setNotifications(prev => {
-                const removedUnread = prev.filter(
-                    n => removedSet.has(n._id.toString()) && !n.isRead
-                ).length;
-                setUnreadCount(count => Math.max(0, count - removedUnread));
-                return prev.filter(n => !removedSet.has(n._id.toString()));
-            });
-        });
-
-        return () => {
-            socket.off("new_notification");
-            socket.off("notifications_removed");
-        };
-
-    }, [socket]);
-
-    const markAllRead = async () => {
-
-        try {
-            if (unreadCount === 0) return;
-
-            await axiosApi.post("/notifications/read_all")
-
-            setUnreadCount(0);
-
-            setNotifications(prev =>
-                prev.map(item => ({
-                    ...item,
-                    isRead: true
-                }))
-            );
-
-        } catch (err) {
-            console.error(err);
-        }
-    };
-
-    const deleteNotifications = async (ids) => {
-        try {
-            await axiosApi.delete("/notifications/remove_notification", {
-                data: { ids }
-            });
-
-            // Update state immediately without waiting for socket
-            const removedSet = new Set(ids.map(id => id.toString()));
-            setNotifications(prev => {
-                const removedUnread = prev.filter(
-                    n => removedSet.has(n._id.toString()) && !n.isRead
-                ).length;
-                setUnreadCount(count => Math.max(0, count - removedUnread));
-                return prev.filter(n => !removedSet.has(n._id.toString()));
-            });
-
-        } catch (err) {
-            console.error(err);
-        }
-    };
 
     const handleClearAll = () => {
         if (notifications.length === 0) return;
@@ -190,13 +119,18 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                 </div>
 
                 {/*  SEARCH BAR */}
-                <SearchBar searchBarOpen={searchBarOpen} setSearchBarOpen={setSearchBarOpen} />
+                {isAdmin ? (
+                    <AdminSearchBar searchBarOpen={searchBarOpen} setSearchBarOpen={setSearchBarOpen} />
+
+                ) : (
+                    <SearchBar searchBarOpen={searchBarOpen} setSearchBarOpen={setSearchBarOpen} />
+                )}
 
                 {/* Toolbar */}
                 {isTrash ? (
                     <TrashHeaderToolbar setModal={setModal} searchBarOpen={searchBarOpen} setSearchBarOpen={setSearchBarOpen} />
                 ) : isAdmin ? (
-                    <AdminHeaderToolbar setModal={setModal} />
+                    <AdminHeaderToolbar setModal={setModal} searchBarOpen={searchBarOpen} setSearchBarOpen={setSearchBarOpen} />
                 ) : (
                     <HeaderToolbar setModal={setModal} searchBarOpen={searchBarOpen} setSearchBarOpen={setSearchBarOpen} />
 
@@ -292,7 +226,7 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                         </li> */}
 
                         <li className='d-flex'>
-                            <div className="notification-wrapper">
+                            <div className="notification-wrapper" ref={notificationRef}>
 
                                 {/* Bell Icon */}
                                 <div className="notification-bell " onClick={() => {
@@ -301,13 +235,17 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                                     if (next) markAllRead();
                                 }}>
 
-                                    <span className='btn-only-icon'>
-                                        <InteractiveIcon
-                                            defaultIcon={notificationIcon}
-                                            alt=""
-                                            width={22}
-                                        />
-                                    </span>
+                                    <Tooltip text="Notification" offset={8}>
+
+                                        <span className='btn-only-icon'>
+                                            <InteractiveIcon
+                                                defaultIcon={notificationIcon}
+                                                alt=""
+                                                width={22}
+                                            />
+                                        </span>
+                                    </Tooltip>
+
 
                                     {unreadCount > 0 && (
                                         <div className="notification-badge">
@@ -337,7 +275,7 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
 
                                                 ) : (
 
-                                                    notifications.map(notification => (
+                                                    notifications.slice(0, 5).map(notification => (
 
                                                         <div
                                                             key={notification._id}
@@ -400,6 +338,27 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
 
                                                 )}
                                             </CustomScroll>
+
+                                            {/* see all notification button here */}
+                                            {notifications.length > 0 && (
+                                                <div className="search-suggestion-footer d-none" style={{ borderTop: "1px solid var(--border-color)", borderRadius: "0 0 16px 16px" }}>
+                                                    <button className='search-See-all-btn w-100 justify-content-center'
+                                                        onClick={() => {
+                                                            setIsNotificationOpen(false)
+                                                            navigate("/notifications")
+                                                        }}>
+                                                        See all notifications
+                                                        <span>
+                                                            <InteractiveIcon
+                                                                defaultIcon={enterIcon}
+                                                                alt=""
+                                                                width={20}
+                                                                height={20}
+                                                            />
+                                                        </span>
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
 
                                     </div>
@@ -502,7 +461,9 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                                                 </Dropdown.Item>
                                             )}
                                             <Dropdown.Divider className='dot' />
-                                            <Dropdown.Item className="dropdown-item d-flex align-items-center" href="#">
+                                            <Dropdown.Item className="dropdown-item d-flex align-items-center"
+                                                onClick={() => navigate("/profile")}
+                                            >
                                                 <InteractiveIcon
                                                     defaultIcon={editIcon}
                                                     width={24}
@@ -522,9 +483,6 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                                             </Dropdown.Item>
                                         </>
                                     )}
-
-                                    <Dropdown.Divider className='dot' />
-
 
                                 </Dropdown.Menu>
                             </Dropdown>

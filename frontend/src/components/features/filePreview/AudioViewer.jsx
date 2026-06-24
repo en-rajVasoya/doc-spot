@@ -113,10 +113,14 @@
 
 
 import { useEffect, useRef, useState } from "react";
+import { useDownload } from "../../../context/DownloadContext.jsx";
 import InteractiveIcon from "../../layout/InteractiveIcon";
 import retryAudioRightIcon from "@images/icon/retry-audio-right-icon.svg";
 import retryAudioLeftIcon from "@images/icon/retry-audio-left-icon.svg";
+import audioIcon from "@images/svgs/media/music-file.svg";
+import downloadIcon from "@images/icon/download.svg";
 
+const MAX_SIZE = 100 * 1024 * 1024; // 100 MB
 
 
 const fmt = (s) => {
@@ -129,6 +133,7 @@ const speeds = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
 export default function AudioViewer({ file }) {
   const src = file?.url || (file?.storagePath ? `${file.storagePath}` : "");
+  const { downloadFile } = useDownload();
 
   const audioRef = useRef();
   const [playing, setPlaying] = useState(false);
@@ -137,6 +142,40 @@ export default function AudioViewer({ file }) {
   const [volume, setVolume] = useState(1);
   const [muted, setMuted] = useState(false);
   const [speed, setSpeed] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [checkingSize, setCheckingSize] = useState(!(file?.size || file?.fileSize));
+  const [tooBig, setTooBig] = useState(() => {
+    const s = file?.size || file?.fileSize || 0;
+    return s > MAX_SIZE;
+  });
+  const [err, setErr] = useState(false);
+
+  // ── Size check on mount ──────────────────────
+  useEffect(() => {
+    setErr(false);
+
+    if (!src) return;
+
+    const currentSize = file?.size || file?.fileSize;
+    if (currentSize) {
+      setTooBig(currentSize > MAX_SIZE);
+      setCheckingSize(false);
+      return;
+    }
+
+    // HEAD request check
+    fetch(src, { method: "HEAD" })
+      .then(r => {
+        const size = Number(r.headers.get("content-length") || 0);
+        if (size > MAX_SIZE) {
+          setTooBig(true);
+        }
+      })
+      .catch(() => { })
+      .finally(() => {
+        setCheckingSize(false);
+      });
+  }, [file, src]);
 
   useEffect(() => {
     const a = audioRef.current;
@@ -147,10 +186,13 @@ export default function AudioViewer({ file }) {
       ended: () => setPlaying(false),
       play: () => setPlaying(true),
       pause: () => setPlaying(false),
+      waiting: () => setLoading(true),
+      canplay: () => setLoading(false),
+      error: () => { setErr(true); setLoading(false); },
     };
     Object.entries(handlers).forEach(([e, h]) => a.addEventListener(e, h));
     return () => Object.entries(handlers).forEach(([e, h]) => a.removeEventListener(e, h));
-  }, []);
+  }, [checkingSize]);
 
   const togglePlay = () => {
     const a = audioRef.current;
@@ -180,11 +222,72 @@ export default function AudioViewer({ file }) {
 
   const pct = duration ? (current / duration) * 100 : 0;
   const ext = (file?.name || "").split(".").pop().toUpperCase();
+  const currentSizeDisplay = file?.size || file?.fileSize || 0;
+  const fileSizeMB = currentSizeDisplay ? (currentSizeDisplay / (1024 * 1024)).toFixed(1) : null;
+
+  // ── Too Big or Error UI ───────────────────────────────
+  if (tooBig || err) return (
+    <div className="preview-toobig">
+      <div className="txt-toobig-icon">
+        <InteractiveIcon
+          defaultIcon={audioIcon}
+          width={36}
+          height={42}
+          alt=""
+        />
+      </div>
+      <p className="preview-toobig-title m-0">
+        {tooBig ? "File too large to preview" : "Could not load audio"}
+      </p>
+      <p className="mute-text">
+        {tooBig ? (
+          <>
+            {fileSizeMB ? `This file is ${fileSizeMB} MB. ` : ""}
+            Files larger than 100 MB cannot be previewed.
+          </>
+        ) : (
+          "This file could not be played. Download it to listen on your device."
+        )}
+      </p>
+      <button
+        className="preview-btn preview-btn-text"
+        onClick={() => downloadFile(file)}
+      >
+        <InteractiveIcon
+          defaultIcon={downloadIcon}
+          width={20}
+          height={20}
+          alt=""
+        />
+        Download
+      </button>
+    </div>
+  );
+
+  if (checkingSize) {
+    return (
+      <div className="audio-preview-root">
+        <div className="loader-wrapper-box">
+          <div className="cma-messages-are-loader-wrapper">
+            <span className="loader"></span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
 
       <div className="audio-preview-root">
+
+        {loading && (
+          <div className="loader-wrapper-box">
+            <div className="cma-messages-are-loader-wrapper">
+              <span className="loader"></span>
+            </div>
+          </div>
+        )}
 
 
         <audio ref={audioRef} src={src} preload="metadata" />

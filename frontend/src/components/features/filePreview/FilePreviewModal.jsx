@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from "react";
+import DownloadPanel from "../download/DownloadPanel.jsx";
 import getFileType from "../../../utils/getFileType.js";
 import { Tooltip, OverlayTrigger } from "react-bootstrap";
 import InteractiveIcon from "../../layout/InteractiveIcon.jsx";
@@ -17,6 +18,8 @@ import PdfViewer from "./PdfViewer.jsx";
 import downloadIcon from "@images/icon/download.svg";
 import closeIcon from "@images/icon/close-icon.svg";
 import arrowLeftIcon from "@images/icon/arrow-left.svg";
+import fileIcon from "@images/svgs/file.svg";
+import { useDownload } from "../../../context/DownloadContext.jsx";
 import copyIcon from "@images/icon/copy.svg";
 import copiedIcon from "@images/icon/copied-icon.svg";
 
@@ -52,30 +55,15 @@ const resolveType = (file) => {
 };
 
 function FilePreviewModal({ file, onClose }) {
+    const { downloadFile } = useDownload();
     const type = resolveType(file);
 
     const [copied, setCopied] = useState(false);
     const textContentRef = useRef("");
 
     // Download file to device
-    const handleDownload = async () => {
-        try {
-            const BASE_URL = import.meta.env.VITE_API_URL;
-            const src = file?.url || (file?.storagePath ? `${BASE_URL}/files${file.storagePath}` : "");
-            if (!src) return;
-            const response = await fetch(src);
-            const blob = await response.blob();
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = file.name || "download";
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            window.URL.revokeObjectURL(url);
-        } catch (err) {
-            console.error("Download error:", err);
-        }
+    const handleDownload = () => {
+        downloadFile(file);
     };
 
     // Copy text file content to clipboard
@@ -184,6 +172,9 @@ function FilePreviewModal({ file, onClose }) {
                 <div className="file-preview-body">
                     {renderViewer()}
                 </div>
+
+                {/*  download panel */}
+                <DownloadPanel />
 
             </div>
         </div>

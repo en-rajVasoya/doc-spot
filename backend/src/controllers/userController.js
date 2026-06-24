@@ -174,7 +174,7 @@ export const currentUser = async (req, res) => {
 //  function to update user profile details 
 export const updateProfile = async (req, res) => {
     try {
-        const { name, email, user_id, password } = req.body;
+        const { name, email, user_id, password, currentPassword} = req.body;
 
         let userID = req.user._id;
 
@@ -219,6 +219,15 @@ export const updateProfile = async (req, res) => {
         }
 
         if (password) {
+            if (!currentPassword) {
+                return res.status(400).json({ message: "Current password is required to set a new password" });
+            }
+
+            const isMatch = await bcrypt.compare(currentPassword, userData.password);
+            if (!isMatch) {
+                return res.status(400).json({ message: "Incorrect current password" });
+            }
+
             const hashedPassword = await bcrypt.hash(password, 10);
             userData.password = hashedPassword;
         }

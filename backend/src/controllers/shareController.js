@@ -164,7 +164,6 @@ export const unshareItem = async (req, res) => {
         const incomingItemIds = itemIds || itemId;
         const normalizedItemIds = Array.isArray(incomingItemIds) ? incomingItemIds : (incomingItemIds ? [incomingItemIds] : []);
         const normalizedUserIds = Array.isArray(userIds) ? userIds : [userIds];
-        normalizedUserIds.push(currentUserId.toString());
 
         // #########################################################
         // ── STEP 2: Validate inputs ─────────────────────────────
@@ -308,6 +307,9 @@ export const unshareItem = async (req, res) => {
             req.emitToUser(uid.toString(), "share_removed", { itemIds: ownedItemIds })
         })
 
+        // notify the owner so their folder icon updates in real-time
+        req.emitToUser(currentUserId.toString(), "share_removed", { itemIds: ownedItemIds })
+
         // ── STEP 6: Response ────────────────────────────────────
         res.json({ success: true, message: "Access removed" });
 
@@ -328,8 +330,8 @@ export const getSharedUsers = async (req, res) => {
         // Get the ID of the user currently making the request (logged-in user)
         const requesterId = req.user._id;
 
-        // Fetch the specific file or folder from the database, and also fetch the owner's profile details (name, email, profilePic)
-        const targetItem = await uploadModel.findById(itemId).populate("owner", "name email profilePic");
+        // Fetch the specific file or folder from the database, and also fetch the owner's profile details
+        const targetItem = await uploadModel.findById(itemId).populate("owner", "name email profilePic thumbnail_profile_pic compressed_profile_pic");
 
         // If the file or folder does not exist in the database, return a 404 Not Found error
         if (!targetItem) {
@@ -349,7 +351,9 @@ export const getSharedUsers = async (req, res) => {
             userId: targetItem.owner._id,
             name: targetItem.owner.name,
             email: targetItem.owner.email,
-            profilePic: targetItem.owner.profilePic
+            profilePic: targetItem.owner.profilePic,
+            thumbnail_profile_pic: targetItem.owner.thumbnail_profile_pic,
+            compressed_profile_pic: targetItem.owner.compressed_profile_pic
         }
 
         // Create a Map (like a dictionary) to store unique users who have access.
@@ -365,7 +369,7 @@ export const getSharedUsers = async (req, res) => {
             while (currentId) {
                 // Fetch the current item (file/folder) and populate the profile details of anyone it is shared with
                 const currentItem = await uploadModel.findById(currentId)
-                    .populate("sharedWith.userId", "name email profilePic");
+                    .populate("sharedWith.userId", "name email profilePic thumbnail_profile_pic compressed_profile_pic");
 
                 // If the item doesn't exist (failsafe), stop climbing the tree
                 if (!currentItem) break;
@@ -382,6 +386,8 @@ export const getSharedUsers = async (req, res) => {
                                 name: s.userId.name,
                                 email: s.userId.email,
                                 profilePic: s.userId.profilePic,
+                                thumbnail_profile_pic: s.userId.thumbnail_profile_pic,
+                                compressed_profile_pic: s.userId.compressed_profile_pic,
                                 permission: s.permission, // "viewer" or "editor"
                                 // Compare the ID of the folder we are currently checking against the original item the user clicked.
                                 // If they are different, it means we climbed up the tree, so this access is "inherited".
@@ -427,7 +433,7 @@ export const searchUsers = async (req, res) => {
                 { name: { $regex: query, $options: "i" } },
                 { email: { $regex: query, $options: "i" } }
             ]
-        }).select("_id name email profilePic").limit(10)
+        }).select("_id name email profilePic thumbnail_profile_pic compressed_profile_pic").limit(10)
 
         res.json({ success: true, users })
 
@@ -482,7 +488,7 @@ export const getSuggestedUsers = async (req, res) => {
                 _id: { $in: recentSharedUserIds },
                 is_active: { $ne: false }
             })
-                .select("name email profilePic")
+                .select("name email profilePic thumbnail_profile_pic compressed_profile_pic")
                 .limit(10)
         }
 
@@ -501,7 +507,7 @@ export const getSuggestedUsers = async (req, res) => {
                 _id: { $nin: existingIds },
                 is_active: { $ne: false }
             })
-                .select("name email profilePic")
+                .select("name email profilePic thumbnail_profile_pic compressed_profile_pic")
                 .sort({ name: 1 })
                 .limit(limitNeeded)
 

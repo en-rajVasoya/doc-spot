@@ -8,10 +8,12 @@ import { Virtuoso } from "react-virtuoso";
 import InteractiveIcon from "../../layout/InteractiveIcon";
 import txtIcon from "@images/svgs/media/txt-file-icon.svg";
 import downloadIcon from "@images/icon/download.svg";
+import { useDownload } from "../../../context/DownloadContext.jsx";
 
-const MAX_SIZE = 51 * 1024 * 1024; // 20 MB
+const MAX_SIZE = 20 * 1024 * 1024; // 20 MB
 
 export default function TextViewer({ file, contentRef }) {
+    const { downloadFile } = useDownload();
     const src = file?.url ||
         (file?.storagePath
             ? `${file.storagePath}`
@@ -53,8 +55,9 @@ export default function TextViewer({ file, contentRef }) {
     }, [src]);
 
     const ext = (file?.name || "").split(".").pop().toUpperCase();
-    const fileSizeMB = file?.size
-        ? (file.size / (1024 * 1024)).toFixed(1)
+    const currentSize = file?.size || file?.fileSize || 0;
+    const fileSizeMB = currentSize
+        ? (currentSize / (1024 * 1024)).toFixed(1)
         : null;
 
     if (loading) return (
@@ -66,7 +69,17 @@ export default function TextViewer({ file, contentRef }) {
     );
 
     if (error) return (
-        <div className="preview-error">{error}</div>
+        <div className="preview-toobig">
+            <div className="txt-toobig-icon">
+                <InteractiveIcon defaultIcon={txtIcon} width={36} height={42} alt="" />
+            </div>
+            <p className="preview-toobig-title m-0">Preview not available</p>
+            <p className="mute-text">{error}</p>
+            <button className="preview-btn preview-btn-text" onClick={() => downloadFile(file)}>
+                <InteractiveIcon defaultIcon={downloadIcon} width={24} height={24} alt="" />
+                Download
+            </button>
+        </div>
     );
 
     if (tooBig) return (

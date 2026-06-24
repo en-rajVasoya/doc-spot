@@ -549,14 +549,17 @@ import { memo, useEffect, useRef, useState, useCallback } from "react"
 import { Virtuoso } from "react-virtuoso"
 import * as pdfjsLib from "pdfjs-dist"
 import { Form } from 'react-bootstrap';
-import fileIcon from "@images/svgs/file.svg"
+import pdfFileIcon from "@images/svgs/media/pdf-file.svg"
 import InteractiveIcon from "../../layout/InteractiveIcon";
 import "pdfjs-dist/web/pdf_viewer.css"
 import arrowRightIcon from "@images/icon/arrow-right.svg";
 import plusIcon from "@images/icon/plus.svg";
 import nagativIcon from "@images/icon/negativ-icon.svg";
+import downloadIcon from "@images/icon/download.svg";
 import magnificationIcon from "@images/icon/magnification-icon.svg";
 import sidebarIcon from "@images/icon/sidebar-icon.svg";
+import magnificationIconNegative from "@images/icon/magnification-icon-negative.svg";
+import { useDownload } from "../../../context/DownloadContext.jsx";
 
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -759,20 +762,34 @@ const LoadingScreen = () => (
 )
 
 // ✅ Alag component — PDF load hone se pehle hi dikhega
-const FileTooLargeScreen = ({ fileSizeMB, onDownload }) => (
+const FileFallbackScreen = ({ fileSizeMB, isTooBig, onDownload }) => (
     <div className="preview-toobig">
         <div className="txt-toobig-icon">
-            <img src={fileIcon} alt="" width={38} />
-        </div>
-        <p className="preview-toobig-title m-0">File too large to preview</p>
-        <p className="mute-text">
-            {fileSizeMB ? `This file is ${fileSizeMB} MB. ` : ""}
-            Files larger than {MAX_FILE_SIZE_MB} MB cannot be previewed.
-        </p>
-        <button className="btn-primary btn mt-2" onClick={onDownload}>
             <InteractiveIcon
-                defaultIcon={nagativIcon}
-                width={24}
+                defaultIcon={pdfFileIcon}
+                width={36}
+                height={42}
+                alt=""
+            />
+        </div>
+        <p className="preview-toobig-title m-0">
+            {isTooBig ? "File too large to preview" : "Could not load PDF"}
+        </p>
+        <p className="mute-text">
+            {isTooBig ? (
+                <>
+                    {fileSizeMB ? `This file is ${fileSizeMB} MB. ` : ""}
+                    Files larger than {MAX_FILE_SIZE_MB} MB cannot be previewed.
+                </>
+            ) : (
+                "This file could not be parsed. Download it to view on your device."
+            )}
+        </p>
+        <button className="preview-btn preview-btn-text mt-2" onClick={onDownload}>
+            <InteractiveIcon
+                defaultIcon={downloadIcon}
+                width={20}
+                height={20}
             />
             Download
         </button>
@@ -780,6 +797,7 @@ const FileTooLargeScreen = ({ fileSizeMB, onDownload }) => (
 )
 
 function PdfViewer({ file: fileData }) {
+    const { downloadFile } = useDownload();
     const [pdf, setPdf] = useState(null)
     const [numPages, setNumPages] = useState(0)
     const [scale, setScale] = useState(1)
@@ -787,6 +805,7 @@ function PdfViewer({ file: fileData }) {
     const [showSidebar, setShowSidebar] = useState(false)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(false)
+    const [tooBig, setTooBig] = useState(false)
     const [fileSizeMB, setFileSizeMB] = useState(null)
 
     const [pageInput, setPageInput] = useState("")
@@ -796,19 +815,6 @@ function PdfViewer({ file: fileData }) {
     const virtuosoRef = useRef(null)
     const sidebarVirtuosoRef = useRef(null)
     const isScrollingProgrammatically = useRef(false)
-
-    const handleDownload = useCallback(() => {
-        if (!fileData) return
-        const url = fileData instanceof File || fileData instanceof Blob
-            ? URL.createObjectURL(fileData)
-            : typeof fileData === "string" ? fileData : fileData?.url
-        if (!url) return
-        const a = document.createElement("a")
-        a.href = url
-        a.download = fileData?.name || "document.pdf"
-        a.click()
-        if (fileData instanceof File || fileData instanceof Blob) URL.revokeObjectURL(url)
-    }, [fileData])
 
     useEffect(() => {
         if (!fileData) return
@@ -821,11 +827,9 @@ function PdfViewer({ file: fileData }) {
 
         if (fileBytes > 0) {
             const sizeMB = fileBytes / (1024 * 1024);
-            console.log("File size MB:", sizeMB, "MAX:", MAX_FILE_SIZE_MB);
             setFileSizeMB(parseFloat(sizeMB.toFixed(1)));
             if (sizeMB > MAX_FILE_SIZE_MB) {
-                console.log("🛑 FILE TOO BIG — blocking PDF load");
-                setError(true);
+                setTooBig(true);
                 setLoading(false);
                 return; // ← STOP HERE. load() never runs.
             }
@@ -833,6 +837,7 @@ function PdfViewer({ file: fileData }) {
 
         setLoading(true)
         setError(false)
+        setTooBig(false)
         setPdf(null)
         setNumPages(0)
         setCurrentPage(0)
@@ -848,16 +853,16 @@ function PdfViewer({ file: fileData }) {
                 // 🔍 DEBUG: See what fileData looks like
                 console.log("PDF fileData:", typeof fileData, fileData)
                 console.log("PDF fileData.fileSize:", fileData?.fileSize, "fileData.storagePath:", fileData?.storagePath, "fileData.url:", fileData?.url)
-                // ✅ File/Blob ke liye — size check pehle, load baad mein
+               
                 if (fileData instanceof File || fileData instanceof Blob) {
                     const sizeMB = fileData.size / (1024 * 1024)
                     const sizeMBFixed = parseFloat(sizeMB.toFixed(1))
                     setFileSizeMB(sizeMBFixed)
 
                     if (sizeMB > MAX_FILE_SIZE_MB) {
-                        setError(true)
+                        setTooBig(true)
                         setLoading(false)
-                        return // ✅ Yahan hi rok do — PDF load bhi mat karo
+                        return 
                     }
 
                     source = { data: await fileData.arrayBuffer() }
@@ -868,7 +873,7 @@ function PdfViewer({ file: fileData }) {
                     setFileSizeMB(sizeMBFixed)
 
                     if (sizeMB > MAX_FILE_SIZE_MB) {
-                        setError(true)
+                        setTooBig(true)
                         setLoading(false)
                         return
                     }
@@ -882,7 +887,7 @@ function PdfViewer({ file: fileData }) {
                         const sizeMB = fileData.fileSize / (1024 * 1024)
                         setFileSizeMB(parseFloat(sizeMB.toFixed(1)))
                         if (sizeMB > MAX_FILE_SIZE_MB) {
-                            setError(true)
+                            setTooBig(true)
                             setLoading(false)
                             return
                         }
@@ -894,7 +899,7 @@ function PdfViewer({ file: fileData }) {
                         const sizeMB = fileData.fileSize / (1024 * 1024)
                         setFileSizeMB(parseFloat(sizeMB.toFixed(1)))
                         if (sizeMB > MAX_FILE_SIZE_MB) {
-                            setError(true)
+                            setTooBig(true)
                             setLoading(false)
                             return
                         }
@@ -908,7 +913,7 @@ function PdfViewer({ file: fileData }) {
                         setFileSizeMB(sizeMBFixed)
 
                         if (sizeMB > MAX_FILE_SIZE_MB) {
-                            setError(true)
+                            setTooBig(true)
                             setLoading(false)
                             return
                         }
@@ -951,7 +956,13 @@ function PdfViewer({ file: fileData }) {
     const clampScale = (v) => Math.min(Math.max(v, 0.5), 3)
     const zoomIn = () => setScale((p) => clampScale(Math.round((p + 0.2) * 10) / 10))
     const zoomOut = () => setScale((p) => clampScale(Math.round((p - 0.2) * 10) / 10))
-    const resetZoom = () => setScale(1)
+    const resetZoom = () => {
+        if (scale !== 1) {
+            setScale(1)
+        } else {
+            setScale(1.5)
+        }
+    }
 
     const programmaticScroll = useCallback((index) => {
         isScrollingProgrammatically.current = true
@@ -1006,11 +1017,12 @@ function PdfViewer({ file: fileData }) {
     if (loading) return <LoadingScreen />
 
     // ✅ Error / too large — PDF load hone se pehle hi rok diya, yahan sirf UI dikhao
-    if (error) {
+    if (error || tooBig) {
         return (
-            <FileTooLargeScreen
+            <FileFallbackScreen
                 fileSizeMB={fileSizeMB}
-                onDownload={handleDownload}
+                isTooBig={tooBig}
+                onDownload={() => downloadFile(fileData)}
             />
         )
     }
@@ -1159,7 +1171,7 @@ function PdfViewer({ file: fileData }) {
                 <div className="new-preview-zoom-controls-sub">
                     <button className="image-preview-btn" onClick={resetZoom} title="Reset Zoom">
                         <InteractiveIcon
-                            defaultIcon={magnificationIcon}
+                            defaultIcon={scale > 1 ? magnificationIconNegative : magnificationIcon}
                             width={24}
                         />
                     </button>

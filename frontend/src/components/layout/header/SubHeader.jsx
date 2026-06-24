@@ -13,11 +13,11 @@ import { getRoute } from "../../../utils/getRoutes.js";
 import sharedWithIcon from "@images/icon/shared-with-me-icon.svg";
 import userPlusIcon from "@images/icon/user-plus.svg";
 
-// ##################################################
+
 // ---- SubHeader Component -------------------------
 // This component renders the secondary navigation bar 
 // which includes the breadcrumbs and the list/grid view toggle.
-// ##################################################
+
 const SubHeader = memo(function SubHeader({ view, setView, setModal, isSearchMode }) {
     // 1. Pull necessary state and functions from Contexts
     const { trail, selectedIds, items, currentFolderId, navigateTo, changeColorApi, isViewerOnly, currentFolderMeta } = useFileExplorer();
@@ -28,22 +28,22 @@ const SubHeader = memo(function SubHeader({ view, setView, setModal, isSearchMod
     const navigate = useNavigate()
     const location = useLocation()
 
-    // ##################################################
+    
     // ---- STEP 1: Determine Route Prefix --------------
     // Checks the current URL path to figure out which 
     // root dashboard the user is currently browsing.
-    // ##################################################
+    
     const getPathPrefix = () => {
         if (location.pathname.startsWith(getRoute.SHARED_WITH_ME)) return getRoute.SHARED_WITH_ME;
         if (location.pathname.startsWith(getRoute.SHARED)) return getRoute.SHARED;
         return getRoute.DASHBOARD;
     };
 
-    // ##################################################
+    
     // ---- STEP 2: Determine Root Label ----------------
     // Sets the very first breadcrumb label (e.g. "My Docspot") 
     // depending on the active route.
-    // ##################################################
+    
     const getRootLabel = () => {
         if (location.pathname.startsWith(getRoute.SHARED_WITH_ME)) return (
             <div className="share-with-me breadcrumb-title">
@@ -60,11 +60,11 @@ const SubHeader = memo(function SubHeader({ view, setView, setModal, isSearchMod
         return "My Docspot";
     };
 
-    // ##################################################
+    
     // ---- STEP 3: Permission Logic & Breadcrumb Actions
     // Calculates what options should be available inside 
     // the breadcrumb dropdown based on the folder level.
-    // ##################################################
+    
 
     // Check if user is at the root of a Shared folder (trail is empty)
     const isSharedRoot = (location.pathname.startsWith(getRoute.SHARED_WITH_ME) || location.pathname.startsWith(getRoute.SHARED)) && trail.length === 0;

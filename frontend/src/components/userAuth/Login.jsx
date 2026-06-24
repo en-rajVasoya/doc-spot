@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from "react-router-dom";
+
 import { useAuth } from '../../context/AuthContext';
-import { useNavigate } from "react-router-dom";
 import { Button, Form } from "react-bootstrap";
 import InteractiveIcon from '../layout/InteractiveIcon';
 import BrandSmallIcon from "@images/small-logo.svg";
@@ -44,12 +45,21 @@ function Login() {
     const { login, isLoading, user } = useAuth()
     const navigate = useNavigate()
 
-    //  if user is already logged in so redirect to dashboard
+    //  this is for shared link when user open private link so it redirect to login page here
+    const [searchParams] = useSearchParams()
+    const redirectParam = searchParams.get("redirect")
+
+
+    //  if user is already logged in so redirect to dashboard (or the requested shared link)
     useEffect(() => {
         if (!isLoading && user) {
-            navigate("/dashboard")
+            if (redirectParam) {
+                navigate(redirectParam)
+            } else {
+                navigate("/dashboard")
+            }
         }
-    }, [isLoading, user, navigate])
+    }, [isLoading, user, navigate, redirectParam])
 
 
     //  pre-fill email and password if "Remember me" was selected previously
@@ -101,7 +111,11 @@ function Login() {
                         console.log("Credential store failed:", error.message)
                     }
                 }
-                navigate("/dashboard")
+                if(redirectParam){
+                    navigate(redirectParam)
+                } else {
+                    navigate("/dashboard")
+                }
             } else {
                 setError("Login Error")
             }

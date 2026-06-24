@@ -1,7 +1,7 @@
 import InteractiveIcon from "../../layout/InteractiveIcon.jsx";
 import checkboxIcon from "@images/icon/checkbox-check.svg";
 import squareArrowDownLinearIcon from "@images/icon/square-arrow-down-linear.svg";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useTrash } from "../../../context/TrashContext.jsx";
 import { useAuth } from "../../../context/AuthContext.jsx"
 import getFileIcon from "../../../utils/getFileIcon.js";
@@ -53,116 +53,170 @@ function TrashContentView({ view, setModal, onItemRefsReady, dragRootRef }) {
     const anchorIndex = useRef(null)
     const lastCtrlSelectedIds = useRef(new Set())
 
-    // -------------------------------------------------------------------
-    // 1. VARIABLES TO TRACK THE DRAG BOX
-    // -------------------------------------------------------------------
-    const itemRefs = useRef({}) // Keeps track of where every file is on the screen
-    const [dragStart, setDragStart] = useState(null) // Saves the exact X,Y coordinates where you clicked
-    const [dragRect, setDragRect] = useState(null) // Saves the width and height of the blue box
-    const isDragSelectingRef = useRef(false) // Tells us if you are currently dragging or not
+    // ##################################################
+    // ---- STEP 6: Drag and select state ---------------
+    // ##################################################
+    const itemRefs = useRef({})
+    const [dragStart, setDragStart] = useState(null)
+    const [dragRect, setDragRect] = useState(null)
+    const isDragSelectingRef = useRef(false)
+    const gridContainerRef = useRef(null)
+    const scrollRef = useRef(null)
 
-    // -------------------------------------------------------------------
-    // 2. WHEN YOU CLICK THE MOUSE DOWN (Start Dragging & Deselect)
-    // -------------------------------------------------------------------
+    const lastMousePos = useRef({ clientX: 0, clientY: 0 })
+
     const handleMouseDown = (e) => {
-        // Stop the drag box if you click on the header or preview modal
         if (e.target.closest(".master-header")) return
         if (e.target.closest(".file-preview-modal")) return;
-
-        // Stop the drag box if you click directly on a file, header, button, or warning message
         if (e.target.closest(".table-row")) return
         if (e.target.closest(".table-header")) return
         if (e.target.closest("button, input, textarea, select, a, .custom-context-menu, .search-suggestion-chip, .empty-bin-section")) return
-        
-        // Only allow Left-Click  to start dragging
         if (e.button !== 0) return
-
-        // Okay, it's safe to start! Turn on the drag mode and save where you clicked
         isDragSelectingRef.current = true
-        setDragStart({ x: e.clientX, y: e.clientY })
-        setDragRect(null)
 
-        // THIS is what deselects all files when you click on the empty background!
+        // 1. Save the exact physical mouse position
+        lastMousePos.current = { clientX: e.clientX, clientY: e.clientY }
+        // 2. Calculate drag start relative to the scroll container's content
+        const containerRect = gridContainerRef.current.getBoundingClientRect()
+        const relativeX = e.clientX - containerRect.left + gridContainerRef.current.scrollLeft
+        const relativeY = e.clientY - containerRect.top + gridContainerRef.current.scrollTop
+        setDragStart({ x: relativeX, y: relativeY })
+        setDragRect(null)
         setSelectedIds(new Set())
     }
 
-    // -------------------------------------------------------------------
-    // 3. WHEN YOU MOVE THE MOUSE AROUND (Draw Box & Select Items)
-    // -------------------------------------------------------------------
-    const handleMouseMove = (e) => {
-        // If you haven't clicked down yet, do nothing
-        if (!isDragSelectingRef.current || !dragStart) return
+    const updateSelection = useCallback(() => {
+        if (!isDragSelectingRef.current || !dragStart || !gridContainerRef.current) return;
 
-        // Do the math to calculate how big the blue box should be based on where your mouse moved
-        const rect = {
-            x: Math.min(e.clientX, dragStart.x),
-            y: Math.min(e.clientY, dragStart.y),
-            width: Math.abs(e.clientX - dragStart.x),
-            height: Math.abs(e.clientY - dragStart.y),
-        }
+        const { clientX, clientY } = lastMousePos.current;
+        const container = gridContainerRef.current;
+        const containerRect = container.getBoundingClientRect();
 
-        // Draw the box on the screen
-        setDragRect(rect)
+        // 1. Calculate current mouse position relative to the container
+        // Constrain the mouse Y position so it cannot go above the container (into the headers)
+        const boundedClientY = Math.max(clientY, containerRect.top);
 
-        // Loop through every single file to see if the blue box is touching it
-        const newSelected = new Set()
+        const currentX = clientX - containerRect.left + container.scrollLeft;
+        const currentY = boundedClientY - containerRect.top + container.scrollTop;
+
+        // 2. Calculate the abstract rectangle in container coordinates
+        const containerBox = {
+            x: Math.min(currentX, dragStart.x),
+            y: Math.min(currentY, dragStart.y),
+            width: Math.abs(currentX - dragStart.x),
+            height: Math.abs(currentY - dragStart.y),
+        };
+
+        // 3. Convert the rectangle BACK to viewport coordinates for collision checking
+        const viewportBox = {
+            x: containerBox.x + containerRect.left - container.scrollLeft,
+            y: containerBox.y + containerRect.top - container.scrollTop,
+            width: containerBox.width,
+            height: containerBox.height,
+            left: containerBox.x + containerRect.left - container.scrollLeft,
+            top: containerBox.y + containerRect.top - container.scrollTop,
+            right: containerBox.x + containerBox.width + containerRect.left - container.scrollLeft,
+            bottom: containerBox.y + containerBox.height + containerRect.top - container.scrollTop,
+            containerTop: containerRect.top,
+        };
+
+        // Render using fixed viewport coordinates so it doesn't get cropped by the container!
+        setDragRect(viewportBox);
+
+        const newSelected = new Set();
         Object.entries(itemRefs.current).forEach(([id, el]) => {
-            if (!el) return
-            const itemRect = el.getBoundingClientRect() // Get file's GPS location on screen
-            
-            // Is the blue box overlapping this file?
+            if (!el) return;
+            const itemRect = el.getBoundingClientRect();
+
             const overlaps =
-                itemRect.left < rect.x + rect.width &&
-                itemRect.right > rect.x &&
-                itemRect.top < rect.y + rect.height &&
-                itemRect.bottom > rect.y
-            
-            // If yes, select the file!
-            if (overlaps) newSelected.add(id)
-        })
+                itemRect.left < viewportBox.right &&
+                itemRect.right > viewportBox.left &&
+                itemRect.top < viewportBox.bottom &&
+                itemRect.bottom > viewportBox.top;
 
-        // Update the checkboxes!
-        setSelectedIds(newSelected)
-    }
+            if (overlaps) newSelected.add(id);
+        });
 
-    // -------------------------------------------------------------------
-    // 4. WHEN YOU LET GO OF THE MOUSE (Stop Dragging)
-    // -------------------------------------------------------------------
-    const handleMouseUp = () => {
-        isDragSelectingRef.current = false // Turn off drag mode
-        setDragStart(null) // Clear starting point
-        setDragRect(null) // Hide the blue box
-    }
+        setSelectedIds(newSelected);
+    }, [dragStart, setSelectedIds]);
 
-    // -------------------------------------------------------------------
-    // 5. EVENT LISTENERS (Telling the browser to pay attention)
-    // -------------------------------------------------------------------
-    
-    // Sends the file locations back to the Dashboard
+    const scrollFrameRef = useRef(null);
+
+    const handleMouseMove = useCallback((e) => {
+        lastMousePos.current = {
+            clientX: e.clientX,
+            clientY: e.clientY
+        };
+        updateSelection();
+    }, [updateSelection]);
+
+    const handleMouseUp = useCallback(() => {
+        // Stop the drag selection process
+        isDragSelectingRef.current = false
+        // Clear the starting coordinates
+        setDragStart(null)
+        // Remove the visual rectangle box from the screen
+        setDragRect(null)
+    }, [])
     useEffect(() => {
         onItemRefsReady?.(itemRefs.current)
     })
 
-    // Tells the browser to listen to your mouse movements only when you start dragging
     useEffect(() => {
         if (!dragStart) return
+        const container = gridContainerRef.current;
+        if (!container) return;
+
+        const autoScroll = () => {
+            if (!isDragSelectingRef.current) return;
+
+            const { clientY } = lastMousePos.current;
+            const rect = container.getBoundingClientRect();
+            const edge = 60;
+            const speed = 15;
+
+            if (clientY > rect.bottom - edge) {
+                container.scrollTop += speed;
+            } else if (clientY < rect.top + edge) {
+                container.scrollTop -= speed;
+            }
+
+            scrollFrameRef.current = requestAnimationFrame(autoScroll);
+        };
+
+        scrollFrameRef.current = requestAnimationFrame(autoScroll);
+
+        // When the container scrolls, update the selection using the last known mouse position
+        const onScroll = () => {
+            updateSelection();
+        };
+        
         window.addEventListener("mousemove", handleMouseMove)
         window.addEventListener("mouseup", handleMouseUp)
+        container.addEventListener("scroll", onScroll)
+        
         return () => {
+            if (scrollFrameRef.current) cancelAnimationFrame(scrollFrameRef.current);
             window.removeEventListener("mousemove", handleMouseMove)
             window.removeEventListener("mouseup", handleMouseUp)
+            container.removeEventListener("scroll", onScroll)
         }
-    }, [dragStart])
+    }, [dragStart, handleMouseMove, handleMouseUp, updateSelection])
 
-    // Tells the browser to listen for when you click down on the background
     useEffect(() => {
+        // Grab the container element for the main content area
         const root = dragRootRef?.current
+        // If the container doesn't exist yet, do nothing
         if (!root) return
+
+        // Listen for mouse click inside the container to start the drag selection
         root.addEventListener("mousedown", handleMouseDown)
+
+        // Cleanup function to remove the listener when the component unmounts
         return () => {
             root.removeEventListener("mousedown", handleMouseDown)
         }
-    }, [dragRootRef])
+    }, [dragRootRef, handleMouseDown])
 
     //  close the menu on outside click
     useEffect(() => {
@@ -300,7 +354,29 @@ function TrashContentView({ view, setModal, onItemRefsReady, dragRootRef }) {
                 <FilePreviewModal file={filePreview} onClose={() => setFilePreview(null)} />
             )}
 
-            <div className={`grid-single-box ${view === "grid" ? "grid-view" : "list-view"}`} >
+            <div
+                ref={(el) => {
+                    scrollRef.current = el
+                    gridContainerRef.current = el
+                }}
+                onMouseDown={handleMouseDown}
+                className={`grid-single-box ${view === "grid" ? "grid-view" : "list-view"}`}
+                style={{ position: "relative", userSelect: "none" }}
+            >
+                {dragRect && dragRect.width > 5 && dragRect.height > 5 && (
+                    <div className="drag-selection-box"
+                        style={{
+                            position: "fixed",
+                            zIndex: 10,
+                            left: dragRect.x,
+                            top: Math.max(dragRect.y, dragRect.containerTop || 0),
+                            width: dragRect.width,
+                            height: dragRect.y < (dragRect.containerTop || 0) 
+                                ? Math.max(0, dragRect.height - ((dragRect.containerTop || 0) - dragRect.y)) 
+                                : dragRect.height,
+                        }}
+                    />
+                )}
                 <section className="content-wrapper">
                     <div className="table row">
                         <div className="table-header">
@@ -450,17 +526,6 @@ function TrashContentView({ view, setModal, onItemRefsReady, dragRootRef }) {
                                 </div>
                             </div>
                         ))}
-                        {dragRect && (
-                            <div
-                                className="drag-selection-box"
-                                style={{
-                                    left: dragRect.x,
-                                    top: dragRect.y,
-                                    width: dragRect.width,
-                                    height: dragRect.height,
-                                }}
-                            />
-                        )}
                     </div>
                 </section>
             </div>

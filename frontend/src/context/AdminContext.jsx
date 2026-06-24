@@ -89,25 +89,51 @@ export function AdminAuthProvider({ children }) {
 
     //  Admin update the user data
     const updateUser = async (update_user_id, formData) => {
-    try {
-        const res = await axiosApi.patch(`/admin/update_user/${update_user_id}`, formData, {
-            headers: { "Content-Type": "multipart/form-data" }
-        });
+        try {
+            const res = await axiosApi.patch(`/admin/update_user/${update_user_id}`, formData, {
+                headers: { "Content-Type": "multipart/form-data" }
+            });
 
-        setUsers(prev => prev.map(u =>
-            u._id === res.data.data._id ? res.data.data : u
-        ));
+            setUsers(prev => prev.map(u =>
+                u._id === res.data.data._id ? res.data.data : u
+            ));
 
-        if (loggedInUser?._id === res.data.data._id) {
-            setUser(res.data.data);
+            if (loggedInUser?._id === res.data.data._id) {
+                setUser(res.data.data);
+            }
+
+            showNotification("User updated successfully", "success", "bottom-center");
+        } catch (error) {
+            showNotification(error.response?.data?.message || "Update user failed", "error", "bottom-center");
+            throw error;
         }
+    };
 
-        showNotification("User updated successfully", "success", "bottom-center");
-    } catch (error) {
-        showNotification(error.response?.data?.message || "Update user failed", "error", "bottom-center");
-        throw error;
-    }
-};
+
+    // admin delete user
+    const deleteUsers = async (user_ids) => {
+        try {
+            // Note: In Axios, to send a body with a DELETE request, it must be inside a 'data' object
+            const res = await axiosApi.delete("/admin/remove_user", {
+                data: { user_ids }
+            });
+            // Remove the deleted users from the local state so the table updates instantly
+            setUsers(prev => prev.filter(u => !user_ids.includes(u._id)));
+            // Update the total count for pagination
+            setPagination(prev => ({
+                ...prev,
+                total: Math.max(0, prev.total - user_ids.length)
+            }));
+            // Clear checkboxes
+            setSelectedIds(new Set());
+            showNotification(res.data.message || "Users deleted successfully", "success", "bottom-center");
+
+        } catch (error) {
+            showNotification(error.response?.data?.message || "Delete users failed", "error", "bottom-center");
+            throw error;
+        }
+    };
+
 
     //  here this function is used for the when user select on the main check box so select all users here
     const toggleSelectAll = () => {
@@ -130,6 +156,18 @@ export function AdminAuthProvider({ children }) {
 
     //  clear selection 
     const clearSelection = () => setSelectedIds(new Set())
+
+
+    // check availability of username or email
+    const checkAvailability = async (query) => {
+        try {
+            const res = await axiosApi.get("/admin/check_availability", { params: query });
+            return res.data.exists;
+        } catch (error) {
+            console.error("Check availability failed", error);
+            return false;
+        }
+    };
 
 
     return (
@@ -158,8 +196,10 @@ export function AdminAuthProvider({ children }) {
 
                 createUser,
                 updateUser,
-                allMatchingIds,        // add this
-        selectAllAcrossPages,
+                deleteUsers,
+                allMatchingIds,  
+                selectAllAcrossPages,
+                checkAvailability,
             }}>
             {children}
         </AdminContext.Provider>
