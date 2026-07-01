@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from "react-router-dom";
+import axiosApi from '../../utils/api.js';
 
 import { useAuth } from '../../context/AuthContext';
 import { Button, Form } from "react-bootstrap";
@@ -31,6 +32,7 @@ import emailIcon from "@images/icon/email.svg";
 import viewIcon from "@images/icon/view.svg";
 import viewHideIcon from "@images/icon/view-hide.svg";
 import passwordIcon from "@images/icon/password.svg";
+import { useNotification } from '../../context/NotificationContext.jsx';
 
 
 function Login() {
@@ -42,7 +44,12 @@ function Login() {
     const [error, setError] = useState("")
     const [passwordShow, setPasswordShow] = useState(false)
 
+
+    //  this satte is for forgot passwrod
+    const [isForgotPassword, setIsForgotPassword] = useState(false)
+
     const { login, isLoading, user } = useAuth()
+    const { showNotification } = useNotification()
     const navigate = useNavigate()
 
     //  this is for shared link when user open private link so it redirect to login page here
@@ -69,7 +76,7 @@ function Login() {
 
             try {
                 const cred = await navigator.credentials.get({ password: true, mediation: "optional" })
-                if(cred) {
+                if (cred) {
                     setEmail(cred.id)
                     setPassword(cred.password)
                 }
@@ -103,7 +110,7 @@ function Login() {
         try {
             const data = await login(email, password, remember)
             if (data && data.user) {
-                if(window.PasswordCredential){
+                if (window.PasswordCredential) {
                     try {
                         const cred = new PasswordCredential({ id: email, password })
                         await navigator.credentials.store(cred)
@@ -111,7 +118,7 @@ function Login() {
                         console.log("Credential store failed:", error.message)
                     }
                 }
-                if(redirectParam){
+                if (redirectParam) {
                     navigate(redirectParam)
                 } else {
                     navigate("/dashboard")
@@ -121,6 +128,28 @@ function Login() {
             }
         } catch (error) {
             console.log(error.message)
+        } finally {
+            setLoading(false)
+        }
+    }
+
+
+
+    //  this fucntion is used for the forgot password api here
+    const handleForgotPasswordSubmit = async (e) => {
+        e.preventDefault()
+        setLoading(true)
+
+        try {
+            const res = await axiosApi.post("/auth/forgot_password", { email })
+            if (res.data.success) {
+                showNotification("Password reset link has been sent to your email.", "success", "bottom-center")
+                setIsForgotPassword(false)
+            } else {
+                showNotification(res.data.message || "Failed to send reset link.", "error", "bottom-center")
+            }
+        } catch (err) {
+            showNotification(err.response?.data?.message || "Something went wrong. Please try again.", "error", "bottom-center")
         } finally {
             setLoading(false)
         }
@@ -143,9 +172,13 @@ function Login() {
                         </div>
                     </div>
                     {/* Form Register */}
-                    <h3 className="login-name">Login to Your Account</h3>
-                    <Form onSubmit={handleSubmit}>
-                        {/* Mobile Number*/}
+                    {/* Form Register */}
+                    <h3 className="login-name">
+                        {isForgotPassword ? "Reset Your Password" : "Login to Your Account"}
+                    </h3>
+
+                    <Form onSubmit={isForgotPassword ? handleForgotPasswordSubmit : handleSubmit}>
+                        {/* Email Input */}
                         <Form.Group className="mb-3" controlId="formName">
                             <Form.Label className="required-star">Email</Form.Label>
                             <div className='form-control-single-icon'>
@@ -166,63 +199,84 @@ function Login() {
                             </div>
                         </Form.Group>
 
-                        {/* Password */}
-                        <Form.Group className="mb-3" controlId="formPassword">
-                            <Form.Label className="required-star">Password</Form.Label>
-                            <div className='form-control-single-icon'>
-                                <InteractiveIcon
-                                    defaultIcon={passwordIcon}
-                                    alt=""
-                                    className="form-left-icon"
-                                    width={20}
-                                />
-                                <InteractiveIcon
-                                    defaultIcon={passwordShow ? viewIcon : viewHideIcon}
-                                    alt=""
-                                    className="form-right-icon"
-                                    width={24}
-                                    onClick={() => setPasswordShow(!passwordShow)}
-                                />
-                                <Form.Control
-                                    name="name"
-                                    type={`${passwordShow ? "text" : "password"}`}
-                                    placeholder="Enter Password"
-                                    className='custom-form-control h-34'
-                                    value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
-                                    disabled={loading} />
-                            </div>
-                        </Form.Group>
-                        <div className="form-check-group mb-3">
-                            <label htmlFor="allcheck">
-                                <InteractiveIcon
-                                    defaultIcon={checkboxIcon}
-                                    alt=""
-                                />
-                            </label>
-                            <input type="checkbox" className="checkbox" name="" id="allcheck"
-                                checked={remember}
-                                onChange={(e) => setRemember(e.target.checked)} />
-                            <span className='form-label m-0 ms-2'>Remember me</span>
-                        </div>
-                        {/* Login Button */}
+                        {/* Password and Remember Me: Hidden when in Forgot Password mode */}
+                        {!isForgotPassword && (
+                            <>
+                                {/* Password */}
+                                <Form.Group className="mb-3" controlId="formPassword">
+                                    <Form.Label className="form-label d-flex align-items-center justify-content-between w-100">
+                                        <span className="required-star">Password</span>
+                                        <span
+                                            className="clear-btn"
+                                            onClick={() => setIsForgotPassword(true)}
+                                        >
+                                            Forgot Password?
+                                        </span>
+                                    </Form.Label>
+                                    <div className='form-control-single-icon'>
+                                        <InteractiveIcon
+                                            defaultIcon={passwordIcon}
+                                            alt=""
+                                            className="form-left-icon"
+                                            width={20}
+                                        />
+                                        <InteractiveIcon
+                                            defaultIcon={passwordShow ? viewIcon : viewHideIcon}
+                                            alt=""
+                                            className="form-right-icon"
+                                            width={24}
+                                            onClick={() => setPasswordShow(!passwordShow)}
+                                        />
+                                        <Form.Control
+                                            name="name"
+                                            type={`${passwordShow ? "text" : "password"}`}
+                                            placeholder="Enter Password"
+                                            className='custom-form-control h-34'
+                                            value={password}
+                                            onChange={(e) => setPassword(e.target.value)}
+                                            disabled={loading} />
+                                    </div>
+                                </Form.Group>
+
+                                {/* Remember Me */}
+                                <div className="form-check-group mb-3">
+                                    <label htmlFor="allcheck">
+                                        <InteractiveIcon
+                                            defaultIcon={checkboxIcon}
+                                            alt=""
+                                        />
+                                    </label>
+                                    <input type="checkbox" className="checkbox" name="" id="allcheck"
+                                        checked={remember}
+                                        onChange={(e) => setRemember(e.target.checked)} />
+                                    <span className='form-label m-0 ms-2'>Remember me</span>
+                                </div>
+                            </>
+                        )}
+
+                        {/* Dynamic Button (Login or Send Link) */}
                         <div className="d-block">
                             <button type="submit" className='btn-black btn-lg w-100 btn' disabled={loading}>
                                 {loading ? (
-
-                                    <div class="file-upload-loader"></div>
-
-                                ) : "Login"}
+                                    <div className="file-upload-loader"></div>
+                                ) : (
+                                    isForgotPassword ? "Send Reset Link" : "Login"
+                                )}
                             </button>
                         </div>
 
-                        {/* <small>
-                            Don't have account <Link to="/register">Register Here</Link>
-                        </small> */}
-
-
-
+                       {isForgotPassword && (
+                            <div className="d-flex mt-3 position-relative z-3">
+                                <span
+                                    className="clear-btn"
+                                    onClick={() => setIsForgotPassword(false)}
+                                >
+                                    Back to Login
+                                </span>
+                            </div>
+                        )}
                     </Form>
+
 
                 </div>
 

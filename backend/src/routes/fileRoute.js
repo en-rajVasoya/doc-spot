@@ -7,7 +7,8 @@ import {
   changeItemColor,
   moveItem,
   copyItem,
-  createFolder
+  createFolder,
+  getFolderSize
 } from "../controllers/fileController.js"
 
 const fileRouter = express.Router()
@@ -40,5 +41,9 @@ fileRouter.post("/copy", authMiddleware, copyItem)
 // create new empty folder
 fileRouter.post("/create-folder", authMiddleware, createFolder)
 
+
+
+//  getting the folder size ehre
+fileRouter.get("/folder/:id/size", authMiddleware, getFolderSize)
 
 export default fileRouter

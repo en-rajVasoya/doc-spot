@@ -1436,6 +1436,20 @@ export function FileExplorerProvider({ children }) {
         );
     };
 
+
+
+
+    // this function is calculating the folder size
+    const getFolderSizeApi = async (folderId) => {
+        try {
+            const { data } = await axiosApi.get(`/file/folder/${folderId}/size`)
+            return data.size
+        } catch (error) {
+            console.error(error.message)
+            return null
+        }
+    }
+
     const clearSelection = () => setSelectedIds(new Set())
 
 
@@ -1468,6 +1482,7 @@ export function FileExplorerProvider({ children }) {
             currentFolderMeta,
             getSuggestedUsersApi,
             updateSharedWith,
+            getFolderSizeApi,
 
 
             //  sorting 

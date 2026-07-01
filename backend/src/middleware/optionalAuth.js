@@ -7,7 +7,7 @@ const getKey = () => {
 
 const optionalAuth = async(req, res, next) => {
     try {
-        const token = req.cookies.token
+        const token = req.cookies.auth_token
    
         if (token) {
             const payload = await V3.decrypt(token, getKey())

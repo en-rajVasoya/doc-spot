@@ -17,6 +17,10 @@ import viewIcon from "@images/icon/view.svg"
 import viewHideIcon from "@images/icon/view-hide.svg"
 import errorIcon from "@images/icon/error-icon.svg"
 import { useAuth } from "../../context/AuthContext"
+import downloadIcon from "@images/icon/download.svg"
+import fileIcon from "@images/svgs/file.svg"
+import copyIcon from "@images/icon/copy.svg"
+import copiedIcon from "@images/icon/copied-icon.svg"
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
@@ -158,9 +162,20 @@ function FilePreview({ data, copied, setCopied }) {
             default:
                 return (
                     <div className="preview-toobig">
+                        <div className="txt-toobig-icon">
+                            <img src={fileIcon} alt="" width={38} />
+                        </div>
                         <p className="preview-toobig-title m-0">{fileName}</p>
                         <p className="single-sub-title">A preview of this file is not available. Please download it.</p>
-                        <button className="btn btn-primary mt-2" onClick={handleDownload}>Download</button>
+                        <button className="preview-btn preview-btn-text mt-2" onClick={handleDownload}>
+                            <InteractiveIcon
+                                defaultIcon={downloadIcon}
+                                width={20}
+                                height={20}
+                                alt=""
+                            />
+                            Download
+                        </button>
                     </div>
                 )
         }
@@ -176,11 +191,27 @@ function FilePreview({ data, copied, setCopied }) {
                     <div className="file-preview-actions">
                         {type === "text" && (
                             <OverlayTrigger placement="bottom" overlay={<Tooltip>{copied ? "Copied!" : "Copy"}</Tooltip>}>
-                                <button onClick={handleCopy} className="btn icon-hover" />
+                                <button onClick={handleCopy} className="preview-btn preview-btn-text">
+                                    <InteractiveIcon
+                                        defaultIcon={copied ? copiedIcon : copyIcon}
+                                        width={20}
+                                        height={20}
+                                        alt=""
+                                    />
+                                    {copied ? "Copied!" : "Copy"}
+                                </button>
                             </OverlayTrigger>
                         )}
                         <OverlayTrigger placement="bottom" overlay={<Tooltip>Download</Tooltip>}>
-                            <button onClick={handleDownload} className="btn icon-hover">Download</button>
+                            <button onClick={handleDownload} className="preview-btn preview-btn-text">
+                                <InteractiveIcon
+                                    defaultIcon={downloadIcon}
+                                    width={20}
+                                    height={20}
+                                    alt=""
+                                />
+                                Download
+                            </button>
                         </OverlayTrigger>
                     </div>
                 </div>

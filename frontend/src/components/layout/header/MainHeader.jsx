@@ -26,7 +26,9 @@ import CustomScroll from '../CustomScroll.jsx';
 import closeIcon from "@images/icon/close-icon.svg"
 import AdminSearchBar from '../admin/AdminSearchBar.jsx';
 import enterIcon from "@images/icon/enter-icon.svg";
+import editUserIcon from "@images/icon/edit-user-icon.svg"
 import { useBellNotification } from '../../../context/BellNotificationContext.jsx';
+
 
 //  getiing backend url for getting profile pic of user
 const BASE_URL = import.meta.env.VITE_API_URL?.replace(/\/api\/?$/, "") || "";
@@ -241,7 +243,7 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                                             <InteractiveIcon
                                                 defaultIcon={notificationIcon}
                                                 alt=""
-                                                width={22}
+                                                width={20}
                                             />
                                         </span>
                                     </Tooltip>
@@ -341,21 +343,21 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
 
                                             {/* see all notification button here */}
                                             {notifications.length > 0 && (
-                                                <div className="search-suggestion-footer d-none" style={{ borderTop: "1px solid var(--border-color)", borderRadius: "0 0 16px 16px" }}>
-                                                    <button className='search-See-all-btn w-100 justify-content-center'
+                                                <div className="notification-panel-footer " >
+                                                    <button className='notification-panel-all-btn w-100 justify-content-center'
                                                         onClick={() => {
                                                             setIsNotificationOpen(false)
                                                             navigate("/notifications")
                                                         }}>
                                                         See all notifications
-                                                        <span>
+                                                        {/* <span>
                                                             <InteractiveIcon
                                                                 defaultIcon={enterIcon}
                                                                 alt=""
                                                                 width={20}
                                                                 height={20}
                                                             />
-                                                        </span>
+                                                        </span> */}
                                                     </button>
                                                 </div>
                                             )}
@@ -437,6 +439,17 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                                                 <span className='item-name'>Redirect to My Docspot</span>
                                             </Dropdown.Item>
                                             <Dropdown.Divider className='dot' />
+                                            <Dropdown.Item className="dropdown-item d-flex align-items-center"
+                                                onClick={() => navigate("/profile")}
+                                            >
+                                                <InteractiveIcon
+                                                    defaultIcon={editUserIcon}
+                                                    width={24}
+                                                    height={24}
+                                                    alt="Edit Profile"
+                                                />
+                                                <span className='item-name'>Edit Profile</span>
+                                            </Dropdown.Item>
                                             <Dropdown.Item className="dropdown-item d-flex align-items-center" onClick={handleLogout}>
                                                 <InteractiveIcon
                                                     defaultIcon={logOutIcon}
@@ -465,7 +478,7 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                                                 onClick={() => navigate("/profile")}
                                             >
                                                 <InteractiveIcon
-                                                    defaultIcon={editIcon}
+                                                    defaultIcon={editUserIcon}
                                                     width={24}
                                                     height={24}
                                                     alt="Edit Profile"

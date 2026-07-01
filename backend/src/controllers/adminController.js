@@ -430,6 +430,13 @@ export const deleteUser = async (req, res) => {
             return res.status(400).json({ success: false, message: "No active users found" });
         }
 
+
+        // socket event for when user delete so he willl be instant logged out here
+        // Send the force_logout socket event to each deleted user ID
+        user_ids.forEach(userId => {
+            req.emitToUser(userId.toString(), "force_logout", {})
+        })
+
         res.status(200).json({
             success: true,
             message: `${result.modifiedCount} user(s) deleted successfully`,

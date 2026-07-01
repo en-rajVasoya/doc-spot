@@ -362,7 +362,7 @@ function AdminDashboard({ setModal }) {
                   type="number"
                   min={1}
                   max={pagination?.totalPages}
-                  placeholder="Go"
+                  placeholder="#"
                   className="custom-form-control"
                   onKeyDown={handlePageInputKeyDown}
                 />

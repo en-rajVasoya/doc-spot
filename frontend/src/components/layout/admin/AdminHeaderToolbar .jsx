@@ -9,6 +9,8 @@ import editIcon from "@images/icon/edit-icon.svg";
 import viewIcon from "@images/icon/view.svg";
 import { useNotification } from "../../../context/NotificationContext";
 import { useAdmin } from "../../../context/AdminContext";
+import editUserIcon from "@images/icon/edit-user-icon.svg"
+
 
 
 function AdminHeaderToolbar({ setModal, searchBarOpen, setSearchBarOpen }) {
@@ -59,7 +61,7 @@ function AdminHeaderToolbar({ setModal, searchBarOpen, setSearchBarOpen }) {
                                     <li className="d-flex align-items-center justify-content-center">
                                         <Tooltip text="Edit User" placement="bottom" theme={`${isDisabled || selectedIds.size > 1 ? "disabled" : ""}`}>
                                             <InteractiveIcon
-                                                defaultIcon={editIcon}
+                                                defaultIcon={editUserIcon}
                                                 alt="View"
                                                 className={`${isDisabled || selectedIds.size > 1 ? "disabled" : ""}`}
                                                 onClick={!isDisabled && selectedIds.size === 1 ? () => setModal({ type: "editAdminModal", data: selectedUser }) : undefined}

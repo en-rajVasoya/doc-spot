@@ -376,6 +376,28 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
         setIsOpen(false);
     };
 
+
+
+
+    // this function when some suggested esult come so that text make it blod here
+    const highlightMatch = (text, query) => {
+        if (!query || !query.trim()) return text;
+
+        // Escape regex special characters in search query
+        const escapedQuery = query.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        const regex = new RegExp(`(${escapedQuery})`, "gi");
+
+        const parts = text.split(regex);
+
+        return parts.map((part, index) =>
+            part.toLowerCase() === query.toLowerCase() ? (
+                <strong key={index}>{part}</strong>
+            ) : (
+                part
+            )
+        );
+    };
+
     const fileTypeOptions = [
         { value: "Any", label: "Any", icon: fileIcon },
         { value: "Photo", label: "Photo", icon: imgFile },
@@ -536,7 +558,7 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
                                                 </div>
                                                 <div className="search-suggestion-file-info">
                                                     <div className="search-suggestion-file-name">
-                                                        {item.name}
+                                                        {highlightMatch(item.name, searchText)}
                                                     </div>
                                                     <div className="search-suggestion-file-meta">
                                                         {item.locationPath}

@@ -853,7 +853,7 @@ function PdfViewer({ file: fileData }) {
                 // 🔍 DEBUG: See what fileData looks like
                 console.log("PDF fileData:", typeof fileData, fileData)
                 console.log("PDF fileData.fileSize:", fileData?.fileSize, "fileData.storagePath:", fileData?.storagePath, "fileData.url:", fileData?.url)
-               
+
                 if (fileData instanceof File || fileData instanceof Blob) {
                     const sizeMB = fileData.size / (1024 * 1024)
                     const sizeMBFixed = parseFloat(sizeMB.toFixed(1))
@@ -862,7 +862,7 @@ function PdfViewer({ file: fileData }) {
                     if (sizeMB > MAX_FILE_SIZE_MB) {
                         setTooBig(true)
                         setLoading(false)
-                        return 
+                        return
                     }
 
                     source = { data: await fileData.arrayBuffer() }

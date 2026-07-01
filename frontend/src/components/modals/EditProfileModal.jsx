@@ -107,8 +107,13 @@ function EditProfileModal({ onClose, setModal }) {
             newErrors.password = "Password does not meet all requirements";
         }
 
-        if (password && !currentPassword) {
-            newErrors.currentPassword = "Current password is required to set a new password";
+        if (password || currentPassword) {
+            if (!currentPassword) {
+                newErrors.currentPassword = "Current password is required to set a new password";
+            }
+            if (!password) {
+                newErrors.password = "New password is required";
+            }
         }
 
         if (Object.keys(newErrors).length > 0) {
@@ -123,7 +128,7 @@ function EditProfileModal({ onClose, setModal }) {
         formData.append("name", displayName);
         formData.append("user_id", username);
 
-        if (password) {
+        if (password || currentPassword) {
             formData.append("password", password);
             formData.append("currentPassword", currentPassword);
         }

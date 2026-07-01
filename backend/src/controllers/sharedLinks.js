@@ -88,7 +88,7 @@ export const accessLink = async (req, res) => {
 
         if (sharedLink.expire_date && new Date() > new Date(sharedLink.expire_date)) {
             await SharedLink.findByIdAndUpdate(sharedLink._id, { is_expired: true });
-            return res.status(410).json({ success: false, is_expired: true,  message: "Link has expired" });
+            return res.status(410).json({ success: false, is_expired: true, message: "Link has expired" });
         }
 
         if (!sharedLink.is_public) {

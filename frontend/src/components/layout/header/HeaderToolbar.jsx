@@ -97,12 +97,15 @@ function HeaderToolbar({ setModal, searchBarOpen, setSearchBarOpen }) {
 
                                     {/* 1. SHARE ACTION (Disabled for viewers) */}
                                     <li className="d-flex align-items-center justify-content-center">
-                                        <Tooltip text="Share" placement="bottom" theme={`${isDisabled || isItemViewerOnly ? "disabled" : ""}`}>
+                                        <Tooltip 
+                                            text="Share" 
+                                            placement="bottom" 
+                                            theme={`${isDisabled || isItemViewerOnly || selectedIds.size !== 1 ? "disabled" : ""}`}>
                                             <InteractiveIcon
                                                 defaultIcon={userPlusIcon}
                                                 alt="Share"
-                                                className={`${selectedIds.size === 0 || isItemViewerOnly ? "disabled" : ""}`}
-                                                onClick={!isDisabled && !isItemViewerOnly ? () => {
+                                                className={`${selectedIds.size !== 1 || isItemViewerOnly ? "disabled" : ""}`}
+                                                onClick={!isDisabled && !isItemViewerOnly && selectedIds.size === 1 ? () => {
                                                     const selectedItems = displayItems.filter(i => selectedIds.has(i._id.toString()))
                                                     setModal({ type: "shareUser", data: selectedItems })
                                                 } : undefined}

@@ -1,6 +1,6 @@
 //  here this file start uplaodihn all files and folder here 
 import axiosApi from "../../utils/api";
-import { isBlockedFile, checkZipContainsBlocked } from "../../utils/blockFileTypes.js";
+import { isBlockedFile, checkZipContainsBlocked, checkRarContainsBlocked } from "../../utils/blockFileTypes.js";
 
 
 const CHUNK_SIZE = 4 * 1024 * 1024
@@ -69,6 +69,16 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
                     updateFile(sessionId, f.filekey, {
                         status: "blocked",
                         message: "Zip contains blocked files"
+                    }, f.status)
+                    continue
+                }
+            }
+            if (f.file.name.endsWith(".rar") || f.file.type === "application/x-rar-compressed" || f.file.type === "application/rar") {
+                const hasBlocked = await checkRarContainsBlocked(f.file);
+                if (hasBlocked) {
+                    updateFile(sessionId, f.filekey, {
+                        status: "blocked",
+                        message: "Rar contains blocked files"
                     }, f.status)
                     continue
                 }
@@ -237,6 +247,13 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
                 const hasBlocked = await checkZipContainsBlocked(file);
                 if (hasBlocked) {
                     updateFile(sessionId, filekey, { status: "blocked", message: "Zip contains blocked files" })
+                    return
+                }
+            }
+            if (file.name.endsWith(".rar") || file.type === "application/x-rar-compressed" || file.type === "application/rar") {
+                const hasBlocked = await checkRarContainsBlocked(file);
+                if (hasBlocked) {
+                    updateFile(sessionId, filekey, { status: "blocked", message: "Rar contains blocked files" })
                     return
                 }
             }

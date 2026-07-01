@@ -1,5 +1,7 @@
 import path from "path"
 import fs from "fs"
+import mongoose from "mongoose";
+
 
 import { getAbsolutePath } from "#utils/pathHelper";
 import { logger } from "#utils/logger";
@@ -95,6 +97,51 @@ export const deleteItemPermanently = async (item) => {
 }
 
 
+
+//  this fucntion is for calculating the folder size here all nested item will calculate here and get the fileSize here
+export const getFolderSizeRecursive = async(folderId) => {
+    const result = await uploadModel.aggregate([
+        //  mathc will find the the one doucment where id is this folderId
+        { $match: { _id: new mongoose.Types.ObjectId(folderId) } },
+        {
+            //  mongo db built in recursice 
+            $graphLookup: {
+                from: "uploads",  // searhc in the collection uploads
+                startWith: "$_id",   // start the search using _id
+                connectFromField: "_id",   // start search using this id
+                connectToField: "parent",   // where all parent field is the actual id 
+                as: "descendants",   //put all the finding document in this array
+                restrictSearchWithMatch: {
+                    isTrashed: {$ne: true}
+                }
+            }
+        },
+        {
+            $project: {
+                totalSize:{
+                    $sum: {
+                        $map: {
+                            input: {
+                                $filter: {
+                                    input: "$descendants",
+                                    cond: {
+                                        $and: [
+                                            {$eq: ["$$this.type", "file"]},
+                                            {$eq: ["$$this.uploadStatus", "completed"]}
+                                        ]
+                                    }
+                                }
+                            },
+                            in: "$$this.fileSize"
+                        }
+                    }
+                }
+            }
+        }
+
+    ]);
+    return result[0]?.totalSize || 0
+}
 
 
 

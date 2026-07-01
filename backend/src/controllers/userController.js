@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs"
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
 
 //  models - schema
 import User from "../models/userModel.js";
@@ -9,6 +10,7 @@ import User from "../models/userModel.js";
 import { logger } from "#utils/logger";
 import { generateToken } from "../utils/generateLoginToken.js";
 import { processProfileImage } from "#utils/imageProcessor";
+import { sendEmail } from "#utils/sendEmail";
 
 //  User Register Controller
 export const registerUser = async (req, res) => {
@@ -105,7 +107,7 @@ export const userLogin = async (req, res) => {
             : 24 * 60 * 60 * 1000;      // 1 day
 
         //  now saving this toke in cookie
-        res.cookie("token", token, {
+        res.cookie("auth_token", token, {
             httpOnly: true,
             secure: false,      // Must be FALSE for localhost (HTTP)
             sameSite: "lax",    // Required for cross-origin localhost requests
@@ -135,7 +137,7 @@ export const userLogin = async (req, res) => {
 export const userLogout = async (req, res) => {
     try {
         // clear cookies
-        res.clearCookie("token", {
+        res.clearCookie("auth_token", {
             httpOnly: true,
             maxAge: 0
         })
@@ -174,7 +176,7 @@ export const currentUser = async (req, res) => {
 //  function to update user profile details 
 export const updateProfile = async (req, res) => {
     try {
-        const { name, email, user_id, password, currentPassword} = req.body;
+        const { name, email, user_id, password, currentPassword } = req.body;
 
         let userID = req.user._id;
 
@@ -215,12 +217,15 @@ export const updateProfile = async (req, res) => {
                 return res.status(400).json({ success: false, message: "Email is invalid" })
             }
 
-            userData.email = emailRegex;
+            userData.email = normalizedEmail;
         }
 
-        if (password) {
+        if (password || currentPassword) {
             if (!currentPassword) {
                 return res.status(400).json({ message: "Current password is required to set a new password" });
+            }
+            if (!password) {
+                return res.status(400).json({ message: "New password is required" });
             }
 
             const isMatch = await bcrypt.compare(currentPassword, userData.password);
@@ -285,5 +290,151 @@ export const updateProfile = async (req, res) => {
     } catch (error) {
         logger.error(error);
         res.status(500).json({ success: false, message: error.message });
+    }
+}
+
+
+
+//  this function is used for the forgot password so create token adn send mail to user here
+export const forgotPassword = async (req, res) => {
+    try {
+        const { email } = req.body;
+
+        if (!email) {
+            return res.status(400).json({ success: false, message: "Email is required" })
+        }
+
+
+        //  validation if email exist in our database
+        const normalizeEmail = email.trim().toLowerCase()
+
+        //  find if any user exist with this email id or not 
+        const user = await User.findOne({ email: normalizeEmail })
+        if (!user) {
+            return res.status(404).json({ success: false, message: "Invalid email" })
+        }
+
+
+        // generate random 32 char token
+        const rawToken = crypto.randomBytes(32).toString("hex")
+
+        // hash the token to store in the database securely
+        const hashedToken = crypto.createHash("sha256").update(rawToken).digest("hex")
+
+
+        //  save this token to data base adn token expire is 15 miniutes
+        user.reset_password_token = hashedToken;
+        user.reset_password_expires = Date.now() + 15 * 60 * 1000
+        await user.save()
+
+
+        //  create reset url here with token here
+        const resetUrl = `${process.env.WEB_URL}/reset-password/${rawToken}`
+
+        //  build the email html
+        const emailHtml = `
+            <h3>Hello ${user.name},</h3>
+            <p>You requested a password reset. Click the link below to securely set a new password:</p>
+            <a href="${resetUrl}" target="_blank">${resetUrl}</a>
+            <p>This link will expire in 15 minutes.</p>
+            <p>If you didn't request this, you can safely ignore this email.</p>
+        `;
+
+
+        //  send the email with helper function 
+        await sendEmail({
+            to: user.email,
+            subject: "Password Reset Request - DocSpot",
+            html: emailHtml
+        })
+
+        res.status(200).json({ success: true, message: "Password reset link sent to your email" });
+
+    } catch (error) {
+        logger.error(error);
+
+        // if email sending was fail so we need to earse the token from database
+        if (req.body.email) {
+            const user = await User.findOne({ email: req.body.email.trim().toLowerCase() });
+            if (user) {
+                user.reset_password_token = undefined;
+                user.reset_password_expires = undefined;
+                await user.save();
+            }
+        }
+
+        res.status(500).json({ success: false, message: "Error sending email. Please try again later." });
+
+    }
+}
+
+
+
+
+//  this fucntion will check like if link token is expired or not if expired so we can do bettwe ui herre
+export const validateResetToken = async (req, res) => {
+    try {
+        const { token } = req.params;
+
+        //  hash the incoming token here
+        const hashedToken = crypto.createHash("sha256").update(token).digest("hex")
+
+
+        // lokk for a user where token and expire date here will be greater then current time
+        const user = await User.findOne({
+            reset_password_token: hashedToken,
+            reset_password_expires: { $gt: Date.now() }
+        });
+
+        if (!user) {
+            return res.status(400).json({ success: false, message: "Link has expired or is invalid" });
+        }
+        res.status(200).json({ success: true, message: "Token is valid" });
+
+    } catch (error) {
+        logger.error(error);
+        res.status(500).json({ success: false, message: "Error validating token" });
+    }
+}
+
+
+
+
+// reset password 
+export const resetPassword = async (req, res) => {
+    try {
+        const { token } = req.params;
+        const { password } = req.body;
+
+        if (!password) {
+            return res.status(400).json({ success: false, message: "New password is required" });
+        }
+
+        // Hash the token from the URL
+        const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+
+        // Find user with valid token and unexpired date
+        const user = await User.findOne({
+            reset_password_token: hashedToken,
+            reset_password_expires: { $gt: Date.now() }
+        });
+        if (!user) {
+            return res.status(400).json({ success: false, message: "Invalid or expired reset token" });
+        }
+
+
+        // hash the new password here
+        const hashedPassword = await bcrypt.hash(password, 10)
+
+        //  update the user password and clear token
+        user.password = hashedPassword;
+        user.reset_password_token = undefined;
+        user.reset_password_expires = undefined;
+        await user.save()
+
+        res.status(200).json({ success: true, message: "Password reset successfully. You can now login." });
+    } catch (error) {
+        logger.error(error);
+        res.status(500).json({ success: false, message: "Error resetting password" });
     }
 }

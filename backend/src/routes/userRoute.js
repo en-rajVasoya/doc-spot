@@ -1,5 +1,5 @@
 import express from "express"
-import { currentUser, registerUser, userLogin, userLogout, updateProfile } from "#controllers/userController";
+import { currentUser, registerUser, userLogin, userLogout, updateProfile, forgotPassword, validateResetToken, resetPassword } from "#controllers/userController";
 import authMiddleware from "#middleware/authMiddleware";
 import profilePicUploadMiddleware from "#middleware/profilePicMiddleware";
 
@@ -22,5 +22,13 @@ userRouter.post("/edit_profile", authMiddleware, profilePicUploadMiddleware.sing
 
 //  for logout user
 userRouter.post("/logout", authMiddleware, userLogout)
+
+
+// ==========================================
+// FORGOT / RESET PASSWORD ROUTES
+// ==========================================
+userRouter.post("/forgot_password", forgotPassword);
+userRouter.get("/reset_password/validate/:token", validateResetToken);
+userRouter.post("/reset_password/:token", resetPassword);
 
 export default userRouter

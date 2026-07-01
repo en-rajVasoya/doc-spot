@@ -111,6 +111,7 @@ import SharedPreview from "../pages/SharedPreview.jsx"
 import AdminDashboardPage from "../pages/AdminDashboardPage.jsx"
 import UpdateUserProfile from "../pages/UpdateUserProfile.jsx"
 import NotificationPage from "../pages/NotificationPage.jsx"
+import ResetPassword from "../userAuth/ResetPassword.jsx"
 
 function AppRoutes() {
   return (
@@ -122,23 +123,26 @@ function AppRoutes() {
       {/* Public Shared Link Route — no auth needed */}
       <Route path="/share" element={<SharedPreview />} />
 
+      {/* reset password route */}
+      <Route path="reset-password/:token" element={<ResetPassword />} />
+
       {/* now here protected routes */}
       <Route element={<ProtectedRoute />}>
 
-      {/*  update user profile code here */}
-      <Route path="/profile" element={
+        {/*  update user profile code here */}
+        <Route path="/profile" element={
           <FileExplorerProvider filter={getRoute.DASHBOARD}>
             <UpdateUserProfile />
           </FileExplorerProvider>
         } />
 
-      <Route path="/notifications" element={
+        <Route path="/notifications" element={
           <FileExplorerProvider filter={getRoute.DASHBOARD}>
             <NotificationPage />
           </FileExplorerProvider>
         } />
 
-      {/* My Docspot Dashboard */}
+        {/* My Docspot Dashboard */}
         <Route path={getRoute.DASHBOARD} element={
           <FileExplorerProvider filter={getRoute.DASHBOARD}>
             <Dashboard />

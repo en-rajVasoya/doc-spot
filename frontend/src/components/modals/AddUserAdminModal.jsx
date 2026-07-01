@@ -13,6 +13,7 @@ import uploadeIcon from "@images/icon/uploade-icon.svg";
 import { useAdmin } from "../../context/AdminContext";
 import UserAvatar from '../layout/UserAvatar';
 import CustomScroll from "../layout/CustomScroll";
+import singleUserIcon from "@images/icon/single-user-icon.svg";
 
 function AddUserAdminModal({ onClose, setModal }) {
     const [shake, setShake] = useState(false);
@@ -215,7 +216,7 @@ function AddUserAdminModal({ onClose, setModal }) {
                                 <Form.Label className="required-star">Username / ID</Form.Label>
                                 <div className={`form-control-single-icon${errors.username ? " has-error" : ""}`}>
                                     <InteractiveIcon
-                                        defaultIcon={userIcon}
+                                        defaultIcon={singleUserIcon}
                                         alt=""
                                         className="form-left-icon"
                                         width={20}
@@ -240,7 +241,7 @@ function AddUserAdminModal({ onClose, setModal }) {
                                 <Form.Label className="required-star">Display Name</Form.Label>
                                 <div className={`form-control-single-icon${errors.displayName ? " has-error" : ""}`}>
                                     <InteractiveIcon
-                                        defaultIcon={userIcon}
+                                        defaultIcon={singleUserIcon}
                                         alt=""
                                         className="form-left-icon"
                                         width={20}
@@ -340,43 +341,74 @@ function AddUserAdminModal({ onClose, setModal }) {
                                 )}
                             </Form.Group>
 
-                            {/* User Status toggle */}
-                            <div className="mb-3">
+                            {/* User Status radio button */}
+                            <div className="mb-4">
                                 <Form.Label className="required-star d-block">User Status</Form.Label>
-                                <div className="user-status-box">
-                                    <button
-                                        role="switch"
-                                        aria-checked={statusActive}
-                                        aria-label="User status"
-                                        className={`add-user-status-toggle${statusActive ? " active" : ""}`}
-                                        onClick={() => setStatusActive((s) => !s)}
-                                    >
-                                        <span className="add-user-status-toggle-knob" />
-                                    </button>
-                                    <span className="add-user-status-label ">
-                                        {statusActive ? "Active" : "Inactive"}
-                                    </span>
-                                </div>
+                                <div className="custom-radio-card-wrapper only-radio-btn">
+                                    <label className={`custom-radio-card ${statusActive ? "active" : ""}`}>
+                                        <input
+                                            type="radio"
+                                            name="userStatus"
+                                            value="active"
+                                            checked={statusActive}
+                                            onChange={() => setStatusActive(true)}
+                                            className="rounded-checkbox"
+                                        />
+                                        <div>
+                                            <div className="subtitle m-0">Active</div>
+                                        </div>
+                                    </label>
 
+                                    <label className={`custom-radio-card ${!statusActive ? "active" : ""}`}>
+                                        <input
+                                            type="radio"
+                                            name="userStatus"
+                                            value="inactive"
+                                            checked={!statusActive}
+                                            onChange={() => setStatusActive(false)}
+                                            className="rounded-checkbox"
+                                        />
+                                        <div>
+                                            <div className="subtitle m-0">Inactive</div>
+                                        </div>
+                                    </label>
+                                </div>
                             </div>
 
-                            {/* User Role toggle */}
+                            {/* User Role radio */}
                             <div className="mb-3">
                                 <Form.Label className="required-star d-block">User Role</Form.Label>
-                                <div className="user-status-box">
-                                    <button
-                                        type="button"
-                                        role="switch"
-                                        aria-checked={role === "admin"}
-                                        aria-label="User role"
-                                        className={`add-user-status-toggle${role === "admin" ? " active" : ""}`}
-                                        onClick={() => setRole(r => r === "admin" ? "user" : "admin")}
-                                    >
-                                        <span className="add-user-status-toggle-knob" />
-                                    </button>
-                                    <span className="add-user-status-label ">
-                                        {role === "admin" ? "Admin" : "User"}
-                                    </span>
+                                <div className="custom-radio-card-wrapper only-radio-btn">
+
+                                    <label className={`custom-radio-card ${role === "user" ? "active" : ""}`}>
+                                        <input
+                                            type="radio"
+                                            name="userRole"
+                                            value="user"
+                                            checked={role === "user"}
+                                            onChange={() => setRole("user")}
+                                            className="rounded-checkbox"
+                                        />
+                                        <div>
+                                            <div className="subtitle m-0">User</div>
+                                        </div>
+                                    </label>
+
+                                    <label className={`custom-radio-card ${role === "admin" ? "active" : ""}`}>
+                                        <input
+                                            type="radio"
+                                            name="userRole"
+                                            value="admin"
+                                            checked={role === "admin"}
+                                            onChange={() => setRole("admin")}
+                                            className="rounded-checkbox"
+                                        />
+                                        <div>
+                                            <div className="subtitle m-0">Admin</div>
+                                        </div>
+                                    </label>
+
+
                                 </div>
                             </div>
 

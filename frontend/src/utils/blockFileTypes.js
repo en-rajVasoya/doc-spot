@@ -111,3 +111,201 @@ export const checkZipContainsBlocked = async (file) => {
     }
     return false;
 };
+
+/**
+ * Checks magic bytes to verify if the file is a valid RAR4 or RAR5 archive.
+ * Returns 4 for RAR4, 5 for RAR5, or null if not a RAR file.
+ */
+export const isRealRar = async (file) => {
+    if (!file || file.size < 7) return null;
+    try {
+        const buffer = await file.slice(0, 8).arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+        if (
+            bytes[0] === 0x52 &&
+            bytes[1] === 0x61 &&
+            bytes[2] === 0x72 &&
+            bytes[3] === 0x21 &&
+            bytes[4] === 0x1a &&
+            bytes[5] === 0x07
+        ) {
+            if (bytes[6] === 0x00) return 4;
+            if (bytes[6] === 0x01 && bytes[7] === 0x00) return 5;
+        }
+        return null;
+    } catch (e) {
+        console.error("Failed to check RAR magic bytes:", e);
+        return null;
+    }
+};
+
+/**
+ * Scans the contents of a RAR4 or RAR5 archive block by block.
+ * Decodes header metadata and skips over compressed file data.
+ */
+export const checkRarContainsBlocked = async (file) => {
+    if (!file) return false;
+    const claimsToBeRar =
+        file.name?.endsWith(".rar") ||
+        file.type === "application/x-rar-compressed" ||
+        file.type === "application/rar";
+    if (!claimsToBeRar) return false;
+
+    const rarVersion = await isRealRar(file);
+    if (!rarVersion) return false;
+
+    try {
+        let offset = rarVersion === 4 ? 7 : 8;
+        const decoder = new TextDecoder("utf-8");
+
+        while (offset < file.size) {
+            if (rarVersion === 4) {
+                const prefixSlice = file.slice(offset, offset + 11);
+                const prefixBuffer = await prefixSlice.arrayBuffer();
+                if (prefixBuffer.byteLength < 7) break;
+                const view = new DataView(prefixBuffer);
+
+                const headType = view.getUint8(2);
+                const headFlags = view.getUint16(3, true);
+                let headSize = view.getUint16(5, true);
+
+                let idx = 7;
+                if (headFlags & 0x8000) {
+                    if (prefixBuffer.byteLength < 11) break;
+                    const addSize = view.getUint32(7, true);
+                    headSize += addSize;
+                    idx += 4;
+                }
+
+                if (headSize < 7) break;
+
+                if (headType === 0x74) {
+                    const headerSlice = file.slice(offset + idx, offset + headSize);
+                    const headerBuffer = await headerSlice.arrayBuffer();
+                    const hView = new DataView(headerBuffer);
+
+                    const packSize = hView.getUint32(0, true);
+                    const nameSize = hView.getUint16(18, true);
+
+                    let highPackSize = 0;
+                    if (headFlags & 0x100) {
+                        highPackSize = hView.getUint32(24, true);
+                    }
+
+                    let nameOffset = 22;
+                    if (headFlags & 0x100) {
+                        nameOffset += 8;
+                    }
+
+                    const nameBytes = new Uint8Array(headerBuffer, nameOffset, nameSize);
+                    const fileName = decoder.decode(nameBytes);
+
+                    if (isBlockedFile(fileName)) {
+                        return true;
+                    }
+
+                    const totalPackSize = packSize + highPackSize * 0x100000000;
+                    offset += headSize + totalPackSize;
+                } else {
+                    offset += headSize;
+                }
+            } else if (rarVersion === 5) {
+                const slice = file.slice(offset, offset + 256);
+                const buffer = await slice.arrayBuffer();
+                if (buffer.byteLength < 5) break;
+                const bytes = new Uint8Array(buffer);
+
+                const readVint = (start) => {
+                    let value = 0;
+                    let shift = 0;
+                    let idx = start;
+                    while (idx < bytes.length) {
+                        const b = bytes[idx++];
+                        value += (b & 0x7f) * Math.pow(2, shift);
+                        shift += 7;
+                        if ((b & 0x80) === 0) break;
+                    }
+                    return { value, length: idx - start };
+                };
+
+                let ptr = 4;
+                const headerSizeVint = readVint(ptr);
+                ptr += headerSizeVint.length;
+                const headerSize = headerSizeVint.value;
+
+                const headerTypeVint = readVint(ptr);
+                ptr += headerTypeVint.length;
+                const headerType = headerTypeVint.value;
+
+                const headerFlagsVint = readVint(ptr);
+                ptr += headerFlagsVint.length;
+                const headerFlags = headerFlagsVint.value;
+
+                let extraSize = 0;
+                if (headerFlags & 0x0001) {
+                    const extraSizeVint = readVint(ptr);
+                    ptr += extraSizeVint.length;
+                    extraSize = extraSizeVint.value;
+                }
+
+                let dataSize = 0;
+                if (headerFlags & 0x0002) {
+                    const dataSizeVint = readVint(ptr);
+                    ptr += dataSizeVint.length;
+                    dataSize = dataSizeVint.value;
+                }
+
+                const totalHeaderSize = 4 + headerSizeVint.length + headerSize;
+
+                if (headerType === 2) {
+                    const fileFlagsVint = readVint(ptr);
+                    ptr += fileFlagsVint.length;
+                    const fileFlags = fileFlagsVint.value;
+
+                    const unpSizeVint = readVint(ptr);
+                    ptr += unpSizeVint.length;
+
+                    const fileAttrVint = readVint(ptr);
+                    ptr += fileAttrVint.length;
+
+                    if (fileFlags & 0x0002) {
+                        ptr += 4;
+                    }
+                    if (fileFlags & 0x0004) {
+                        ptr += 4;
+                    }
+
+                    const compInfoVint = readVint(ptr);
+                    ptr += compInfoVint.length;
+
+                    const hostOsVint = readVint(ptr);
+                    ptr += hostOsVint.length;
+
+                    const nameSizeVint = readVint(ptr);
+                    ptr += nameSizeVint.length;
+                    const nameSize = nameSizeVint.value;
+
+                    let fileName;
+                    if (ptr + nameSize <= buffer.byteLength) {
+                        const nameBytes = new Uint8Array(buffer, ptr, nameSize);
+                        fileName = decoder.decode(nameBytes);
+                    } else {
+                        const nameSlice = file.slice(offset + ptr, offset + ptr + nameSize);
+                        const nameBuffer = await nameSlice.arrayBuffer();
+                        const nameBytes = new Uint8Array(nameBuffer);
+                        fileName = decoder.decode(nameBytes);
+                    }
+
+                    if (isBlockedFile(fileName)) {
+                        return true;
+                    }
+                }
+
+                offset += totalHeaderSize + dataSize;
+            }
+        }
+    } catch (e) {
+        console.error("Failed to read RAR contents:", e);
+    }
+    return false;
+};

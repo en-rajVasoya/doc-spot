@@ -10,6 +10,7 @@ import { logger } from "#utils/logger";
 import { notifySharedUsers } from "#utils/userNotification";
 import { updateParentFolderTimestamps } from "#utils/parentFolderTimestamp";
 import { getAbsolutePath } from "#utils/pathHelper";
+import { getFolderSizeRecursive } from "#utils/index";
 
 //  helper function for socket notify all user that some change made
 
@@ -1146,3 +1147,38 @@ export const createFolder = async (req, res) => {
 }
 
 
+
+
+
+
+//  this unction is used for calculating the folder total size
+export const getFolderSize = async (req, res) => {
+  try {
+    const {id} = req.params;
+    
+    const currentUserID = req.user._id
+
+    // 1. Verify that the folder actually exists and is a folder
+    const folder = await uploadModel.findOne({ _id: id, type: "folder" })
+    if(!folder){
+      return res.status(404).json({ success: false, message: "Folder not found" });
+    }
+
+
+    // 2. check permission user has access this folder permission or not 
+    const permission = await getUserPermission(currentUserID, id)
+    if(!permission){
+       return res.status(403).json({ success: false, message: "Access denied" });
+    }
+
+
+    // 3. with the helper function calculate the size of fodler - graphlookup 
+    const size = await getFolderSizeRecursive(id)
+
+    return res.status(200).json({ success: true, size });
+
+  } catch (error) {
+    logger.error(error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}

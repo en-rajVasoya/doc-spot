@@ -8,6 +8,7 @@ import { useSearch } from "../../../context/SearchContext";
 import getFileIcon from "../../../utils/getFileIcon.js";
 import getFolderIcon from "../../../utils/getFolderIconColor.js";
 import FilePreviewModal from "../../features/filePreview/FilePreviewModal.jsx";
+import Breadcrumbs from "../../features/Breadcrumbs.jsx";
 import backIcon from "@images/icon/arrow-left-outline-icon.svg";
 import Tooltip from "../Tooltip.jsx";
 import renameIcon from "@images/icon/rename.svg";
@@ -242,11 +243,11 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
         const onScroll = () => {
             updateSelection();
         };
-        
+
         window.addEventListener("mousemove", handleMouseMove)
         window.addEventListener("mouseup", handleMouseUp)
         container.addEventListener("scroll", onScroll)
-        
+
         return () => {
             if (scrollFrameRef.current) cancelAnimationFrame(scrollFrameRef.current);
             window.removeEventListener("mousemove", handleMouseMove)
@@ -577,8 +578,8 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
                             left: dragRect.x,
                             top: Math.max(dragRect.y, dragRect.containerTop || 0),
                             width: dragRect.width,
-                            height: dragRect.y < (dragRect.containerTop || 0) 
-                                ? Math.max(0, dragRect.height - ((dragRect.containerTop || 0) - dragRect.y)) 
+                            height: dragRect.y < (dragRect.containerTop || 0)
+                                ? Math.max(0, dragRect.height - ((dragRect.containerTop || 0) - dragRect.y))
                                 : dragRect.height,
                         }}
                     />
@@ -847,9 +848,12 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
                     <ul>
                         {/* share */}
                         <li
-                            style={{ opacity: itemContextMenu.isViewerItem ? 0.6 : 1, cursor: itemContextMenu.isViewerItem ? "not-allowed" : "pointer" }}
+                            style={{
+                                opacity: itemContextMenu.isViewerItem || selectedIds.size > 1 ? 0.6 : 1,
+                                cursor: itemContextMenu.isViewerItem || selectedIds.size > 1 ? "not-allowed" : "pointer"
+                            }}
                             onClick={(e) => {
-                                if (itemContextMenu.isViewerItem) { e.stopPropagation(); return }
+                                if (itemContextMenu.isViewerItem || selectedIds.size > 1) { e.stopPropagation(); return }
                                 if (isViewerOnly) { e.stopPropagation(); return }
                                 const selectedItems = displayItems.filter(i => selectedIds.has(i._id.toString()))
                                 setModal({ type: "shareUser", data: selectedItems })
@@ -1031,6 +1035,54 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
                     </ul>
 
                 </div>
+            )}
+
+            {isSearchMode && selectedIds.size === 1 && (
+                (() => {
+                    const selectedIdStr = String(Array.from(selectedIds)[0]);
+                    const selectedItem = displayItems.find(item => String(item._id) === selectedIdStr);
+                    if (selectedItem && selectedItem.locationPath) {
+                        const pathParts = selectedItem.locationPath.split(' / ');
+
+                        // Fake the trail objects so your Breadcrumbs component accepts it
+                        const fakeTrail = pathParts.slice(1).map((name, index) => ({
+                            id: `search-path-${index}`,
+                            name: name,
+                            color: "gray"
+                        }));
+
+                        // Using your header/header-view classes so your exact main.css applies!
+                        return (
+                            <div className="header mt-3 mb-4" >
+                                <div className="header-view" >
+                                    <Breadcrumbs
+                                        rootLabel={pathParts[0]}
+                                        trail={fakeTrail}
+                                        maxVisible={2}
+                                        actions={[]}
+                                        onHomeClick={() => {
+                                            clearSearch();
+                                            openFolder(null); // Navigates to root Docspot
+                                        }}
+                                        onNavigate={(index) => {
+                                            // fakeTrail maps exactly to actualIndex+1, so if index matches the length, it's the last folder!
+                                            if (index === fakeTrail.length) {
+                                                clearSearch();
+                                                openFolder({
+                                                    _id: selectedItem.parent,
+                                                    name: pathParts[pathParts.length - 1],
+                                                    color: "gray",
+                                                    type: "folder"
+                                                });
+                                            }
+                                        }}
+                                    />
+                                </div>
+                            </div>
+                        );
+                    }
+                    return null;
+                })()
             )}
 
         </>

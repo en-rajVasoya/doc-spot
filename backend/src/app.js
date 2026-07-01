@@ -19,6 +19,7 @@ import { startTrashCleanup, startExpiredLinksCleanup } from "./utils/cronjob.js"
 import adminRouter from "./routes/adminRoute.js"
 import sharedLinksRouter from "./routes/sharedLinks.js"
 import notificationRoutes from "./routes/notification.js";
+import servingFileRouter from "#routes/servingFiles"
 // import { initClamAV } from "./virusTotal/clamAVWorker.js"
 
 // ===================================
@@ -66,19 +67,6 @@ app.use((req, res, next) => {
     next()
 })
 
-// ===================================
-// STATIC FILES SERVING
-// ===================================
-// Serve uploaded images
-app.use("/uploadimage", express.static(path.resolve("uploadimage")))
-
-// Serve uploaded files with cross-origin headers
-const __dirname = path.resolve()
-app.use("/files", (req, res, next) => {
-    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin")
-    next()
-})
-app.use("/files", express.static(path.join(__dirname, "files")))
 
 // ===================================
 // BODY PARSER & COOKIE MIDDLEWARE
@@ -86,6 +74,23 @@ app.use("/files", express.static(path.join(__dirname, "files")))
 app.use(express.json({ limit: "100mb" }))
 app.use(express.urlencoded({ limit: "100mb", extended: true }))
 app.use(cookieParser())
+
+// ===================================
+// STATIC FILES SERVING
+// ===================================
+// Serve uploaded images
+app.use("/uploadimage", express.static(path.resolve("uploadimage")))
+
+// Serve uploaded files with cross-origin headers
+// const __dirname = path.resolve()
+// app.use("/files", (req, res, next) => {
+//     res.setHeader("Cross-Origin-Resource-Policy", "cross-origin")
+//     next()
+// })
+// app.use("/files", express.static(path.join(__dirname, "files")))
+
+app.use("/files", servingFileRouter)
+
 
 // ===================================
 // REQUEST TIMEOUT CONFIGURATION

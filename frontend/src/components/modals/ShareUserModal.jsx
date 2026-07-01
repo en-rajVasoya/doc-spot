@@ -158,9 +158,9 @@ function ShareUserModal({ data, onClose }) {
         String(owner.userId) === String(user._id);
 
 
-    // Fixed: React-Select portal click ignore karo
+    // Fixed: React-Select portal click
     const handleOutsideClick = (e) => {
-        // React-Select dropdown portal ko ignore karo
+        // React-Select dropdown
         const isReactSelect =
             e.target.closest('[class*="-menu"]') ||
             e.target.closest('[class*="-option"]') ||
@@ -518,7 +518,11 @@ function ShareUserModal({ data, onClose }) {
                                         )}
 
                                         {/* mapping existing shared users */}
-                                        {sharedWith.map(s => (
+                                        {/* {sharedWith.map(s => ( */}
+                                        {/* mapping existing shared users */}
+                                        {sharedWith
+                                            .filter(s => !owner || String(s.userId) !== String(owner.userId))
+                                            .map(s => (
                                             <li key={s.userId}>
                                                 <div className="share-user-list d-flex justify-content-between align-items-center">
                                                     <div className="d-flex align-items-center">
@@ -674,6 +678,7 @@ function ShareUserModal({ data, onClose }) {
                                     )}
                                 </div>
                             </div>
+                              
 
                             {/* Link Expiration Section: ONLY shows if the access type is set to Public */}
                             {accessType === "public" && (
@@ -790,7 +795,7 @@ function ShareUserModal({ data, onClose }) {
 
                                                             return (
                                                                 <>
-                                                                    {/* Requirements box — focus ho aur saare pass na hue ho tabhi dikhao */}
+                                                                    {/* Requirements box */}
                                                                     {!allPassed && isFocused && (
                                                                         <div className="pwd-requirements-box">
                                                                             <p className="pwd-req-title">Password requirements</p>
@@ -893,7 +898,7 @@ function ShareUserModal({ data, onClose }) {
                                 onClick={handleShare}
                                 disabled={selectedUsers.size === 0}
                             >
-                                Share
+                                Done
                             </button>
                         </div>
                     </Modal.Footer>

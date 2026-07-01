@@ -543,8 +543,7 @@ function FolderViewer({ folder, contents = [], isPublic = false, view: viewProp 
                                 <li className="d-flex align-items-center justify-content-center">
                                     <button 
                                         className="preview-btn preview-btn-text m-0 d-flex align-items-center justify-content-center" 
-                                        onClick={downloadSelected}
-                                        disabled={selectedIds.size === 0}
+                                        onClick={() => downloadFolder(folder, token)}
                                         style={{ height: "40px", padding: "0 16px" }}
                                     >
                                         <InteractiveIcon
@@ -553,7 +552,7 @@ function FolderViewer({ folder, contents = [], isPublic = false, view: viewProp 
                                             className="me-2"
                                             width={20}
                                         />
-                                        Download
+                                        Download All
                                     </button>
                                 </li>
                             </ul>
@@ -796,10 +795,16 @@ function FolderViewer({ folder, contents = [], isPublic = false, view: viewProp 
                             </button>
                         </li>
                         {/* The following options are only visible if the user OWNS the folder (not a public link) */}
-                        {!isPublic && (
+                        {false && !isPublic && ( // Change "false && !isPublic" to "!isPublic" if you want to enable owner options in the future
                             <>
-                                <li onClick={() => setModal?.({ type: "shareUser", data: displayItems.filter(i => selectedIds.has(i._id.toString())) })}>
-                                    <button className="dropdown-item">
+                                <li
+                                    style={{ opacity: selectedIds.size > 1 ? 0.6 : 1, cursor: selectedIds.size > 1 ? "not-allowed" : "pointer" }}
+                                    onClick={(e) => {
+                                        if (selectedIds.size > 1) { e.stopPropagation(); return }
+                                        setModal?.({ type: "shareUser", data: displayItems.filter(i => selectedIds.has(i._id.toString())) })
+                                    }}
+                                >
+                                    <button className="dropdown-item" style={{ cursor: "inherit" }}>
                                         <span className="d-flex align-items-center">
                                             <InteractiveIcon defaultIcon={userPlus} className="me-2" width={20} height={20} alt="" />
                                             Share
