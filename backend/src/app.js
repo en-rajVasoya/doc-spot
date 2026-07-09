@@ -9,7 +9,7 @@ import cors from "cors"
 import connectDB from "./config/db.js"
 import userRouter from "./routes/userRoute.js"
 import uploadRouter from "./routes/uploadRoute.js"
-import shareRouter from "./routes/shareROute.js"
+import shareRouter from "./routes/shareRoute.js"
 import { initSocket, emitToUser } from "./socket.js"
 import downloadRouter from "./routes/downloadRoute.js"
 import searchRouter from "./routes/searchRoute.js"
@@ -49,6 +49,8 @@ app.use(cors({
         "http://192.168.1.112:5177",
         "https://192.168.1.112:5177",
         "https://192.168.1.213:5177",
+        "http://docspot-frontend-web.s3-website.ap-south-1.amazonaws.com",
+        "https://d2u61zpmg3hahd.cloudfront.net",
     ],
     credentials: true,
     exposedHeaders: ["Accept-Ranges", "Content-Range", "Content-Length"]

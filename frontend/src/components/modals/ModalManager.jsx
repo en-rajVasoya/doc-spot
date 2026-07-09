@@ -34,7 +34,7 @@
 //                 {modals.map((m, index) => {
 //                     const ModalComponent = MODAL_COMPONENTS[m.type];
 //                     if (!ModalComponent) return null;
-                    
+
 //                     const isTop = index === modals.length - 1;
 
 //                     return (

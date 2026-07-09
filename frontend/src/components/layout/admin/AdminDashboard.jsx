@@ -1,5 +1,5 @@
 import { useAdmin } from '../../../context/AdminContext'
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import InteractiveIcon from '../InteractiveIcon'
 import checkboxIcon from "@images/icon/checkbox-check.svg"
 import squareArrowDownLinearIcon from "@images/icon/square-arrow-down-linear.svg"
@@ -18,9 +18,41 @@ const limitOptions = [
 ]
 
 function AdminDashboard({ setModal }) {
-  const { users, isLoading, pagination, setPagination, selectedIds, setSelectedIds, sortBy, setSortBy, sortOrder, setSortOrder, roleFilter, setRoleFilter, activeFilter, setActiveFilter, allMatchingIds } = useAdmin()
-
+  const { users, isLoading, pagination, setPagination, selectedIds, setSelectedIds, sortBy, setSortBy, sortOrder, setSortOrder, roleFilter, setRoleFilter, activeFilter, setActiveFilter, allMatchingIds, searchQuery } = useAdmin()
   const pageInputRef = useRef(null)
+
+  //  escape key un select all checkbox user here
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") {
+        setModal(null)
+        setSelectedIds(new Set())
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown)
+    return () => document.removeEventListener("keydown", handleKeyDown)
+
+  }, [setSelectedIds, setModal])
+
+
+  // this fucntino is used for highlight the text when admin search user here
+  const highlightMatch = (text, query) => {
+    if(!text) return ""
+    if(!query || !query.trim()) return text
+
+    // spicial regext char  in search query
+    const escapedQuery = query.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+    const regex = new RegExp(`(${escapedQuery})`, "gi");
+
+    const parts = text.split(regex)
+
+    return parts.map((part, index) => 
+      part.toLowerCase() === query.toLowerCase() ? (
+        <strong key={index}>{part}</strong>
+      ) : (part)
+    )
+    
+  }
 
   const handleColumnSort = (column) => {
     if (sortBy === column) {
@@ -247,8 +279,8 @@ function AdminDashboard({ setModal }) {
                               <UserAvatar user={user} />
                             </div>
                             <div className='folder-name'>
-                              <p className="file-name mb-0">{user.name}</p>
-                              <p className="user-id-name">{user.user_id}</p>
+                              <p className="file-name mb-0">{highlightMatch(user.name, searchQuery)}</p>
+                              <p className="user-id-name">{highlightMatch(user.user_id, searchQuery)}</p>
                             </div>
                           </div>
                         </div>
@@ -256,7 +288,7 @@ function AdminDashboard({ setModal }) {
 
                       {/* Email */}
                       <div className="table-cell">
-                        <span>{user.email}</span>
+                        <span>{highlightMatch(user.email, searchQuery)}</span>
                       </div>
 
                       {/* Role */}

@@ -105,7 +105,7 @@ useEffect(() => {
                 {/* No NewAdd, No UploadPanel, No DownloadPanel, No DragAndDrop */}
                 <ModalManager modals={modals} setModal={setModal} />
 
-                <TransferPanel />
+                {/* <TransferPanel /> */}
             </div>
         </>
     )

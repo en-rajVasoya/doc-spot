@@ -7,18 +7,28 @@ import app, { initializeSocket } from "./app.js"
 // ENVIRONMENT VARIABLES
 // ===================================
 const PORT = process.env.PORT || 3000
-const SSL_KEY_PATH = process.env.SSL_KEY_PATH || path.join(path.resolve(), '192.168.1.112+2-key.pem')
-const SSL_CERT_PATH = process.env.SSL_CERT_PATH || path.join(path.resolve(), '192.168.1.112+2.pem')
+// Local Development mkcert Certificates (Keep as backup)
+const LOCAL_SSL_KEY_PATH = path.join(path.resolve(), '192.168.1.112+2-key.pem')
+const LOCAL_SSL_CERT_PATH = path.join(path.resolve(), '192.168.1.112+2.pem')
+
+// Production Let's Encrypt Certificates
+const SSL_KEY_PATH = process.env.SSL_KEY_PATH || '/etc/letsencrypt/live/docspot.duckdns.org/privkey.pem'
+const SSL_CERT_PATH = process.env.SSL_CERT_PATH || '/etc/letsencrypt/live/docspot.duckdns.org/fullchain.pem'
 
 // ===================================
 // HTTPS SERVER CONFIGURATION
 // ===================================
 let httpServer
 
+// If we are using S3, we are in production. Otherwise, we are running locally!
+const isS3 = process.env.STORAGE_PROVIDER === "s3";
+const finalKeyPath = isS3 ? SSL_KEY_PATH : LOCAL_SSL_KEY_PATH;
+const finalCertPath = isS3 ? SSL_CERT_PATH : LOCAL_SSL_CERT_PATH;
+
 try {
     const options = {
-        key: fs.readFileSync(SSL_KEY_PATH),
-        cert: fs.readFileSync(SSL_CERT_PATH)
+        key: fs.readFileSync(finalKeyPath),
+        cert: fs.readFileSync(finalCertPath)
     }
     httpServer = createServer(options, app)
     console.log("[SSL] HTTPS certificates loaded successfully")

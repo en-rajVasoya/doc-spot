@@ -132,7 +132,8 @@ const fmt = (s) => {
 const speeds = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
 export default function AudioViewer({ file }) {
-  const src = file?.url || (file?.storagePath ? `${file.storagePath}` : "");
+  const FILE_BASE_URL = import.meta.env.VITE_FILE_BASE_URL || import.meta.env.VITE_API_URL.replace(/\/api$/, "");
+  const src = file?.url || (file?.storagePath ? `${FILE_BASE_URL}${file.storagePath}` : "");
   const { downloadFile } = useDownload();
 
   const audioRef = useRef();

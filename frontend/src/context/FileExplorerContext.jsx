@@ -822,7 +822,7 @@ export function FileExplorerProvider({ children }) {
                     sortOrder: sortOrderRef.current
                 }
             })
-            await new Promise(resolve => setTimeout(resolve, 100))
+            // await new Promise(resolve => setTimeout(resolve, 100))
             setItems(data.items)
 
         } catch (error) {
@@ -1124,18 +1124,25 @@ export function FileExplorerProvider({ children }) {
     // ##################################################
     const openFolder = useCallback((folder) => {
         clearSelection()
-        setItems([])           // clear old items immediately so no flicker
-        setLoading(true)       // show loading spinner right away
+        setItems([])
+        setLoading(true)
         setCurrentFolderMeta(folder)
-        // store the permission of current fodler 
+
+        // store the permission of current folder
         setCurrentFolderPermission(folder.permission || null)
-        setTrail(prev => {
-            const lastId = prev[prev.length - 1]?.id
-            if (lastId === folder._id) return prev   // if folder id is same so dont push here
-            return [...prev, { id: folder._id, name: folder.name }]
-        })
+
+        const isDirectChild = String(folder.parent || "null") === String(currentFolderId || "null")
+        if (isDirectChild) {
+            setTrail(prev => {
+                const lastId = prev[prev.length - 1]?.id
+                if (lastId === folder._id) return prev
+                return [...prev, { id: folder._id, name: folder.name }]
+            })
+        } else {
+            setTrail([])
+        }
         navigate(`${getPathPrefix()}/folder/${folder._id}`)
-    }, [navigate, getPathPrefix])
+    }, [navigate, getPathPrefix, currentFolderId])
 
 
 
@@ -1197,7 +1204,11 @@ export function FileExplorerProvider({ children }) {
             //  update the ui
             setItems(prev =>
                 prev.map(item =>
-                    item._id === id ? data.item : item
+                    item._id === id ? {
+                        ...item,
+                        name: newName,
+                        updatedAt: data.item?.updatedAt || new Date().toISOString()
+                    } : item
                 )
             )
 

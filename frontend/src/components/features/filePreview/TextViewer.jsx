@@ -14,9 +14,10 @@ const MAX_SIZE = 20 * 1024 * 1024; // 20 MB
 
 export default function TextViewer({ file, contentRef }) {
     const { downloadFile } = useDownload();
+    const FILE_BASE_URL = import.meta.env.VITE_FILE_BASE_URL || import.meta.env.VITE_API_URL.replace(/\/api$/, "");
     const src = file?.url ||
         (file?.storagePath
-            ? `${file.storagePath}`
+            ? `${FILE_BASE_URL}${file.storagePath}`
             : "");
 
     const [content, setContent] = useState("");

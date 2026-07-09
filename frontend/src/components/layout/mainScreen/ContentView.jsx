@@ -8,6 +8,7 @@ import { useSearch } from "../../../context/SearchContext";
 import getFileIcon from "../../../utils/getFileIcon.js";
 import getFolderIcon from "../../../utils/getFolderIconColor.js";
 import FilePreviewModal from "../../features/filePreview/FilePreviewModal.jsx";
+import { useDragSelect } from "../../../hooks/useDragSelect";
 import Breadcrumbs from "../../features/Breadcrumbs.jsx";
 import backIcon from "@images/icon/arrow-left-outline-icon.svg";
 import Tooltip from "../Tooltip.jsx";
@@ -25,19 +26,187 @@ import closeIcon from "@images/icon/close-icon.svg";
 import fileInfoIcon from "@images/icon/file-info.svg";
 import trashEmptyIcon from "@images/icon/trash-icon.svg";
 import noFilesFound from "@images/icon/no-files-found.svg";
+import { useNavigate } from "react-router-dom";
+import axiosApi from "../../../utils/api.js";
+
 
 
 
 
 function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRefsReady, dragRootRef, displayError, displayLoading, displayItems }) {
+    // State to hold the current file metadata when displaying the file preview modal
     const [filePreview, setFilePreview] = useState(null)
+    // Ref to store HTML elements of each displayed item for drag selection and scrolling
     const itemRefs = useRef({})
 
-
-    const { items, loading, error, selectedIds, toggleSelect, setSelectedIds, openFolder, highlightedId, changeColorApi, isViewerOnly, sortBy, setSortBy, sortOrder, setSortOrder } = useFileExplorer()
+    // Access file exploration state and helper actions from the FileExplorerContext
+    const { items, loading, error, selectedIds, toggleSelect, setSelectedIds, openFolder, highlightedId, changeColorApi, isViewerOnly, sortBy, setSortBy, sortOrder, setSortOrder, triggerHighlight } = useFileExplorer()
+    // Access search state and filters from the SearchContext
     const { isSearchMode, searchResults, searchLoading, searchError, clearSearch, searchFilters, loadMore, totalCount, loadingMore, searchApi } = useSearch()
+    // Access currently logged in user details from the AuthContext
     const { user } = useAuth()
+    // Access file and folder downloading functions from the DownloadContext
     const { downloadFile, downloadFolder, downloadMultiple } = useDownload()
+
+
+    const navigate = useNavigate()
+    // State to store the parent trail path (breadcrumbs list) of the single selected item during search
+    const [searchItemTrail, setSearchItemTrail] = useState([])
+    // State to store the label of the root folder ("My Docspot" or "Shared with me")
+    const [searchItemRootLabel, setSearchItemRootLabel] = useState("My Docspot")
+    // State to show a loading spinner while fetching the folder path trail from the API
+    const [loadingSearchTrail, setLoadingSearchTrail] = useState(false)
+
+
+
+    //  this use effect is for when user opens a fodler so for 150ms dont show the spinner for better ui here ok 
+    const [showSpinner, setShowSpinner] = useState(false);
+    useEffect(() => {
+        let timer;
+        if(displayLoading){
+            timer = setTimeout(() => setShowSpinner(true), 150)
+        } else {
+            setShowSpinner(false)
+        }
+        return () => clearTimeout(timer)
+    }, [displayLoading])
+
+
+    // Effect to fetch folder trail when a single search item is selected
+    useEffect(() => {
+        //  if one one item is slected in search other wise return it 
+        if (!isSearchMode || selectedIds.size !== 1) {
+            setSearchItemTrail([])
+            return
+        }
+
+        //  get the first item id from the selectedids
+        const selectedId = Array.from(selectedIds)[0]
+
+        // find the item metadata
+        const selectedItem = displayItems.find(item => item._id?.toString() === selectedId?.toString())
+
+        if (!selectedItem) {
+            setSearchItemTrail([])
+            return
+        }
+
+
+        const parentId = selectedItem.parent
+        const currentUserId = user?._id || user?.id
+
+        //  find if the item is owned by somone else or in the shared directory becuase we want to show this in the bread crumb here
+        const isOwn = selectedItem.owner?._id?.toString() === currentUserId?.toString()
+        const isShared = !isOwn || (selectedItem.locationPath && selectedItem.locationPath.startsWith("Shared with me"))
+
+        //  update the base breadcrumb label based on owner / sharing status
+        setSearchItemRootLabel(isShared ? "Shared with me" : "My Docspot")
+
+        //  if the item is already in the root not in the nested
+        if (!parentId) {
+            if (selectedItem.type === "folder") {
+                setSearchItemTrail([{ id: selectedItem._id, name: selectedItem.name }])
+            } else {
+                setSearchItemTrail([])
+            }
+            return
+        }
+
+        //  now fetch the parent folder paths here
+        setLoadingSearchTrail(true)
+        axiosApi.get(`/file/folder/${parentId}`)
+            .then(({ data }) => {
+                const fetchedTrail = data.trail.map(t => ({ id: t.id, name: t.name }))
+                //  if the selected item itself is a folder append to last in breadcrumb
+                if (selectedItem.type === "folder") {
+                    fetchedTrail.push({ id: selectedItem._id, name: selectedItem.name })
+                }
+                setSearchItemTrail(fetchedTrail)
+            })
+            .catch(err => {
+                console.log("Failed to fetch folder trail for search item:", err)
+                setSearchItemTrail([])
+            })
+            .finally(() => {
+                // Reset loading state when the fetch is completed or fails
+                setLoadingSearchTrail(false)
+            })
+    }, [selectedIds, isSearchMode, displayItems, user]) // Closes the useEffect correctly
+
+    // this fucntino is  used for in search state go back to the dasbaord home page here
+    const handleHomeClick = useCallback(() => {
+        const selectedId = Array.from(selectedIds)[0]
+        const selectedItem = displayItems.find(item => item._id?.toString() === selectedId?.toString())
+        if (!selectedItem) return
+
+        const currentUserId = user?._id || user?.id
+        const isOwn = selectedItem.owner?._id?.toString() === currentUserId?.toString()
+        const isShared = !isOwn || (selectedItem.locationPath && selectedItem.locationPath.startsWith("Shared with me"))
+
+        // Highlight the root-level item that leads to this fil
+        if (searchItemTrail.length > 0) {
+            triggerHighlight(searchItemTrail[0].id)
+        } else {
+            triggerHighlight(selectedItem._id)
+        }
+
+        // Reset searching states
+        clearSearch()
+        setSearchBarOpen(false)
+
+        // Redirect user to the corresponding page
+        navigate(isShared ? "/shared-with-me" : "/dashboard")
+    }, [selectedIds, displayItems, user, navigate, clearSearch, setSearchBarOpen, searchItemTrail, triggerHighlight])
+
+
+    //  this fucntion when in search result user will double click on folder so clear search and goes to the inside of that fodler ehre
+    const handleNavigate = useCallback((depth) => {
+        const folder = searchItemTrail[depth - 1]
+        if (!folder) return
+
+        const selectedId = Array.from(selectedIds)[0]
+        const selectedItem = displayItems.find(item => item._id?.toString() === selectedId?.toString())
+        if (!selectedItem) return
+
+        // Add this check right here:
+        if (selectedItem.type === "folder" && folder.id?.toString() === selectedItem._id?.toString()) {
+            triggerHighlight(selectedItem._id)   // hight light the item here
+
+            clearSearch()
+            setSearchBarOpen(false)
+
+            const currentUserId = user?._id || user?.id
+            const isOwn = selectedItem.owner?._id?.toString() === currentUserId?.toString()
+            const isShared = !isOwn || (selectedItem.locationPath && selectedItem.locationPath.startsWith("Shared with me"))
+            if (selectedItem.parent) {
+                // Go to parent folder
+                navigate(`${isShared ? "/shared-with-me" : "/dashboard"}/folder/${selectedItem.parent}`)
+            } else {
+                // Go to root dashboard if it has no parent
+                navigate(isShared ? "/shared-with-me" : "/dashboard")
+            }
+            return
+        }
+
+
+        // 2. Highlight next nested folder in trail, or if we reached the end, highlight the file itself!
+        const childToHighlight = searchItemTrail[depth]
+        if (childToHighlight) {
+            triggerHighlight(childToHighlight.id)
+        } else {
+            triggerHighlight(selectedItem._id) // Highlights the file itself!
+        }
+
+        const currentUserId = user?._id || user?.id
+        const isOwn = selectedItem.owner?._id?.toString() === currentUserId?.toString()
+        const isShared = !isOwn || (selectedItem.locationPath && selectedItem.locationPath.startsWith("Shared with me"))
+
+        clearSearch()
+        setSearchBarOpen(false)
+        // redirect to the directly in to the folder it self
+        navigate(`${isShared ? "/shared-with-me" : "/dashboard"}/folder/${folder.id}`)
+    }, [searchItemTrail, selectedIds, displayItems, user, navigate, clearSearch, setSearchBarOpen, triggerHighlight])
+
 
     // ##################################################
     // ---- STEP 1: Context menu state ------------------
@@ -111,165 +280,14 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
     // ##################################################
     // ---- STEP 6: Drag and select state ---------------
     // ##################################################
-    const [dragStart, setDragStart] = useState(null)
-    const [dragRect, setDragRect] = useState(null)
-    const isDragSelectingRef = useRef(false)
-    const gridContainerRef = useRef(null)
-
-    const lastMousePos = useRef({ clientX: 0, clientY: 0 })
-
-    const handleMouseDown = (e) => {
-        if (e.target.closest(".master-header")) return
-        if (e.target.closest(".file-preview-modal")) return;
-        if (e.target.closest(".table-row")) return
-        if (e.target.closest(".table-header")) return
-        if (e.target.closest("button, input, textarea, select, a, .custom-context-menu, .search-suggestion-chip")) return
-        if (e.button !== 0) return
-        isDragSelectingRef.current = true
-
-        // 1. Save the exact physical mouse position
-        lastMousePos.current = { clientX: e.clientX, clientY: e.clientY }
-        // 2. Calculate drag start relative to the scroll container's content
-        const containerRect = gridContainerRef.current.getBoundingClientRect()
-        const relativeX = e.clientX - containerRect.left + gridContainerRef.current.scrollLeft
-        const relativeY = e.clientY - containerRect.top + gridContainerRef.current.scrollTop
-        setDragStart({ x: relativeX, y: relativeY })
-        setDragRect(null)
-        setSelectedIds(new Set())
-    }
-
-    const updateSelection = useCallback(() => {
-        if (!isDragSelectingRef.current || !dragStart || !gridContainerRef.current) return;
-
-        const { clientX, clientY } = lastMousePos.current;
-        const container = gridContainerRef.current;
-        const containerRect = container.getBoundingClientRect();
-
-        // 1. Calculate current mouse position relative to the container
-        // Constrain the mouse Y position so it cannot go above the container (into the headers)
-        const boundedClientY = Math.max(clientY, containerRect.top);
-
-        const currentX = clientX - containerRect.left + container.scrollLeft;
-        const currentY = boundedClientY - containerRect.top + container.scrollTop;
-
-        // 2. Calculate the abstract rectangle in container coordinates
-        const containerBox = {
-            x: Math.min(currentX, dragStart.x),
-            y: Math.min(currentY, dragStart.y),
-            width: Math.abs(currentX - dragStart.x),
-            height: Math.abs(currentY - dragStart.y),
-        };
-
-        // 3. Convert the rectangle BACK to viewport coordinates for collision checking
-        const viewportBox = {
-            x: containerBox.x + containerRect.left - container.scrollLeft,
-            y: containerBox.y + containerRect.top - container.scrollTop,
-            width: containerBox.width,
-            height: containerBox.height,
-            left: containerBox.x + containerRect.left - container.scrollLeft,
-            top: containerBox.y + containerRect.top - container.scrollTop,
-            right: containerBox.x + containerBox.width + containerRect.left - container.scrollLeft,
-            bottom: containerBox.y + containerBox.height + containerRect.top - container.scrollTop,
-            containerTop: containerRect.top,
-        };
-
-        // Render using fixed viewport coordinates so it doesn't get cropped by the container!
-        setDragRect(viewportBox);
-
-        const newSelected = new Set();
-        Object.entries(itemRefs.current).forEach(([id, el]) => {
-            if (!el) return;
-            const itemRect = el.getBoundingClientRect();
-
-            const overlaps =
-                itemRect.left < viewportBox.right &&
-                itemRect.right > viewportBox.left &&
-                itemRect.top < viewportBox.bottom &&
-                itemRect.bottom > viewportBox.top;
-
-            if (overlaps) newSelected.add(id);
-        });
-
-        setSelectedIds(newSelected);
-    }, [dragStart, setSelectedIds]);
-
-    const scrollFrameRef = useRef(null);
-
-    const handleMouseMove = useCallback((e) => {
-        lastMousePos.current = {
-            clientX: e.clientX,
-            clientY: e.clientY
-        };
-        updateSelection();
-    }, [updateSelection]);
-
-    const handleMouseUp = useCallback(() => {
-        // Stop the drag selection process
-        isDragSelectingRef.current = false
-        // Clear the starting coordinates
-        setDragStart(null)
-        // Remove the visual rectangle box from the screen
-        setDragRect(null)
-    }, [])
-    useEffect(() => {
-        onItemRefsReady?.(itemRefs.current)
+    const { dragRect, handleMouseDown, gridContainerRef } = useDragSelect({
+        dragRootRef,
+        displayItems,
+        selectedIds,
+        setSelectedIds,
+        itemRefs,
+        onItemRefsReady
     })
-
-    useEffect(() => {
-        if (!dragStart) return
-        const container = gridContainerRef.current;
-        if (!container) return;
-
-        const autoScroll = () => {
-            if (!isDragSelectingRef.current) return;
-
-            const { clientY } = lastMousePos.current;
-            const rect = container.getBoundingClientRect();
-            const edge = 60;
-            const speed = 15;
-
-            if (clientY > rect.bottom - edge) {
-                container.scrollTop += speed;
-            } else if (clientY < rect.top + edge) {
-                container.scrollTop -= speed;
-            }
-
-            scrollFrameRef.current = requestAnimationFrame(autoScroll);
-        };
-
-        scrollFrameRef.current = requestAnimationFrame(autoScroll);
-
-        // When the container scrolls, update the selection using the last known mouse position
-        const onScroll = () => {
-            updateSelection();
-        };
-
-        window.addEventListener("mousemove", handleMouseMove)
-        window.addEventListener("mouseup", handleMouseUp)
-        container.addEventListener("scroll", onScroll)
-
-        return () => {
-            if (scrollFrameRef.current) cancelAnimationFrame(scrollFrameRef.current);
-            window.removeEventListener("mousemove", handleMouseMove)
-            window.removeEventListener("mouseup", handleMouseUp)
-            container.removeEventListener("scroll", onScroll)
-        }
-    }, [dragStart, handleMouseMove, handleMouseUp, updateSelection])
-
-    useEffect(() => {
-        // Grab the container element for the main content area
-        const root = dragRootRef?.current
-        // If the container doesn't exist yet, do nothing
-        if (!root) return
-
-        // Listen for mouse click inside the container to start the drag selection
-        root.addEventListener("mousedown", handleMouseDown)
-
-        // Cleanup function to remove the listener when the component unmounts
-        return () => {
-            root.removeEventListener("mousedown", handleMouseDown)
-        }
-    }, [dragRootRef, handleMouseDown])
 
 
     // ##################################################
@@ -537,7 +555,7 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
             id => displayItems.find(i => i._id === id)?.type === "folder"
         )
 
-    if (displayLoading) return (
+    if (showSpinner) return (
         <div className="loader-wrapper-box">
             <div className="cma-messages-are-loader-wrapper">
                 <span className="loader"></span>
@@ -1037,52 +1055,48 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
                 </div>
             )}
 
+            {/* Renders the location breadcrumbs at the bottom of the page when searching and exactly one item is checked */}
             {isSearchMode && selectedIds.size === 1 && (
-                (() => {
-                    const selectedIdStr = String(Array.from(selectedIds)[0]);
-                    const selectedItem = displayItems.find(item => String(item._id) === selectedIdStr);
-                    if (selectedItem && selectedItem.locationPath) {
-                        const pathParts = selectedItem.locationPath.split(' / ');
-
-                        // Fake the trail objects so your Breadcrumbs component accepts it
-                        const fakeTrail = pathParts.slice(1).map((name, index) => ({
-                            id: `search-path-${index}`,
-                            name: name,
-                            color: "gray"
-                        }));
-
-                        // Using your header/header-view classes so your exact main.css applies!
-                        return (
-                            <div className="header mt-3 mb-4" >
-                                <div className="header-view" >
-                                    <Breadcrumbs
-                                        rootLabel={pathParts[0]}
-                                        trail={fakeTrail}
-                                        maxVisible={2}
-                                        actions={[]}
-                                        onHomeClick={() => {
-                                            clearSearch();
-                                            openFolder(null); // Navigates to root Docspot
-                                        }}
-                                        onNavigate={(index) => {
-                                            // fakeTrail maps exactly to actualIndex+1, so if index matches the length, it's the last folder!
-                                            if (index === fakeTrail.length) {
-                                                clearSearch();
-                                                openFolder({
-                                                    _id: selectedItem.parent,
-                                                    name: pathParts[pathParts.length - 1],
-                                                    color: "gray",
-                                                    type: "folder"
-                                                });
-                                            }
-                                        }}
-                                    />
-                                </div>
-                            </div>
-                        );
-                    }
-                    return null;
-                })()
+                <div className="header pb-0 mt-3 search-location-breadcrumbs" style={{ zIndex: 10 }}>
+                    {/* Scoped CSS adjustments */}
+                    <style>{`
+                        /* 1. Remove the white box, border outline, shadow, and arrow from the last item */
+                        .search-location-breadcrumbs .breadcrumb a.highlight {
+                            outline: 0 !important;
+                            box-shadow: none !important;
+                            background-color: transparent !important;
+                        }
+                        .search-location-breadcrumbs .breadcrumb a.highlight::after {
+                            display: none !important;
+                        }
+                        /* 2. Remove the gray background color from the "..." collapsed section */
+                        .search-location-breadcrumbs .over-breadcrumb-links-folder {
+                            background-color: transparent !important;
+                        }
+                        /* 3. Align the breadcrumbs perfectly to the left edge of the grid */
+                        .search-location-breadcrumbs .breadcrumb {
+                            padding-left: 0 !important;
+                            margin-left: 0 !important;
+                        }
+                        .search-location-breadcrumbs .breadcrumb li:first-child a {
+                            padding-left: 0 !important;
+                        }
+                        /* 4. Add spacing at the bottom of the breadcrumbs */
+                        .search-location-breadcrumbs {
+                            margin-bottom: 30px !important;
+                        }
+                    `}</style>
+                    <div className="header-view">
+                        <Breadcrumbs
+                            trail={searchItemTrail}
+                            onNavigate={handleNavigate}
+                            onHomeClick={handleHomeClick}
+                            rootLabel={searchItemRootLabel}
+                            maxVisible={2}
+                            actions={[]}
+                        />
+                    </div>
+                </div>
             )}
 
         </>

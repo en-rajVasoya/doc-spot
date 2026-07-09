@@ -7,7 +7,7 @@ export const generateShareLinks = (items) => {
    
     //  generate link for each item and give the new array 
     return itemsToProcess.map(item => ({
-        link: `${import.meta.env.VITE_SHARED_LINK_URL}/share?token=${crypto.randomUUID().replace(/-/g, "").substring(0, 7)}`,
+        link: `${import.meta.env.VITE_SHARED_LINK_URL}/share?token=${((window.crypto && window.crypto.randomUUID) ? window.crypto.randomUUID() : (Date.now().toString(36) + Math.random().toString(36).substring(2))).replace(/-/g, "").substring(0, 7)}`,
         type: item.type,
         item_id: item._id
     }))

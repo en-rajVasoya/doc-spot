@@ -12,9 +12,10 @@ import SharedLink from "#models/sharedLinksModel"
 
 // helper
 import { logger } from "#utils/logger"
-import { getUserPermission } from "#utils/userPermissionUtil";
-import { getAbsolutePath } from "#utils/pathHelper";
+import { getUserPermission } from "#utils/userPermissionUtil"
+import { getAbsolutePath } from "#utils/pathHelper"
 import { checkDownloadPermission } from "#utils/index"
+import { getStorage } from "../services/storageFactory.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -28,24 +29,21 @@ const zipJobsMap = new Map()
 
 const nowMs = () => Date.now()
 
-const cleanupOldZips = () => {
+const storage = getStorage()
+
+const cleanupOldZips = async () => {
     const TWO_HOURS = 2 * 60 * 60 * 1000
     const now = Date.now()
 
-    zipJobsMap.forEach((job, zipId) => {
+    for (const [zipId, job] of zipJobsMap.entries()) {
         if (job.createdAt && (now - job.createdAt) > TWO_HOURS) {
-            if (job.zipPath && fs.existsSync(job.zipPath)) {
-                try {
-                    fs.unlinkSync(job.zipPath)
-                    console.log(`[CLEANUP] Deleted old zip: ${zipId}`)
-                } catch (err) {
-                    logger.error(err)
-                    console.error(`[CLEANUP] Failed to delete zip: ${zipId}`, err.message)
-                }
+            if (job.zipKey) {
+                await storage.deleteZipFile(job.zipKey)
+                console.log(`[CLEANUP] Deleted old zip: ${zipId}`)
             }
             zipJobsMap.delete(zipId)
         }
-    })
+    }
 }
 
 setInterval(cleanupOldZips, 60 * 60 * 1000)
@@ -78,6 +76,7 @@ const collectFilesFromFolders = async (folderIds, pathPrefixMap = {}, includeTra
             $project: {
                 name: 1,
                 type: 1,
+                fileSize: 1,
                 allDescendants: 1
             }
         }
@@ -93,7 +92,6 @@ const collectFilesFromFolders = async (folderIds, pathPrefixMap = {}, includeTra
         const folders = root.allDescendants.filter(d => d.type === "folder")
         const files = root.allDescendants.filter(d => d.type === "file")
 
-        // resolve folder paths iteratively because $graphLookup order is not guaranteed
         let remaining = [...folders]
         let attempts = 0
 
@@ -115,8 +113,9 @@ const collectFilesFromFolders = async (folderIds, pathPrefixMap = {}, includeTra
             if (!file.storagePath) continue
             const parentPath = pathMap.get(file.parent.toString()) || rootPrefix
             fileList.push({
-                storagePath: getAbsolutePath(file.storagePath),
-                archiveName: path.join(parentPath, file.name)
+                storageKey: file.storagePath,
+                archiveName: path.join(parentPath, file.name),
+                fileSize: file.fileSize
             })
         }
     }
@@ -125,7 +124,7 @@ const collectFilesFromFolders = async (folderIds, pathPrefixMap = {}, includeTra
 }
 
 // ─── helper: fork zip worker and wire up events ───────────────────────────────
-const startZipWorker = (zipId, zipPath, fileList, folderName) => {
+const startZipWorker = (zipId, zipKey, fileList, folderName) => {
     const workerStartMs = nowMs()
     console.log(`[ZIP][${zipId}] Worker spawn start | files=${fileList.length} | name=${folderName}`)
     const child = fork(path.join(__dirname, "../workers/zipWorker.js"))
@@ -133,7 +132,7 @@ const startZipWorker = (zipId, zipPath, fileList, folderName) => {
     const currentJob = zipJobsMap.get(zipId)
     if (currentJob) currentJob.childProcess = child
 
-    child.send({ fileList, zipPath })
+    child.send({ fileList, zipKey })
 
     child.on("message", (msg) => {
         if (msg.type === "started") {
@@ -161,7 +160,7 @@ const startZipWorker = (zipId, zipPath, fileList, folderName) => {
         if (msg.type === "done") {
             zipJobsMap.set(zipId, {
                 status: "ready",
-                zipPath,
+                zipKey,
                 folderName,
                 fileSize: msg.fileSize,
                 createdAt: Date.now()
@@ -193,58 +192,37 @@ const startZipWorker = (zipId, zipPath, fileList, folderName) => {
 export const downloadFile = async (req, res) => {
     try {
         const { id } = req.params
-
-        //  here this is helper function it will take req adn find current user private link so find id
-        //  if this is public sharing so it will find the token from the query
         const permission = await checkDownloadPermission(req, id);
-
-        // check if no permission then return
         if (!permission) {
             return res.status(403).json({ success: false, message: "Access denied" })
         }
 
-        // retrieve file data
         const fileData = await uploadModel.findOne({ _id: id, type: "file", uploadStatus: "completed" });
-
-        // check if no file data then return error
         if (!fileData) {
             return res.status(404).json({ success: false, message: "File not found" })
         }
 
-        const absFilePath = getAbsolutePath(fileData.storagePath)
-        if (!absFilePath || !fs.existsSync(absFilePath)) {
+        const rangeHeader = req.headers.range
+
+        let fileStreamResult
+        try {
+            fileStreamResult = await storage.getFileStream(fileData.storagePath, rangeHeader)
+        } catch (err) {
             return res.status(404).json({ success: false, message: "File not found on server" })
         }
 
-        const fileSize = fileData.fileSize
-        const rangeHeader = req.headers.range
+        const { stream, contentLength, contentRange, isPartial } = fileStreamResult
 
         res.attachment(fileData.name)
         res.setHeader("Content-Type", fileData.fileType || "application/octet-stream")
         res.setHeader("Accept-Ranges", "bytes")
+        res.setHeader("Content-Length", contentLength)
 
-        if (!rangeHeader) {
-            res.setHeader("Content-Length", fileSize)
-            const stream = fs.createReadStream(absFilePath)
-            stream.pipe(res)
-            return
+        if (isPartial) {
+            res.status(206)
+            res.setHeader("Content-Range", contentRange)
         }
 
-        const parts = rangeHeader.replace(/bytes=/, "").split("-")
-        const start = parseInt(parts[0], 10)
-        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1
-
-        if (start >= fileSize || end >= fileSize) {
-            res.setHeader("Content-Range", `bytes */${fileSize}`)
-            return res.status(416).json({ success: false, message: "Range is invalid" })
-        }
-
-        const chunkSize = end - start + 1
-        res.status(206)
-        res.setHeader("Content-Range", `bytes ${start}-${end}/${fileSize}`)
-        res.setHeader("Content-Length", chunkSize)
-
-        const stream = fs.createReadStream(absFilePath, { start, end })
         stream.pipe(res)
 
     } catch (error) {
@@ -259,48 +237,35 @@ export const downloadFolder = async (req, res) => {
         const requestStartMs = nowMs()
         const { id } = req.params
 
-        //  here this is helper function it will take req adn find current user private link so find id
-        //  if this is public sharing so it will find the token from the query
         const permission = await checkDownloadPermission(req, id);
 
-        // check if no permission found then return error
         if (!permission) {
             return res.status(403).json({ success: false, message: "Access denied" })
         }
 
-        // retrieve folder data
         const folderData = await uploadModel.findOne({ _id: id, type: "folder" })
 
-        // check if no folder data found then return error message
         if (!folderData) {
             return res.status(404).json({ success: false, message: "Folder not found" })
         }
 
-        // collect all files using $graphLookup — replaces the old BFS while loop
         const collectStartMs = nowMs()
-
         const includeTrash = folderData.isTrashed === true;
 
         const fileList = await collectFilesFromFolders([id], {
-            [id.toString()]: ""   // root folder itself is not a prefix — files sit at root of zip
+            [id.toString()]: ""   
         }, includeTrash);
 
         console.log(`[ZIP][folder:${id}] File list ready | files=${fileList.length} | collectMs=${nowMs() - collectStartMs}`)
 
         const zipId = uuidv4()
-        const zipPath = path.join(ZIPS_DIR, `${zipId}.zip`)
-
-        zipJobsMap.set(zipId, {
-            status: "creating",
-            zipPath,
-            folderName: folderData.name,
-            createdAt: Date.now()
-        })
+        const zipKey = `zips/${zipId}.zip`
+        zipJobsMap.set(zipId, { status: "creating", zipKey, folderName: folderData.name, createdAt: Date.now() })
 
         res.json({ success: true, zipId, folderName: folderData.name })
         console.log(`[ZIP][${zipId}] Job created from folder download | setupMs=${nowMs() - requestStartMs}`)
 
-        startZipWorker(zipId, zipPath, fileList, folderData.name)
+        startZipWorker(zipId, zipKey, fileList, folderData.name)
 
     } catch (error) {
         logger.error(error)
@@ -314,23 +279,17 @@ export const downloadMultiple = async (req, res) => {
         const requestStartMs = nowMs()
         const { ids } = req.body
 
-        // convert ids into array here
         if (!ids || !Array.isArray(ids) || ids.length === 0) {
             return res.status(400).json({ success: false, message: "No items selected" })
         }
 
-        //  check permission here for safty not anyone can downloa dhere
         for (const id of ids) {
-            //  here this is helper function it will take req adn find current user private link so find id
-            //  if this is public sharing so it will find the token from the query
             const permission = await checkDownloadPermission(req, id);
-
             if (!permission) {
                 return res.status(403).json({ success: false, message: "Access denied" })
             }
         }
 
-        //  fetch all selected items and fodlers here to now which are files and which are folders
         const items = await uploadModel.find({
             _id: { $in: ids },
             $or: [
@@ -339,11 +298,8 @@ export const downloadMultiple = async (req, res) => {
             ]
         }).select("name type storagePath fileType fileSize isTrashed").lean()
 
-        // Determine if we are downloading from the Trash page
         const isFromTrash = items.some(item => item.isTrashed === true)
         const includeTrash = req.query.includeTrash === "true" || isFromTrash
-
-        // If not downloading from Trash, we exclude any items that are trashed
         const activeItems = includeTrash ? items : items.filter(item => item.isTrashed !== true)
 
         const fileList = []
@@ -351,23 +307,20 @@ export const downloadMultiple = async (req, res) => {
         const pathPrefixMap = {}
 
         for (const item of activeItems) {
-            //  if type is file here
             if (item.type === "file") {
-                //  directly add file to root of zip
                 if (item.storagePath) {
                     fileList.push({
-                        storagePath: getAbsolutePath(item.storagePath),
-                        archiveName: item.name
+                        storageKey: item.storagePath,
+                        archiveName: item.name,
+                        fileSize: item.fileSize
                     })
                 }
             } else if (item.type === "folder") {
                 folderIds.push(item._id.toString())
-                // fodler name is prefix so folder structure as it is in side zip
                 pathPrefixMap[item._id.toString()] = item.name
             }
         }
 
-        // if folder collect all nested child from mongoo using graphLookup
         if (folderIds.length > 0) {
             const collectStartMs = nowMs()
             const folderFiles = await collectFilesFromFolders(folderIds, pathPrefixMap, includeTrash)
@@ -380,22 +333,17 @@ export const downloadMultiple = async (req, res) => {
         }
 
         const zipId = uuidv4()
-        const zipPath = path.join(ZIPS_DIR, `${zipId}.zip`)
+        const zipKey = `zips/${zipId}.zip`
 
         const now = new Date()
         const timestamp = now.toISOString().replace(/[:.]/g, "-").slice(0, 19)
         const zipName = `docspot-download-${timestamp}`
 
-        zipJobsMap.set(zipId, {
-            status: "creating",
-            zipPath,
-            folderName: zipName,
-            createdAt: Date.now()
-        })
+        zipJobsMap.set(zipId, { status: "creating", zipKey, folderName: zipName, createdAt: Date.now() })
 
         res.json({ success: true, zipId, folderName: zipName })
         console.log(`[ZIP][${zipId}] Job created from multi download | totalFiles=${fileList.length} | setupMs=${nowMs() - requestStartMs}`)
-        startZipWorker(zipId, zipPath, fileList, zipName)
+        startZipWorker(zipId, zipKey, fileList, zipName)
     } catch (error) {
         logger.error(error)
         res.status(500).json({ success: false, message: error.message })
@@ -432,46 +380,33 @@ export const getZipStatus = async (req, res) => {
 export const downloadZip = async (req, res) => {
     try {
         const { zip_id } = req.params
-
         const job = zipJobsMap.get(zip_id)
 
         if (!job || job.status !== "ready") {
             return res.status(404).json({ success: false, message: "Zip not ready or not found" })
         }
 
-        if (!fs.existsSync(job.zipPath)) {
-            return res.status(404).json({ success: false, message: "Zip file not found on disk" })
+        const rangeHeader = req.headers.range
+
+        let fileStreamResult
+        try {
+            fileStreamResult = await storage.getFileStream(job.zipKey, rangeHeader)
+        } catch (err) {
+            return res.status(404).json({ success: false, message: "Zip file not found on server" })
         }
 
-        const fileSize = job.fileSize
-        const rangeHeader = req.headers.range
+        const { stream, contentLength, contentRange, isPartial } = fileStreamResult
 
         res.setHeader("Content-Disposition", `attachment; filename="${job.folderName}.zip"`)
         res.setHeader("Content-Type", "application/zip")
         res.setHeader("Accept-Ranges", "bytes")
+        res.setHeader("Content-Length", contentLength)
 
-        if (!rangeHeader) {
-            res.setHeader("Content-Length", fileSize)
-            const stream = fs.createReadStream(job.zipPath)
-            stream.pipe(res)
-            return
+        if (isPartial) {
+            res.status(206)
+            res.setHeader("Content-Range", contentRange)
         }
 
-        const parts = rangeHeader.replace(/bytes=/, "").split("-")
-        const start = parseInt(parts[0], 10)
-        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1
-
-        if (start >= fileSize || end >= fileSize) {
-            res.setHeader("Content-Range", `bytes */${fileSize}`)
-            return res.status(416).json({ success: false, message: "Range is invalid" })
-        }
-
-        const chunkSize = end - start + 1
-        res.status(206)
-        res.setHeader("Content-Range", `bytes ${start}-${end}/${fileSize}`)
-        res.setHeader("Content-Length", chunkSize)
-
-        const stream = fs.createReadStream(job.zipPath, { start, end })
         stream.pipe(res)
 
     } catch (error) {
@@ -495,77 +430,13 @@ export const deleteZip = async (req, res) => {
             console.log(`[ZIP] Killed worker process for zip: ${zip_id}`)
         }
 
-        if (job.zipPath && fs.existsSync(job.zipPath)) {
-            try {
-                fs.unlinkSync(job.zipPath)
-                console.log(`[ZIP] Deleted: ${zip_id}`)
-            } catch (err) {
-                logger.error(err)
-                console.error(`[ZIP] Delete failed: ${zip_id}`, err.message)
-            }
+        if (job.zipKey) {
+            await storage.deleteZipFile(job.zipKey)
+            console.log(`[ZIP] Deleted: ${zip_id}`)
         }
 
         zipJobsMap.delete(zip_id)
-
         res.json({ success: true })
-
-    } catch (error) {
-        logger.error(error)
-        res.status(500).json({ success: false, message: error.message })
-    }
-}
-
-//  file preview of pdf here 
-export const previewFile = async (req, res) => {
-    try {
-        const { id } = req.params
-        const userID = req.user._id
-
-        const permission = await getUserPermission(userID, id)
-        if (!permission) {
-            return res.status(403).json({ success: false, message: "Access denied" })
-        }
-
-        const fileData = await uploadModel.findOne({ _id: id, type: "file", uploadStatus: "completed" })
-        if (!fileData) {
-            return res.status(404).json({ success: false, message: "File not found" })
-        }
-
-        const absFilePath = getAbsolutePath(fileData.storagePath)
-        if (!absFilePath || !fs.existsSync(absFilePath)) {
-            return res.status(404).json({ success: false, message: "File not found on server" })
-        }
-
-        const fileSize = fileData.fileSize
-        const rangeHeader = req.headers.range
-
-        res.setHeader("Content-Type", "application/pdf")
-        res.setHeader("Content-Disposition", "inline")
-        res.setHeader("Accept-Ranges", "bytes")
-
-        if (!rangeHeader) {
-            res.setHeader("Content-Length", fileSize)
-            const stream = fs.createReadStream(absFilePath)
-            stream.pipe(res)
-            return
-        }
-
-        const parts = rangeHeader.replace(/bytes=/, "").split("-")
-        const start = parseInt(parts[0], 10)
-        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1
-
-        if (start >= fileSize || end >= fileSize) {
-            res.setHeader("Content-Range", `bytes */${fileSize}`)
-            return res.status(416).json({ success: false, message: "Range is invalid" })
-        }
-
-        const chunkSize = end - start + 1
-        res.status(206)
-        res.setHeader("Content-Range", `bytes ${start}-${end}/${fileSize}`)
-        res.setHeader("Content-Length", chunkSize)
-
-        const stream = fs.createReadStream(absFilePath, { start, end })
-        stream.pipe(res)
 
     } catch (error) {
         logger.error(error)

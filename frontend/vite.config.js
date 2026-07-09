@@ -73,13 +73,13 @@ export default defineConfig({
     port: 5177,
     proxy: {
       '/socket.io': {
-        target: 'https://192.168.1.112:4001',
+        target: 'https://3.111.147.179:4001',
         changeOrigin: true,
         secure: false,
         ws: true,
       },
       '^/(api|files|uploadimage)': {
-        target: 'https://192.168.1.112:4001',
+        target: 'https://3.111.147.179:4001',
         changeOrigin: true,
         secure: false,
         timeout: 0,

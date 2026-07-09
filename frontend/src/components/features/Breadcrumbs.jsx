@@ -92,7 +92,6 @@ const Breadcrumbs = memo(function Breadcrumbs({
 
     // when folder upload
     const handleUploadFolder = () => {
-        openScanningPanel?.()
         folderInputRef.current.click()
     }
     const handleAddFiles = () => fileInputRef.current.click()
@@ -154,16 +153,14 @@ const Breadcrumbs = memo(function Breadcrumbs({
 
     // here in trash page restore item 
     const handleRestore = () => {
-        if (isDisabled) return
-        onRestore?.()
+        onRestore?.(targetItem)
         setShowActionDropdown(false)
     }
 
 
     //  trash page delete forever 
     const handleDeleteForever = () => {
-        if (isDisabled) return
-        onDeleteForever?.()
+        onDeleteForever?.(targetItem)
         setShowActionDropdown(false)
     }
 
@@ -345,14 +342,14 @@ const Breadcrumbs = memo(function Breadcrumbs({
             {/*  here trash page action */}
             {/*  restore */}
             {actions.includes("restore") && (
-                <Dropdown.Item as="button" disabled={isDisabled} onClick={handleRestore} style={{ opacity: isDisabled ? 0.5 : 1 }}>
+                <Dropdown.Item as="button" onClick={handleRestore}>
                     <InteractiveIcon defaultIcon={retryIcon} className="me-2" width={20} /> Restore
                 </Dropdown.Item>
             )}
 
             {/* delete forever here */}
             {actions.includes("deleteForever") && (
-                <Dropdown.Item as="button" disabled={isDisabled} onClick={handleDeleteForever} style={{ opacity: isDisabled ? 0.5 : 1 }}>
+                <Dropdown.Item as="button" onClick={handleDeleteForever}>
                     <InteractiveIcon defaultIcon={deleteIcon} className="me-2" width={20} /> Delete
                 </Dropdown.Item>
             )}

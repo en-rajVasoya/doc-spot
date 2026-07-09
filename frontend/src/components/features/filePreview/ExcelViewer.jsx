@@ -28,7 +28,8 @@ const EXCEL_PREVIEW_LIMIT = 20 * 1024 * 1024; // 20 MB
 function ExcelViewer({ file }) {
 
     const { downloadFile } = useDownload();
-    const fileUrl = file?.url || file?.storagePath || "";
+    const FILE_BASE_URL = import.meta.env.VITE_FILE_BASE_URL || import.meta.env.VITE_API_URL.replace(/\/api$/, "");
+    const fileUrl = file?.url || (file?.storagePath ? `${FILE_BASE_URL}${file.storagePath}` : "");
 
     const [checkingSize, setCheckingSize] = useState(!(file?.size || file?.fileSize));
     const [tooBig, setTooBig] = useState(() => {
@@ -63,7 +64,7 @@ function ExcelViewer({ file }) {
 
                 if (!currentSize) {
                     try {
-                        const r = await fetch(fileUrl, { method: "HEAD" });
+                        const r = await fetch(fileUrl, { method: "HEAD", credentials: "include" });
                         currentSize = Number(r.headers.get("content-length") || 0);
                     } catch (e) { }
                 }
@@ -77,7 +78,7 @@ function ExcelViewer({ file }) {
 
                 setLoading(true);
 
-                const res = await fetch(fileUrl);
+                const res = await fetch(fileUrl, { credentials: "include" });
                 const buffer = await res.arrayBuffer();
 
                 const bufferSizeMB = buffer.byteLength / (1024 * 1024);

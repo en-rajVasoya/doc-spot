@@ -10,6 +10,9 @@ import uploadModel from "#models/uploadModel";
 import SharedLink from "#models/sharedLinksModel";
 import { getUserPermission } from "#utils/userPermissionUtil";
 
+import { getStorage } from "../services/storageFactory.js";
+import { getFileUrl, deleteFromS3 } from "#config/s3";
+
 // search optimization function
 export const searchOptimize = (searchQuery) => {
     return { $regex: searchQuery, $options: "i" }
@@ -78,15 +81,23 @@ export const deleteItemPermanently = async (item) => {
 
     // Delete files asynchronously
     if (filesToUnlink.length > 0) {
+        const isS3 = process.env.STORAGE_PROVIDER === "s3";
+        const storage = getStorage();
         (async () => {
             for (const file of filesToUnlink) {
                 try {
                     const count = await uploadModel.countDocuments({ storagePath: file.storagePath })
                     const absPath = getAbsolutePath(file.storagePath)
 
-                    if (count === 0 && absPath && fs.existsSync(absPath)) {
-                        await fs.promises.unlink(absPath)
-                        logger.info(`[BACKGROUND DELETE] Unlinked: ${absPath}`)
+                    if (count === 0 && file.storagePath) {
+                        if (isS3) {
+                            const cloudFrontUrl = getFileUrl(file.storagePath);
+                            await deleteFromS3(cloudFrontUrl);
+                            logger.info(`[CRON DELETE S3] Deleted file: ${file.storagePath}`);
+                        } else {
+                            await storage.deleteFile(file.storagePath);
+                            logger.info(`[CRON DELETE LOCAL] Unlinked file: ${file.storagePath}`);
+                        }
                     }
                 } catch (err) {
                     logger.error(`[BACKGROUND DELETE ERROR] ${file.storagePath}:`, err)

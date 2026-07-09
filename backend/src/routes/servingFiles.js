@@ -3,6 +3,7 @@ import path from "path"
 import fs from "fs"
 import { V3 } from "paseto"
 import { createSecretKey } from "crypto"
+import { getStorage } from "../services/storageFactory.js"
 
 
 //  models 
@@ -59,9 +60,8 @@ servingFileRouter.get("/*splat", async (req, res) => {
         const referer = req.headers.referer || req.headers.referrer || ""
         const origin = req.headers.origin || ""
 
-        //  immediate serve file if request  form the inside of front end
         if (isFromApp(referer, origin)) {
-            return serveFile(req, res)
+            return await serveFile(req, res)
         }
 
         //  if some user open the direct link in the borwser if cookie is set then only give
@@ -79,11 +79,11 @@ servingFileRouter.get("/*splat", async (req, res) => {
         }
 
         const user = await userModel.findById(decoded.id)
-        if(!user || !user.is_active || user.is_deleted){
+        if (!user || !user.is_active || user.is_deleted) {
             return res.status(401).send(getAccessDeniedHTML("Access Denied"))
         }
-        
-        return serveFile(req, res)
+
+        return await serveFile(req, res)
 
     } catch (error) {
         console.error("Uploads router error:", error)
@@ -93,17 +93,32 @@ servingFileRouter.get("/*splat", async (req, res) => {
 
 
 
-function serveFile(req, res) {
-    const filesDir = path.resolve("files")
-    const resolvedPath = path.resolve(filesDir, req.path.slice(1))
-    // Protection against directory traversal attacks
-    if (!resolvedPath.startsWith(filesDir)) {
-        return res.status(403).send("Forbidden")
+async function serveFile(req, res) {
+    try {
+        const storagePath = "files" + req.path;
+        const storage = getStorage();
+
+        const result = await storage.getFileStream(storagePath, req.headers.range);
+
+        if (!result) {
+            return res.status(404).send("File Not Found");
+        }
+
+        if (result.headers) {
+            res.set(result.headers);
+        }
+
+        if (result.status) {
+            res.status(result.status);
+        }
+
+        result.stream.pipe(res);
+    } catch (error) {
+        console.error("Error serving file:", error);
+        if (!res.headersSent) {
+            res.status(500).send("Internal Server Error");
+        }
     }
-    if (!fs.existsSync(resolvedPath)) {
-        return res.status(404).send("File Not Found")
-    }
-    res.sendFile(resolvedPath)
 }
 
 

@@ -108,7 +108,7 @@ export function UploadProvider({ children }) {
         scanCancelledRef.current = false
         const scanSession = {
             id: 'scanning-' + Date.now(),
-            name: folderName || 'Scanning files...',
+            name: folderName || 'Reading files...',
             isFolder: true,
             isLarge: false,
             total: 0,

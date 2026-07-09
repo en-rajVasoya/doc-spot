@@ -934,7 +934,7 @@ function FolderRow({ session, onCancelClick, onViewIssuesClick, onRetryFolder })
 
     //  here this is folder status like preparing or how many files uplaoded and how many are fialed and blocked
     if (session.isScanning) {
-        subLabel = "Scanning files...";
+        subLabel = "Reading files...";
     } else if (status === "preparing") {
         subLabel = `Preparing ${prepared} of ${total}`;
     } else if (status === "uploading") {

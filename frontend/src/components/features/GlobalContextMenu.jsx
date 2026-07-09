@@ -207,7 +207,6 @@ function GlobalContextMenu({ setModal, disableContextMenu = false }) {
             }
         } else {
             // fallback for Firefox
-            openScanningPanel()
             folderInputRef.current.click()
         }
     }

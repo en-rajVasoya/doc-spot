@@ -3,9 +3,15 @@ import fs from "fs";
 //  models - schema
 import uploadModel from "#models/uploadModel";
 
+//  services 
+import { getStorage } from "../services/storageFactory.js";
+
+//  configs 
+import { getFileUrl } from "#config/s3";
+
 //  utils
 import { shareItem } from "./shareController.js";
-import { getUserPermission, checkIsSharedTree  } from "#utils/userPermissionUtil";
+import { getUserPermission, checkIsSharedTree } from "#utils/userPermissionUtil";
 import { logger } from "#utils/logger";
 import { notifySharedUsers } from "#utils/userNotification";
 import { updateParentFolderTimestamps } from "#utils/parentFolderTimestamp";
@@ -369,19 +375,27 @@ export const getUserFiles = async (req, res) => {
 
 
       // 3) fix storage path here becuse in vite proxy we defined /files already so we modifed here ffiles and remove/files from url here
-      const fixPath = (item) => ({
-        ...item,
-        storagePath: item.storagePath ? `/${item.storagePath}` : null
-      })
+      const isS3 = process.env.STORAGE_PROVIDER === "s3";
+      const fixPath = (item) => {
+        if (!item.storagePath) return item
+
+        // --- CloudFront / S3 Full URL Logic (Commented out for Backend Proxy) ---
+        // if (isS3) {
+        //   return { ...item, storagePath: getFileUrl(item.storagePath) };
+        // }
+        // ------------------------------------------------------------------------
+
+        return { ...item, storagePath: `/${item.storagePath}` };
+      }
 
       // 3) in front end shared folder icon is diffrent so we mark them so rotned know to change this icon here
       const markedItems = items.map(item => ({
         ...fixPath(item),
         permission,
-        isSharedWithMe: permission !== "owner" 
-                    || item.isShared 
-                    || (item.sharedWith?.length > 0)
-                    || isParentShared
+        isSharedWithMe: permission !== "owner"
+          || item.isShared
+          || (item.sharedWith?.length > 0)
+          || isParentShared
       }))
 
       // --------------------------------------------------------------
@@ -436,10 +450,19 @@ export const getUserFiles = async (req, res) => {
     // ---------------------------------------------------------------
 
     // 1) fix storage path here becuse in vite proxy we defined /files already so we modifed here ffiles and remove/files from url here
-    const fixPath = (item) => ({
-      ...item,
-      storagePath: item.storagePath ? `/${item.storagePath}` : null
-    })
+    const isS3 = process.env.STORAGE_PROVIDER === "s3";
+
+    const fixPath = (item) => {
+      if (!item.storagePath) return item;
+
+      // --- CloudFront / S3 Full URL Logic (Commented out for Backend Proxy) ---
+      // if (isS3) {
+      //   return { ...item, storagePath: getFileUrl(item.storagePath) };
+      // }
+      // ------------------------------------------------------------------------
+
+      return { ...item, storagePath: `/${item.storagePath}` };
+    };
 
     // 2) in front end shared folder icon is diffrent so we mark them so rotned know to change this icon here
     const markedItems = allItems.map(item => {
@@ -497,8 +520,8 @@ export const getFolderPath = async (req, res) => {
       const permission = await getUserPermission(userID, folderData._id)
       if (!permission) break;
 
-      trail.unshift({ 
-        id: folderData._id, 
+      trail.unshift({
+        id: folderData._id,
         name: folderData.name,
         color: folderData.color,
         isShared: folderData.isShared,
@@ -603,79 +626,7 @@ export const renameItem = async (req, res) => {
   }
 }
 
-//  For delete files and folders
-export const deleteItem = async (req, res) => {
-  try {
-    // ------------------------------------------
-    // --- STEP - 1 - get item ID from body
-    // -----------------------------------------
-    const { id } = req.body;
-    const userID = req.user._id;
 
-    // ------------------------------------------
-    // --- STEP - 2 - verify user is owner
-    // -----------------------------------------
-    //  here for shared folder or file only owner can delete them
-    const permission = await getUserPermission(userID, id)
-    if (permission !== "owner") {
-      return res.status(403).json({ success: false, message: "Access denied" })
-    }
-
-    const itemData = await uploadModel.findOne({ _id: id });
-
-    if (!itemData) {
-      return res.status(404).json({ message: "Not Found" });
-    }
-
-    // ------------------------------------------
-    // --- STEP - 3 - notify users via socket
-    // -----------------------------------------
-    // tell other users about the deleted item so it disappears from their screen
-    await notifySharedUsers(itemData.parent || id, "item_deleted", { itemId: id, parentId: itemData.parent }, req.emitToUser)
-
-
-    // ------------------------------------------
-    // --- STEP - 4 - delete the item from disk and database
-    // -----------------------------------------
-    // FILE check here for storage count before deleting from disk
-    if (itemData.type === "file") {
-      const count = await uploadModel.countDocuments({ storagePath: itemData.storagePath })
-      const itemAbsPath = getAbsolutePath(itemData.storagePath)
-      if (count === 1 && itemAbsPath && fs.existsSync(itemAbsPath)) {
-        fs.unlinkSync(itemAbsPath)
-      }
-      await uploadModel.deleteOne({ _id: id });
-      return res.status(200).json({ success: true, message: "Deleted" });
-    }
-
-    // if delete folder delete also nested children recursive delete
-    const deleteRecursive = async (parentID) => {
-      const children = await uploadModel.find({ parent: parentID });
-
-      for (const child of children) {
-        if (child.type === "folder") {
-          await deleteRecursive(child._id);
-        } else if (child.type === "file") {
-          const count = await uploadModel.countDocuments({ storagePath: child.storagePath })
-          const childAbsPath = getAbsolutePath(child.storagePath)
-          if (count === 1 && childAbsPath && fs.existsSync(childAbsPath)) {
-            fs.unlinkSync(childAbsPath)
-          }
-        }
-        await uploadModel.deleteOne({ _id: child._id });
-      }
-    };
-
-    await deleteRecursive(id);
-    await uploadModel.deleteOne({ _id: id });
-
-    return res.status(200).json({ success: true, message: "Deleted" });
-
-  } catch (error) {
-    logger.error(error);
-    res.status(500).json({ message: error.message });
-  }
-};
 
 //  here user can change folder color like red green yellow
 export const changeItemColor = async (req, res) => {
@@ -1048,6 +999,7 @@ export const createFolder = async (req, res) => {
     // -----------------------------------------
     // name: name for the new folder
     // parentId: parent directory ID of new folder
+    if (req.body.name) req.body.name = req.body.name.trim();
     const { name, parentId } = req.body;
 
     // userId: authorized user ID from auth middleware
@@ -1154,21 +1106,21 @@ export const createFolder = async (req, res) => {
 //  this unction is used for calculating the folder total size
 export const getFolderSize = async (req, res) => {
   try {
-    const {id} = req.params;
-    
+    const { id } = req.params;
+
     const currentUserID = req.user._id
 
     // 1. Verify that the folder actually exists and is a folder
     const folder = await uploadModel.findOne({ _id: id, type: "folder" })
-    if(!folder){
+    if (!folder) {
       return res.status(404).json({ success: false, message: "Folder not found" });
     }
 
 
     // 2. check permission user has access this folder permission or not 
     const permission = await getUserPermission(currentUserID, id)
-    if(!permission){
-       return res.status(403).json({ success: false, message: "Access denied" });
+    if (!permission) {
+      return res.status(403).json({ success: false, message: "Access denied" });
     }
 
 

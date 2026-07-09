@@ -1,13 +1,13 @@
 //  here this file start uplaodihn all files and folder here 
 import axiosApi from "../../utils/api";
+import axios from "axios"; // Clean axios for direct S3 requests
 import { isBlockedFile, checkZipContainsBlocked, checkRarContainsBlocked } from "../../utils/blockFileTypes.js";
 
-
-const CHUNK_SIZE = 4 * 1024 * 1024
+const CHUNK_SIZE = 15 * 1024 * 1024
 const SMALL_FILE_THRESHOLD = 1 * 1024 * 1024
 const SMALL_BATCH_SIZE = 50
-const CHUNK_BATCH_SIZE = 3
-const MAX_CONCURRENT = 2
+const CHUNK_BATCH_SIZE = 10
+const MAX_CONCURRENT = 4
 
 export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSession) {
     const { sessionMapsRef, uploadQueuesRef, uploadStartedRef, abortControllersRef } = refs
@@ -209,10 +209,6 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
 
     // handle large files uploading 
     const uploadLargeFile = async (sessionId, fileObj, replaceMap) => {
-        //  file select then update progress bar
-        // if (fileObj.file._isPlaceholder) {
-        //     updateFile(sessionId, filekey, { status: "uploading" })
-        // }
         if (fileObj.file._isPlaceholder) {
             updateFile(sessionId, fileObj.filekey, {
                 status: "done",
@@ -309,110 +305,183 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
                 const end = Math.min(start + CHUNK_SIZE, file.size)
                 chunks.push({ index: i, start, blob: file.slice(start, end) })
             }
-
-            //  in one batch how many chunk we want
-            const batches = []
-            for (let i = 0; i < chunks.length; i += CHUNK_BATCH_SIZE) {
-                batches.push(chunks.slice(i, i + CHUNK_BATCH_SIZE))
-            }
-
-            let uploadCount = alreadyUploaded.size
-
-
-            //  internet speed tracking here
-            let bytesInWindow = 0
-            let windowStart = Date.now()
-            const SPEED_UPDATE_INTERVAL = 1500     // here every 1.5 second speed update
-
-
-            //  send batch to the backend /upload-chunk
-            console.log(`[CHUNKS] ${file.name} | Total batches: ${batches.length} | Total chunks: ${chunks.length} | Already uploaded: ${alreadyUploaded.size}`)
-            for (let i = 0; i < batches.length; i++) {
-                const batch = batches[i]
-                const batchBytes = batch.reduce((sum, c) => sum + c.blob.size, 0)
-
-
-                const form = new FormData()
-                batch.forEach(c => form.append(`chunk_${c.index}`, c.blob))
-
-
-                const chunkStart = performance.now()
-                console.log(`[BATCH START] ${file.name} | batch ${i + 1}/${batches.length} | chunks: [${batch.map(c => c.index)}] | sending...`)
-
-                let retries = 0
-                const MAX_RETRIES = 3
+            
+            let uploadCount = alreadyUploaded.size;
+            // S3 Single Put (files between 1MB and 5MB)
+            if (initData.singlePutUrl) {
+                console.log(`[S3 SINGLE PUT] ${file.name} | sending directly to S3...`);
+                let retries = 0;
+                const MAX_RETRIES = 3;
                 while (true) {
                     try {
-                        await axiosApi.post("/upload/upload-chunk", form, {
+                        let lastLoaded = 0;
+                        let bytesInWindow = 0;
+                        let windowStart = Date.now();
+                        const SPEED_UPDATE_INTERVAL = 1500;
+                        
+                        await axios.put(initData.singlePutUrl, file, {
+                            headers: { "Content-Type": file.type || "application/octet-stream" },
                             signal: controller.signal,
-                            timeout: 45000,   // 5 miniutes
-                            headers: {
-                                "x-upload-id": uploadId,
-                                "x-indexes": JSON.stringify(batch.map(c => c.index)),
-                                "x-starts": JSON.stringify(batch.map(c => c.start))
+                            onUploadProgress: (progressEvent) => {
+                                const pct = parseFloat((progressEvent.progress * 100).toFixed(1));
+                                
+                                const loadedDelta = progressEvent.loaded - lastLoaded;
+                                bytesInWindow += loadedDelta;
+                                lastLoaded = progressEvent.loaded;
+                                
+                                const now = Date.now();
+                                const elapsed = now - windowStart;
+                                if (elapsed >= SPEED_UPDATE_INTERVAL) {
+                                    const speedMBps = (bytesInWindow / (1024 * 1024)) / (elapsed / 1000);
+                                    updateFile(sessionId, filekey, { progress: pct, speed: speedMBps });
+                                    bytesInWindow = 0;
+                                    windowStart = now;
+                                } else {
+                                    updateFile(sessionId, filekey, { progress: pct });
+                                }
                             }
-                        })
-                        console.log(`[BATCH OK] ${file.name} | batch ${i + 1}/${batches.length} | took ${(performance.now() - chunkStart).toFixed(0)}ms`)
-                        break // Success!
+                        });
+                        break;
                     } catch (err) {
-                        if (err.name === "CanceledError") return
-                        console.error(`[BATCH FAIL DETAIL]`, {
-                            fileName: file.name,
-                            batchIndex: i,
-                            totalBatches: batches.length,
-                            errorName: err.name,
-                            errorCode: err.code,
-                            errorMessage: err.message,
-                            httpStatus: err.response?.status,
-                            httpData: err.response?.data,
-                            isTimeout: err.code === "ECONNABORTED",
-                            isNetworkError: !err.response,
-                            retriesExhausted: retries >= MAX_RETRIES
-                        })
-
-                        const isNetworkError = !err.response && err.code !== "ECONNABORTED"
+                        if (err.name === "CanceledError") return;
+                        const isNetworkError = !err.response;
                         if (isNetworkError && retries < MAX_RETRIES) {
-                            retries++
-                            console.warn(`[RETRY] ${file.name} | batch ${i + 1}/${batches.length} | retry ${retries}/${MAX_RETRIES} | err=${err.message}`)
-                            await new Promise(r => setTimeout(r, 2000 * retries)) // Wait 2s, 4s, 6s
-                            continue
+                            retries++;
+                            await new Promise(r => setTimeout(r, 2000 * retries));
+                            continue;
                         }
-
-                        console.error(`[BATCH FAIL] ${file.name} | batch ${i + 1}/${batches.length} | took ${(performance.now() - chunkStart).toFixed(0)}ms | err.name=${err.name} | err.code=${err.code} | status=${err.response?.status} | msg=${err.message}`)
-                        console.error(`[UPLOAD ERROR] ${new Date().toLocaleTimeString()} | File: ${file.name} | Status: ${err.response?.status} | Msg: ${err.message}`);
-                        updateFile(sessionId, filekey, { status: "error", message: "Upload failed - connection lost" })
-                        throw err
+                        updateFile(sessionId, filekey, { status: "error", message: "Upload failed - connection lost" });
+                        throw err;
                     }
                 }
-
-                // update the speed
-                uploadCount += batch.length;
-                bytesInWindow += batchBytes
-
-
-                const now = Date.now()
-                const elapsed = now - windowStart
-
-                const pct = parseFloat(((uploadCount / totalChunks) * 100).toFixed(1))
-
-                if (elapsed >= SPEED_UPDATE_INTERVAL) {
-                    const speedMBps = (bytesInWindow / (1024 * 1024)) / (elapsed / 1000)
-                    updateFile(sessionId, filekey, {
-                        progress: pct,
-                        speed: speedMBps
-                    })
-
-                    // reset window
-                    bytesInWindow = 0;
-                    windowStart = now
-                } else {
-                    updateFile(sessionId, filekey, { progress: pct })
+                uploadCount = totalChunks;
+            } else {
+                //  in one batch how many chunk we want
+                const batches = []
+                for (let i = 0; i < chunks.length; i += CHUNK_BATCH_SIZE) {
+                    batches.push(chunks.slice(i, i + CHUNK_BATCH_SIZE))
                 }
 
+                //  internet speed tracking here
+                let bytesInWindow = 0
+                let windowStart = Date.now()
+                const SPEED_UPDATE_INTERVAL = 1500     // here every 1.5 second speed update
 
+
+                //  send batch to the backend /upload-chunk
+                console.log(`[CHUNKS] ${file.name} | Total batches: ${batches.length} | Total chunks: ${chunks.length} | Already uploaded: ${alreadyUploaded.size}`)
+                for (let i = 0; i < batches.length; i++) {
+                    const batch = batches[i]
+                    const batchBytes = batch.reduce((sum, c) => sum + c.blob.size, 0)
+
+                    const chunkStart = performance.now()
+                    console.log(`[BATCH START] ${file.name} | batch ${i + 1}/${batches.length} | chunks: [${batch.map(c => c.index)}] | sending...`)
+
+                    let retries = 0
+                    const MAX_RETRIES = 3
+                    while (true) {
+                        try {
+                            if (initData.urls) {
+                                // S3 MULTIPART PUT
+                                await Promise.all(batch.map(async (c) => {
+                                    const putUrl = initData.urls[c.index];
+                                    let lastLoaded = 0;
+                                    await axios.put(putUrl, c.blob, {
+                                        headers: { "Content-Type": "application/octet-stream" },
+                                        signal: controller.signal,
+                                        onUploadProgress: (progressEvent) => {
+                                            const loadedDelta = progressEvent.loaded - lastLoaded;
+                                            bytesInWindow += loadedDelta;
+                                            lastLoaded = progressEvent.loaded;
+                                            
+                                            const now = Date.now();
+                                            const elapsed = now - windowStart;
+                                            if (elapsed >= SPEED_UPDATE_INTERVAL) {
+                                                const speedMBps = (bytesInWindow / (1024 * 1024)) / (elapsed / 1000);
+                                                updateFile(sessionId, filekey, { speed: speedMBps });
+                                                bytesInWindow = 0;
+                                                windowStart = now;
+                                            }
+                                        }
+                                    });
+                                    // INSTANT PROGRESS BAR UPDATE!
+                                    uploadCount++;
+                                    const pct = parseFloat(((uploadCount / totalChunks) * 100).toFixed(1));
+                                    updateFile(sessionId, filekey, { progress: pct });
+                                }));
+                            } else {
+                                // LOCAL CHUNK UPLOAD
+                                const form = new FormData()
+                                batch.forEach(c => form.append(`chunk_${c.index}`, c.blob))
+                                
+                                await axiosApi.post("/upload/upload-chunk", form, {
+                                    signal: controller.signal,
+                                    timeout: 45000,   // 5 miniutes
+                                    headers: {
+                                        "x-upload-id": uploadId,
+                                        "x-indexes": JSON.stringify(batch.map(c => c.index)),
+                                        "x-starts": JSON.stringify(batch.map(c => c.start))
+                                    }
+                                })
+                                uploadCount += batch.length;
+                            }
+                            console.log(`[BATCH OK] ${file.name} | batch ${i + 1}/${batches.length} | took ${(performance.now() - chunkStart).toFixed(0)}ms`)
+                            break // Success!
+                        } catch (err) {
+                            if (err.name === "CanceledError") return
+                            console.error(`[BATCH FAIL DETAIL]`, {
+                                fileName: file.name,
+                                batchIndex: i,
+                                totalBatches: batches.length,
+                                errorName: err.name,
+                                errorCode: err.code,
+                                errorMessage: err.message,
+                                httpStatus: err.response?.status,
+                                httpData: err.response?.data,
+                                isTimeout: err.code === "ECONNABORTED",
+                                isNetworkError: !err.response,
+                                retriesExhausted: retries >= MAX_RETRIES
+                            })
+
+                            const isNetworkError = !err.response && err.code !== "ECONNABORTED"
+                            if (isNetworkError && retries < MAX_RETRIES) {
+                                retries++
+                                console.warn(`[RETRY] ${file.name} | batch ${i + 1}/${batches.length} | retry ${retries}/${MAX_RETRIES} | err=${err.message}`)
+                                await new Promise(r => setTimeout(r, 2000 * retries)) // Wait 2s, 4s, 6s
+                                continue
+                            }
+
+                            console.error(`[BATCH FAIL] ${file.name} | batch ${i + 1}/${batches.length} | took ${(performance.now() - chunkStart).toFixed(0)}ms | err.name=${err.name} | err.code=${err.code} | status=${err.response?.status} | msg=${err.message}`)
+                            console.error(`[UPLOAD ERROR] ${new Date().toLocaleTimeString()} | File: ${file.name} | Status: ${err.response?.status} | Msg: ${err.message}`);
+                            updateFile(sessionId, filekey, { status: "error", message: "Upload failed - connection lost" })
+                            throw err
+                        }
+                    }
+
+                    // update the speed only for local chunk uploads (S3 is handled per-chunk above)
+                    if (!initData.urls) {
+                        bytesInWindow += batchBytes
+                        const now = Date.now()
+                        const elapsed = now - windowStart
+                        const pct = parseFloat(((uploadCount / totalChunks) * 100).toFixed(1))
+
+                        if (elapsed >= SPEED_UPDATE_INTERVAL) {
+                            const speedMBps = (bytesInWindow / (1024 * 1024)) / (elapsed / 1000)
+                            updateFile(sessionId, filekey, {
+                                progress: pct,
+                                speed: speedMBps
+                            })
+                            // reset window
+                            bytesInWindow = 0;
+                            windowStart = now;
+                        } else {
+                            updateFile(sessionId, filekey, { progress: pct })
+                        }
+                    }
+                }
             }
 
-            console.log(`[ALL BATCHES DONE] ${file.name} | All ${batches.length} batches finished | calling /upload/complete...`)
+            console.log(`[ALL BATCHES DONE] ${file.name} | Finished chunking loops | calling /upload/complete...`)
 
             console.log(`[COMPLETE] calling complete for: ${file.name}, uploadId: ${uploadId}`)
 

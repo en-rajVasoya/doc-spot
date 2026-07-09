@@ -26,7 +26,7 @@ function DeleteForeverModal({ data, onClose }) {
         deleteMessage = `"${selectedItems[0].name}" will be deleted forever.`;
     } else if (selectedItems.length > 1) {
         deleteMessage = `${selectedItems.length} items will be deleted forever.`;
-    } else if (data.length === 1 && data[0] === currentFolderId && currentFolderMeta) {
+    } else if (data.length === 1 && currentFolderMeta && data[0] === currentFolderMeta.id) {
         deleteMessage = `"${currentFolderMeta.name}" will be deleted forever.`;
     }
 

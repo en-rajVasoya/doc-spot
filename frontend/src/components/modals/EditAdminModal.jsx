@@ -14,6 +14,7 @@ import { useAdmin } from "../../context/AdminContext";
 import UserAvatar from "../layout/UserAvatar";
 import CustomScroll from "../layout/CustomScroll";
 import singleUserIcon from "@images/icon/single-user-icon.svg";
+import { useAuth } from "../../context/AuthContext";
 
 
 function EditAdminModal({ onClose, setModal, data }) {
@@ -21,6 +22,8 @@ function EditAdminModal({ onClose, setModal, data }) {
     const modalRef = useRef(null);
 
     const { updateUser } = useAdmin();
+    const { user: loggedInUser } = useAuth()
+    const isSelf = loggedInUser?._id === data?._id
 
 
     const [displayName, setDisplayName] = useState(data?.name || "");
@@ -355,26 +358,38 @@ function EditAdminModal({ onClose, setModal, data }) {
                             <div className="mb-4">
                                 <Form.Label className="required-star d-block">User Status</Form.Label>
                                 <div className="custom-radio-card-wrapper only-radio-btn">
-                                    <label className={`custom-radio-card ${statusActive ? "active" : ""}`}>
+                                    <label className={`custom-radio-card ${statusActive ? "active" : ""}`}
+                                        style={{
+                                            opacity: isSelf ? 0.6 : 1,
+                                            pointerEvents: isSelf ? "none" : "auto",
+                                            cursor: isSelf ? "not-allowed" : "pointer"
+                                        }}>
                                         <input
                                             type="radio"
                                             name="userStatus"
                                             value="active"
                                             checked={statusActive}
                                             onChange={() => setStatusActive(true)}
+                                            disabled={isSelf}
                                             className="rounded-checkbox"
                                         />
                                         <div>
                                             <div className="subtitle m-0">Active</div>
                                         </div>
                                     </label>
-                                    <label className={`custom-radio-card ${!statusActive ? "active" : ""}`}>
+                                    <label className={`custom-radio-card ${!statusActive ? "active" : ""}`}
+                                        style={{
+                                            opacity: isSelf ? 0.6 : 1,
+                                            pointerEvents: isSelf ? "none" : "auto",
+                                            cursor: isSelf ? "not-allowed" : "pointer"
+                                        }}>
                                         <input
                                             type="radio"
                                             name="userStatus"
                                             value="inactive"
                                             checked={!statusActive}
                                             onChange={() => setStatusActive(false)}
+                                            disabled={isSelf}
                                             className="rounded-checkbox"
                                         />
                                         <div>
@@ -387,33 +402,45 @@ function EditAdminModal({ onClose, setModal, data }) {
                             <div className="mb-3">
                                 <Form.Label className="required-star d-block">User Role</Form.Label>
                                 <div className="custom-radio-card-wrapper only-radio-btn">
-                                    <label className={`custom-radio-card ${role === "user" ? "active" : ""}`}>
+                                    <label className={`custom-radio-card ${role === "user" ? "active" : ""}`}
+                                        style={{
+                                            opacity: isSelf ? 0.6 : 1,
+                                            pointerEvents: isSelf ? "none" : "auto",
+                                            cursor: isSelf ? "not-allowed" : "pointer"
+                                        }}>
                                         <input
                                             type="radio"
                                             name="userRole"
                                             value="user"
                                             checked={role === "user"}
                                             onChange={() => setRole("user")}
+                                            disabled={isSelf}
                                             className="rounded-checkbox"
                                         />
                                         <div>
                                             <div className="subtitle m-0">User</div>
                                         </div>
                                     </label>
-                                    <label className={`custom-radio-card ${role === "admin" ? "active" : ""}`}>
+                                    <label className={`custom-radio-card ${role === "admin" ? "active" : ""}`}
+                                        style={{
+                                            opacity: isSelf ? 0.6 : 1,
+                                            pointerEvents: isSelf ? "none" : "auto",
+                                            cursor: isSelf ? "not-allowed" : "pointer"
+                                        }}>
                                         <input
                                             type="radio"
                                             name="userRole"
                                             value="admin"
                                             checked={role === "admin"}
                                             onChange={() => setRole("admin")}
+                                            disabled={isSelf}
                                             className="rounded-checkbox"
                                         />
                                         <div>
                                             <div className="subtitle m-0">Admin</div>
                                         </div>
                                     </label>
-                                    
+
                                 </div>
                             </div>
                         </CustomScroll>

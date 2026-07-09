@@ -355,7 +355,8 @@ const loadZip = async (zipBlob, pathPrefix = "", mapRef = { "": [] }) => {
 }
 function ZipViewer({ file }) {
     const { downloadFile } = useDownload()
-    const zipUrl = file?.url || file?.storagePath || "";
+    const FILE_BASE_URL = import.meta.env.VITE_FILE_BASE_URL || import.meta.env.VITE_API_URL.replace(/\/api$/, "");
+    const zipUrl = file?.url || (file?.storagePath ? `${FILE_BASE_URL}${file.storagePath}` : "");
     const [fsMap, setFsMap] = useState({})
     const [currentPath, setCurrentPath] = useState("")
     const [trail, setTrail] = useState([])

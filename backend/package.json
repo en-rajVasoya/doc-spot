@@ -8,17 +8,21 @@
     "#utils/*": "./src/utils/*.js",
     "#controllers/*": "./src/controllers/*.js",
     "#routes/*": "./src/routes/*.js",
-    "#middleware/*": "./src/middleware/*.js"
+    "#middleware/*": "./src/middleware/*.js",
+    "#config/*": "./src/config/*.js"
   },
   "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "nodemon --ignore files/ --ignore debug_logs.txt --ignore temp/ --ignore zips/ src/server.js"
+    "dev": "nodemon --ignore files/ --ignore debug_logs.txt --ignore temp/ --ignore zips/ --ignore uploadimage/ src/server.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1079.0",
+    "@aws-sdk/lib-storage": "^3.1081.0",
+    "@aws-sdk/s3-request-presigner": "^3.1079.0",
     "archiver": "^7.0.1",
     "bcryptjs": "^3.0.3",
     "busboy": "^1.6.0",
@@ -36,6 +40,7 @@
     "multer": "^2.1.1",
     "node-cron": "^4.2.1",
     "node-input-validator": "^4.6.0",
+    "nodemailer": "^9.0.1",
     "nodemon": "^3.1.14",
     "paseto": "^3.1.4",
     "paseto-ts": "^2.0.6",

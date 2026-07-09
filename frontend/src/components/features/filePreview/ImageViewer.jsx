@@ -335,10 +335,10 @@ const clampScale = (n) => Math.min(Math.max(+n.toFixed(2), 0.05), 3);
 
 export default function ImageViewer({ file }) {
     const { downloadFile } = useDownload();
-    const BASE_URL = import.meta.env.VITE_API_URL;
+    const FILE_BASE_URL = import.meta.env.VITE_FILE_BASE_URL || import.meta.env.VITE_API_URL.replace(/\/api$/, "");
     const src =
         file?.url ||
-        (file?.storagePath ? `${file.storagePath}` : "");
+        (file?.storagePath ? `${FILE_BASE_URL}${file.storagePath}` : "");
 
     const [scale, setScale] = useState(1);
     const [pos, setPos] = useState({ x: 0, y: 0 });

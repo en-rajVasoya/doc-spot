@@ -1,5 +1,5 @@
 import Modal from "react-bootstrap/Modal";
-import { useState, useRef, useMemo } from "react";
+import { useState, useRef, useMemo, useEffect } from "react";
 import { Form } from "react-bootstrap";
 import InteractiveIcon from "../layout/InteractiveIcon";
 import Tooltip from "../layout/Tooltip";
@@ -34,6 +34,10 @@ function AddUserAdminModal({ onClose, setModal }) {
 
     const [errors, setErrors] = useState({});
 
+
+    const [usernameStatus, setUsernameStatus] = useState("");
+    const [emailStatus, setEmailStatus] = useState("");
+
     // / live password requirement checks - recalculates whenever `password` changes
     const checks = useMemo(() => [
         /[A-Z]/.test(password),           // checks[0] - uppercase
@@ -46,38 +50,92 @@ function AddUserAdminModal({ onClose, setModal }) {
     const clearErr = (field) =>
         setErrors((prev) => { const e = { ...prev }; delete e[field]; return e; });
 
-    const checkUserIdAvailability = async () => {
-        if (!username.trim()) return;
-        const taken = await checkAvailability({ user_id: username });
-        if (taken) {
-            setErrors(prev => ({ ...prev, username: "User ID already taken." }));
-        } else {
+
+
+    //  here thsi code is for the user id is avaible or email is avialble here
+    useEffect(() => {
+        const trimmedUsername = username.trim()
+        if (!trimmedUsername) {
+            setUsernameStatus("");
             setErrors(prev => {
                 const newErrors = { ...prev };
                 delete newErrors.username;
                 return newErrors;
             });
-        }
-    };
-
-    const checkEmailAvailability = async () => {
-        if (!email.trim()) return;
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email.trim().toLowerCase())) {
-            setErrors(prev => ({ ...prev, email: "Valid email is required." }));
             return;
         }
-        const taken = await checkAvailability({ email: email });
-        if (taken) {
-            setErrors(prev => ({ ...prev, email: "Email already registered." }));
-        } else {
+
+        //  after 500ms admin can see message like if user id and email is availbel or not 
+        const delayDebounce = setTimeout(async () => {
+            try {
+                const taken = await checkAvailability({ user_id: trimmedUsername });
+                if (taken) {
+                    setUsernameStatus("taken");
+                    setErrors(prev => ({ ...prev, username: "User ID already taken." }));
+                } else {
+                    setUsernameStatus("available");
+                    setErrors(prev => {
+                        const newErrors = { ...prev };
+                        delete newErrors.username;
+                        return newErrors;
+                    });
+                }
+            } catch (error) {
+                setUsernameStatus("");
+            }
+        }, 500)
+
+        return () => clearTimeout(delayDebounce);
+    }, [username])
+
+
+
+    // Debounce Email availability check
+    useEffect(() => {
+        const trimmedEmail = email.trim();
+        if (!trimmedEmail) {
+            setEmailStatus("");
             setErrors(prev => {
                 const newErrors = { ...prev };
                 delete newErrors.email;
                 return newErrors;
             });
+            return;
         }
-    };
+
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(trimmedEmail.toLowerCase())) {
+            setEmailStatus("");
+            // Clear any error if user is typing an incomplete email, only show format errors on submit
+            setErrors(prev => {
+                const newErrors = { ...prev };
+                delete newErrors.email;
+                return newErrors;
+            });
+            return;
+        }
+
+        const delayDebounce = setTimeout(async () => {
+            try {
+                const taken = await checkAvailability({ email: trimmedEmail.toLowerCase() });
+                if (taken) {
+                    setEmailStatus("taken");
+                    setErrors(prev => ({ ...prev, email: "Email already registered." }));
+                } else {
+                    setEmailStatus("available");
+                    setErrors(prev => {
+                        const newErrors = { ...prev };
+                        delete newErrors.email;
+                        return newErrors;
+                    });
+                }
+            } catch (err) {
+                setEmailStatus("");
+            }
+        }, 500); // Wait 500ms after user stops typing
+        return () => clearTimeout(delayDebounce);
+    }, [email]);
+
 
     const handleOutsideClick = (e) => {
         if (modalRef.current && !modalRef.current.contains(e.target)) {
@@ -119,40 +177,36 @@ function AddUserAdminModal({ onClose, setModal }) {
 
     const handleSave = async () => {
         const newErrors = {};
-
         if (!displayName.trim()) newErrors.displayName = "Display name is required.";
-        if (!username.trim()) newErrors.username = "Username is required.";
+        if (!username.trim()) newErrors.username = "Username / ID is required.";
         if (!password.trim()) newErrors.password = "Password is required.";
-
         const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
         if (!passwordRegex.test(password)) {
             newErrors.password = "Password must be 8 chars, 1 uppercase, and 1 special symbol.";
         }
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!email.trim() || !emailRegex.test(email)) newErrors.email = "Valid email is required.";
-
+        if (!email.trim() || !emailRegex.test(email.trim())) {
+            newErrors.email = "Valid email is required.";
+        }
         if (Object.keys(newErrors).length > 0) {
             setErrors(prev => ({ ...prev, ...newErrors }));
             return;
         }
-
+        // Block saving if there is an error
         if (errors.username || errors.email) {
             return;
         }
-
         try {
             const formData = new FormData();
-            formData.append("name", displayName);
-            formData.append("user_id", username);
-            formData.append("email", email);
+            formData.append("name", displayName.trim());
+            formData.append("user_id", username.trim());
+            formData.append("email", email.trim().toLowerCase());
             formData.append("password", password);
             formData.append("is_active", statusActive);
             formData.append("role", role);
-
             if (avatarFile) {
                 formData.append("profilePic", avatarFile);
             }
-
             await createUser(formData);
             onClose();
         } catch (error) {
@@ -228,9 +282,11 @@ function AddUserAdminModal({ onClose, setModal }) {
                                         className={`custom-form-control h-34${errors.username ? " is-invalid" : ""}`}
                                         value={username}
                                         onChange={(e) => { setUsername(e.target.value); clearErr("username"); }}
-                                        onBlur={checkUserIdAvailability}
                                     />
                                 </div>
+                                {usernameStatus === "available" && !errors.username && (
+                                    <div className="text-success mt-1 small">User ID is available.</div>
+                                )}
                                 {errors.username && (
                                     <div className="invalid-feedback d-block">{errors.username}</div>
                                 )}
@@ -276,9 +332,11 @@ function AddUserAdminModal({ onClose, setModal }) {
                                         className={`custom-form-control h-34${errors.email ? " is-invalid" : ""}`}
                                         value={email}
                                         onChange={(e) => { setEmail(e.target.value); clearErr("email"); }}
-                                        onBlur={checkEmailAvailability}
                                     />
                                 </div>
+                                {emailStatus === "available" && !errors.email && (
+                                    <div className="text-success mt-1 small">Email is available.</div>
+                                )}
                                 {errors.email && (
                                     <div className="invalid-feedback d-block">{errors.email}</div>
                                 )}

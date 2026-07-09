@@ -135,7 +135,8 @@ export function TrashProvider({ children }) {
     //  socket event here
     useEffect(() => {
         if (!user?._id) return;
-        if (!socketRef.current) return;
+        const socket = socketRef.current;
+        if (!socket) return;
 
         //  if any item get trashed trash page refresh
         const handleItemTrashedForTrash = () => {
@@ -144,13 +145,13 @@ export function TrashProvider({ children }) {
             }
         }
 
-        socketRef.current.on("item_trashed", handleItemTrashedForTrash)
+        socket.on("item_trashed", handleItemTrashedForTrash)
 
         return () => {
-            socketRef.current.off("item_trashed", handleItemTrashedForTrash)
+            socket.off("item_trashed", handleItemTrashedForTrash)
         }
 
-    }, [user?._id, currentFolderId, fetchTrashedItems])
+    }, [user?._id, currentFolderId, fetchTrashedItems, socketRef])
 
 
     //  here we are using open folder to user can go inside that folder

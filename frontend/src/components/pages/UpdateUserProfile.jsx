@@ -126,23 +126,13 @@ function UpdateUserProfile() {
         if (fileInputRef.current) fileInputRef.current.value = "";
     };
 
-    const handleSave = async () => {
+
+    //  here we are creating the two diffrent function for saving the personal info and then saving password info
+    //  this fucntino is used for the saving all the personal information of the user here
+    const handleSavePersonalInfo = async () => {
         let newErrors = {};
         if (!displayName.trim()) newErrors.displayName = "Display Name is required";
         if (!username.trim()) newErrors.username = "Username/ID is required";
-
-        if (password && checks.includes(false)) {
-            newErrors.password = "Password does not meet all requirements";
-        }
-
-        if (password || currentPassword) {
-            if (!currentPassword) {
-                newErrors.currentPassword = "Current password is required";
-            }
-            if (!password) {
-                newErrors.password = "New password is required";
-            }
-        }
 
         if (Object.keys(newErrors).length > 0) {
             setErrors(newErrors);
@@ -154,18 +144,51 @@ function UpdateUserProfile() {
         formData.append("name", displayName);
         formData.append("user_id", username);
 
-        if (password || currentPassword) {
-            formData.append("password", password);
-            formData.append("currentPassword", currentPassword);
-        }
         if (avatarFile) {
             formData.append("profilePic", avatarFile);
         }
 
         const result = await updateProfile(formData);
+
+        // Clear password state since we didn't update it (prevents stale state issues)
+        setPassword("");
+        setCurrentPassword("");
         setLoading(false);
+    };
 
+    //  this fucntino si used for saving all the password information o the user
+    const handleUpdatePassword = async () => {
+        let newErrors = {};
 
+        if (password && checks.includes(false)) {
+            newErrors.password = "Password does not meet all requirements";
+        }
+
+        if (!currentPassword) {
+            newErrors.currentPassword = "Current password is required";
+        }
+        if (!password) {
+            newErrors.password = "New password is required";
+        }
+
+        if (Object.keys(newErrors).length > 0) {
+            setErrors(newErrors);
+            return;
+        }
+
+        setLoading(true);
+        const formData = new FormData();
+        formData.append("password", password);
+        formData.append("currentPassword", currentPassword);
+
+        const result = await updateProfile(formData);
+
+        // If successful, clear the password fields
+        if (result?.success) {
+            setPassword("");
+            setCurrentPassword("");
+        }
+        setLoading(false);
     };
 
     return (
@@ -374,7 +397,18 @@ function UpdateUserProfile() {
 
                                         {/* SAVE BUTTONS */}
                                         <div className="edit-profile-footer justify-content-end ">
-                                            <button className="btn-black btn-lg m-0" onClick={handleSave} disabled={loading}>Save</button>
+                                            <button
+                                                className="btn-black btn-lg m-0"
+                                                disabled={loading}
+                                                onClick={activeTab === "personal" ? handleSavePersonalInfo : handleUpdatePassword}
+                                            >
+                                                Save
+                                            </button>
+                                            {/* {activeTab === "personal" ? (
+                                                <button className="btn-black btn-lg m-0" onClick={handleSavePersonalInfo} disabled={loading}>Save</button>
+                                            ) : (
+                                                <button className="btn-black btn-lg m-0" onClick={handleUpdatePassword} disabled={loading}>Save</button>
+                                            )} */}
                                         </div>
                                     </div>
 

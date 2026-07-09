@@ -6,19 +6,27 @@ import retryAddIcon from "@images/icon/retry-add-icon.svg";
 import deleteIcon from "@images/icon/trash.svg";
 import searchIconWhite from "@images/icon/search-icon-white.svg";
 import editIcon from "@images/icon/edit-icon.svg";
-import viewIcon from "@images/icon/view.svg";
+// import viewIcon from "@images/icon/view.svg";
 import { useNotification } from "../../../context/NotificationContext";
 import { useAdmin } from "../../../context/AdminContext";
 import editUserIcon from "@images/icon/edit-user-icon.svg"
+import viewIcon from "@images/icon/eyes-big-icon.svg"
 
+import { useAuth } from "../../../context/AuthContext";
 
 
 function AdminHeaderToolbar({ setModal, searchBarOpen, setSearchBarOpen }) {
 
     const { showNotification } = useNotification()
     const { selectedIds, setSelectedIds, users } = useAdmin();
+    const { user: loggedInUser } = useAuth(); // Get logged-in user
+
     const selectedArray = Array.from(selectedIds);
     const isDisabled = selectedIds.size === 0;
+
+    //  check if currentlogged in user ID is in the selected array
+    const hasSelfSelected = selectedArray.includes(loggedInUser?._id)
+    const isDeleteDisabled = isDisabled || hasSelfSelected
 
 
     //  get the selected user info from then selected id to pass in the edit modal or view modla here
@@ -90,12 +98,13 @@ function AdminHeaderToolbar({ setModal, searchBarOpen, setSearchBarOpen }) {
 
                                     {/* DELETE USER */}
                                     <li className="d-flex align-items-center justify-content-center">
-                                        <Tooltip text="Delete User" placement="bottom" theme={`${isDisabled ? "disabled" : ""}`}>
+                                        <Tooltip text="Delete User" placement="bottom" 
+                                            theme={`${isDeleteDisabled ? "disabled" : ""}`}>
                                             <InteractiveIcon
                                                 defaultIcon={deleteIcon}
                                                 alt="Delete"
-                                                className={`${isDisabled ? "disabled" : ""}`}
-                                                onClick={!isDisabled ? () => setModal({ type: "adminDeleteUser", data: selectedArray }) : undefined}
+                                                className={`${isDeleteDisabled ? "disabled" : ""}`}
+                                                onClick={!isDeleteDisabled ? () => setModal({ type: "adminDeleteUser", data: selectedArray }) : undefined}
                                             />
                                         </Tooltip>
                                     </li>

@@ -28,6 +28,9 @@ import AdminSearchBar from '../admin/AdminSearchBar.jsx';
 import enterIcon from "@images/icon/enter-icon.svg";
 import editUserIcon from "@images/icon/edit-user-icon.svg"
 import { useBellNotification } from '../../../context/BellNotificationContext.jsx';
+import { useSearch } from '../../../context/SearchContext.jsx';
+import userManagementIcon from "@images/icon/user-management-icon.svg";
+
 
 
 //  getiing backend url for getting profile pic of user
@@ -39,6 +42,7 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
     const { logout, user } = useAuth()
     const navigate = useNavigate()
     const { selectedIds, triggerHighlight } = useFileExplorer()
+    const { clearSearch } = useSearch();
 
     const { notifications, unreadCount, markAllRead, deleteNotifications } = useBellNotification();
     const [isNotificationOpen, setIsNotificationOpen] = useState(false);
@@ -112,7 +116,13 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                         </button>
                     )}
 
-                    <a className="logo" onClick={() => navigate("/dashboard")}>
+                    <a className="logo" onClick={() => {
+                        clearSearch();               // Clears the search state
+                        if (setSearchBarOpen) {
+                            setSearchBarOpen(false); // Closes search bar if open
+                        }
+                        navigate("/dashboard");      // Goes to dashboard
+                    }}>
                         <InteractiveIcon
                             defaultIcon={logoIcon}
                             alt=""
@@ -260,9 +270,14 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                                 {isNotificationOpen && (
                                     <div className={`notification-panel ${isNotificationOpen ? "show" : ""}`}>
 
+
+
                                         <div className="notification-header">
                                             <h6 className="notification-title">Notifications</h6>
-                                            <button className='clear-btn' onClick={handleClearAll}>Clear all</button>
+                                            {notifications.length > 0 && (
+                                                <button className='clear-btn' onClick={handleClearAll}>Clear all</button>
+
+                                            )}
                                         </div>
 
                                         <div className="notification-divider" />
@@ -431,7 +446,7 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                                         <>
                                             <Dropdown.Item className="dropdown-item d-flex align-items-center" onClick={() => navigate("/dashboard")}>
                                                 <InteractiveIcon
-                                                    defaultIcon={userIcon}
+                                                    defaultIcon={userManagementIcon}
                                                     width={24}
                                                     height={24}
                                                     alt="My Docspot"
@@ -465,9 +480,9 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                                             {user.role === "admin" && (
                                                 <Dropdown.Item className="dropdown-item d-flex align-items-center" onClick={() => navigate("/admin-dashboard")}>
                                                     <InteractiveIcon
-                                                        defaultIcon={userIcon}
-                                                        width={24}
-                                                        height={24}
+                                                        defaultIcon={userManagementIcon}
+                                                        width={22}
+                                                        height={22}
                                                         alt="Manage Users"
                                                     />
                                                     <span className='item-name'>Manage Users</span>

@@ -6880,3 +6880,25 @@ RESPONSIVE — SIDEBAR TOGGLE
         left: 14px;
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+/* ============================================================
+   DISABLE AUTOFILL GRAY BACKGROUND
+   ============================================================ */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 1000px var(--white) inset !important;
+    -webkit-text-fill-color: var(--dark-87) !important;
+    transition: background-color 5000s ease-in-out 0s;
+}

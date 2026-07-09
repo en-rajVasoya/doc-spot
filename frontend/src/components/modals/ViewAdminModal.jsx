@@ -12,6 +12,7 @@ import userIcon from "@images/icon/user.svg";
 import uploadeIcon from "@images/icon/uploade-icon.svg";
 import { useAdmin } from "../../context/AdminContext";
 import UserAvatar from '../layout/UserAvatar';
+import singleUserIcon from "@images/icon/single-user-icon.svg";
 
 function ViewAdminModal({ onClose, setModal, data }) {
     const [shake, setShake] = useState(false);
@@ -24,6 +25,7 @@ function ViewAdminModal({ onClose, setModal, data }) {
     const [email, setEmail] = useState(data?.email || "");
     const [statusActive, setStatusActive] = useState(data?.is_active ?? true);
     const [avatarUrl, setAvatarUrl] = useState(data?.thumbnail_profile_pic || data?.compressed_profile_pic || data?.profilePic || null);
+    const [role, setRole] = useState(data?.role || "user")
 
     const fileInputRef = useRef(null);
 
@@ -68,17 +70,17 @@ function ViewAdminModal({ onClose, setModal, data }) {
                         {/* Avatar row */}
                         <div className="add-user-avatar-wrapper">
                             <div className="profile-single-box">
-                                <UserAvatar src={avatarUrl} name={displayName} />
+                                <UserAvatar src={avatarUrl} name={displayName} user={data} />
                                 <h3 className="modal-title-sub">Profile picture</h3>
                             </div>
                         </div>
 
                         {/* Username */}
                         <Form.Group className="mb-3" controlId="addUserUsername">
-                            <Form.Label className="required-star">Username / ID</Form.Label>
+                            <Form.Label >Username / ID</Form.Label>
                             <div className={`form-control-single-icon${errors.username ? " has-error" : ""}`}>
                                 <InteractiveIcon
-                                    defaultIcon={userIcon}
+                                    defaultIcon={singleUserIcon}
                                     alt=""
                                     className="form-left-icon disabled-icon"
                                     width={20}
@@ -100,10 +102,10 @@ function ViewAdminModal({ onClose, setModal, data }) {
 
                         {/* Display Name */}
                         <Form.Group className="mb-3" controlId="addUserDisplayName">
-                            <Form.Label className="required-star">Display Name</Form.Label>
+                            <Form.Label >Display Name</Form.Label>
                             <div className={`form-control-single-icon${errors.displayName ? " has-error" : ""}`}>
                                 <InteractiveIcon
-                                    defaultIcon={userIcon}
+                                    defaultIcon={singleUserIcon}
                                     alt=""
                                     className="form-left-icon disabled-icon"
                                     width={20}
@@ -124,7 +126,7 @@ function ViewAdminModal({ onClose, setModal, data }) {
 
                         {/* Email */}
                         <Form.Group className="mb-3" controlId="addUserEmail">
-                            <Form.Label className="required-star">Email</Form.Label>
+                            <Form.Label>Email</Form.Label>
                             <div className={`form-control-single-icon${errors.email ? " has-error" : ""}`}>
                                 <InteractiveIcon
                                     defaultIcon={emailIcon}
@@ -152,13 +154,24 @@ function ViewAdminModal({ onClose, setModal, data }) {
 
                         {/* User Status toggle */}
                         <div className="mb-3">
-                            <Form.Label className="required-star d-block">User Status</Form.Label>
+                            <Form.Label className="d-block">User Status</Form.Label>
                             <div className="user-status-box">
                                 <span className="add-user-status-label ">
                                     {statusActive ? "Active" : "Inactive"}
                                 </span>                                
                             </div>
                         </div>
+
+                        {/* user role */}
+                        <div className="mb-3">
+                            <Form.Label className="d-block">User Role</Form.Label>
+                            <div className="user-status-box">
+                                <span className="add-user-status-label">
+                                    {role === "admin" ? "Admin" : "User"}
+                                </span>
+                            </div>
+                        </div>
+
                     </Modal.Body>
 
                     <Modal.Footer className="d-flex align-items-center justify-content-between border-0">

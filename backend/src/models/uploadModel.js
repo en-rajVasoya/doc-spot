@@ -35,6 +35,13 @@ const uploadSchema = mongoose.Schema({
         type: String,
         default: null
     },
+
+    //  this is for the s3 uplado and s3_id
+    s3_uplaod_id: {
+        type: String,
+        default: null
+    },
+
     fileSize: {
         type: Number,
         default: null

@@ -503,7 +503,7 @@ function NotificationPage() {
 
                             {/* Main Feed Content */}
                             {loading ? (
-                                <div className="bg-white border rounded-3 shadow-sm p-5 d-flex align-items-center justify-content-center notification-page-loading">
+                                <div className="d-flex align-items-center justify-content-center notification-page-loading" >
                                     <div className="loader-wrapper-box">
                                         <div className="cma-messages-are-loader-wrapper">
                                             <span className="loader"></span>
@@ -514,12 +514,12 @@ function NotificationPage() {
                                 /* GORGEOUS EMPTY STATE */
                                 <div className="no-data-found-single-box-wrapper">
                                     <div className="no-data-found-single-box">
-                                        <InteractiveIcon defaultIcon={notificationNoFoundImg} width={100}  className="notification-page-empty-icon-img" />
+                                        <InteractiveIcon defaultIcon={notificationNoFoundImg} width={100} className="notification-page-empty-icon-img" />
                                         <p className="text-center text-muted py-3 m-0">
-                                        No notifications
-                                    </p>
-                                    </div>                                    
-                                    
+                                            No notifications
+                                        </p>
+                                    </div>
+
                                 </div>
                             ) : (
                                 <div className="notification-page-list">

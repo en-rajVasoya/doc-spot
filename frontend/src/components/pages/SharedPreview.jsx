@@ -191,26 +191,22 @@ function FilePreview({ data, copied, setCopied }) {
                     <div className="file-preview-actions">
                         {type === "text" && (
                             <OverlayTrigger placement="bottom" overlay={<Tooltip>{copied ? "Copied!" : "Copy"}</Tooltip>}>
-                                <button onClick={handleCopy} className="preview-btn preview-btn-text">
+                                <button onClick={handleCopy} className="btn-hover-gray">
                                     <InteractiveIcon
                                         defaultIcon={copied ? copiedIcon : copyIcon}
-                                        width={20}
-                                        height={20}
+                                        width={24}
                                         alt=""
                                     />
-                                    {copied ? "Copied!" : "Copy"}
                                 </button>
                             </OverlayTrigger>
                         )}
                         <OverlayTrigger placement="bottom" overlay={<Tooltip>Download</Tooltip>}>
-                            <button onClick={handleDownload} className="preview-btn preview-btn-text">
+                            <button onClick={handleDownload} className="btn-hover-gray">
                                 <InteractiveIcon
                                     defaultIcon={downloadIcon}
-                                    width={20}
-                                    height={20}
+                                    width={24}
                                     alt=""
                                 />
-                                Download
                             </button>
                         </OverlayTrigger>
                     </div>

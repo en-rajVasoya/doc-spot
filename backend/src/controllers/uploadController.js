@@ -4,6 +4,25 @@ import path from "path"
 import multer from "multer"
 import { v4 as uuidv4 } from "uuid";
 
+//  AWS import
+import {
+  CreateMultipartUploadCommand,    //tels s3 that we are starting chunks uplaod and gets the s3UplaodID
+  UploadPartCommand,               // generate each chunk diffrent URL
+  PutObjectCommand,                // upladoing small fiels under 1MB 
+  CompleteMultipartUploadCommand,   // if all chunks are upaldoed so merge them
+  AbortMultipartUploadCommand,      // if abort so s3 will delete all chunks
+  DeleteObjectCommand,              // delete the compelted fiel form s3
+  ListPartsCommand,                 // for resume uplaod s3 wll tell which chunks already uplaoded
+  CopyObjectCommand,
+} from "@aws-sdk/client-s3"
+
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner"; // Generates the temporary secure URLs using our credentials
+import { s3Client } from "../config/s3.js";    // Brings in our S3 connection
+
+
+// storage service
+import { getStorage } from "../services/storageFactory.js";
+
 //  mongodb Schemas
 import mongoose from "mongoose";
 import uploadModel from "#models/uploadModel";
@@ -23,6 +42,12 @@ import { scanFileWithClamAV } from "../virusTotal/clamAVWorker.js";
 import { logger } from "#utils/logger";
 import { updateParentFolderTimestamps } from "#utils/parentFolderTimestamp";
 import { getAbsolutePath } from "#utils/pathHelper";
+
+
+
+
+
+
 
 
 //  first create out /file folder if not exist here
@@ -55,122 +80,104 @@ const getBucketPath = (uploadId) => {
 // Note - it will only runs when file size is greter then 1MB - otherwise uploadSmallBAtch will run 
 export const initUpload = async (req, res) => {
   try {
-    //  ---------------------------------------------
-    // --- STEP -1 - get infor from body
-    // ---------------------------------------------
+    // -------------------------------------------------------------------------
+    // --- STEP 1: Extract basic upload information from the incoming request
+    // -------------------------------------------------------------------------
     const { fileName, fingerprint, fileSize, fileType, totalChunks, parent, fileHeader, replacesFileId } = req.body;
     const owner = req.user._id;
 
-    // if user upladoa empty folder
+    // Ignore empty keep files used for maintaining folder structures
     if (req.body.fileName === ".keep") {
       return res.json({ success: true, status: "skipped" });
     }
 
-    //  ---------------------------------------------------------------------
-    // --- STEP - 2 - Chck permission if user is uploading item inside folder
-    // ---------------------------------------------------------------------
-
-    // if that parent folder is not there so return
+    // -------------------------------------------------------------------------
+    // --- STEP 2: Verify Permissions (If uploading inside a specific folder)
+    // -------------------------------------------------------------------------
     if (parent) {
       const parentFolder = await uploadModel.findById(parent).select("isTrashed sharedWith owner parent")
       if (!parentFolder) {
         return res.status(404).json({ success: false, message: "Parent folder not found" });
       }
-
-      //  if user is uploading inside trash return it
       if (parentFolder.isTrashed) {
-        return res.status(400).json({
-          success: false,
-          message: "Cannot upload to a trashed folder",
-          blocked: true
-        });
+        return res.status(400).json({ success: false, message: "Cannot upload to a trashed folder", blocked: true });
       }
-
-      // here for share fodler if user is a viewer so dont allow it
       const permission = await getUserPermission(owner, parent)
       if (!permission || !["owner", "editor"].includes(permission)) {
-        return res.status(403).json({
-          success: false,
-          message: "You don't have permission to upload to this folder",
-          blocked: true
-        })
+        return res.status(403).json({ success: false, message: "You don't have permission to upload to this folder", blocked: true })
       }
     }
 
-    //  --------------------------------------------------------------------------
-    // --- STEP - 3 - Check security .exe adn mime type block with helper function
-    // ---------------------------------------------------------------------------
+
+    // -------------------------------------------------------------------------
+    // --- STEP 3: Security Scan (Check file header bytes to block malware/exe)
+    // -------------------------------------------------------------------------
     const security = await checkFileSecurity(fileName, fileHeader)
     if (!security.safe) {
       return res.status(400).json({ success: false, message: security.reason, blocked: true })
     }
 
-    //  -----------------------------------------------
-    // --- STEP - 4 - Item status check already uploded or not
-    // ---------------------------------------------
 
+    // -------------------------------------------------------------------------
+    // --- STEP 4: Check if file is already uploaded or currently uploading
+    // -------------------------------------------------------------------------
     const existing = await uploadModel.findOne({
       fingerprint,
       owner,
       parent: parent || null,
       isTrashed: { $ne: true }
     })
-
-    // if item is uploaded skip that file
     if (existing?.uploadStatus === "completed") {
       return res.status(200).json({ success: true, status: "completed", message: "Completed" })
     }
 
-    //  if uplaod statues is still uploading here
+
+    // -------------------------------------------------------------------------
+    // --- STEP 4: Local storage uplaoding or the AWS uploading
+    // -------------------------------------------------------------------------
+    const storage = getStorage()
+
+    // --- RESUME LOGIC (If the file upload was started but interrupted) ---
     if (existing?.uploadStatus === "uploading") {
-      //  verify if temp file still exist on disk or not 
-      const existingAbsPath = getAbsolutePath(existing.storagePath)
-      if (!existing.storagePath || !existingAbsPath || !fs.existsSync(existingAbsPath)) {
-        //  file is gone so - delete broken record and start fresh upload here
-        await uploadModel.deleteOne({ _id: existing._id })
-        await chunkModel.deleteMany({ uploadId: existing.uploadId })   // chunk schema all dleete that chunks here
-        //  below we are creating new uplaod fresh
-      } else {
-        //  if item is resumeble - send uplaodId and already uplaoded chunk in resposne
-        const uploadedChunks = await chunkModel.find({ uploadId: existing.uploadId }).select("chunkIndex -_id")
+      const resumeData = await storage.checkResume(
+        existing.storagePath,
+        existing.s3_uplaod_id,
+        existing.totalChunks,
+        existing.uploadId
+      );
+
+      //  here if some local fiel missing or somethigng bad here so we will start a fresh uploading here
+      if (resumeData.action === "delete_record") {
+        // Service determined the upload is un-resumable (e.g. AWS session expired or Local file missing)
+        await uploadModel.deleteOne({ _id: existing._id });
+        await chunkModel.deleteMany({ uploadId: existing.uploadId });
+        // Let it fall through to STEP 5 to start a fresh upload
+
+      } else if (resumeData.action === "resume") {
         return res.json({
           success: true,
           status: "resumable",
           uploadId: existing.uploadId,
-          uploadedChunks: uploadedChunks.map(c => c.chunkIndex)
-        })
+          uploadedChunks: resumeData.uploadedChunks,
+          s3_uplaod_id: existing.s3_uplaod_id,
+          urls: resumeData.urls // S3 returns URLs, Local Disk returns null
+        });
       }
     }
 
-    //  --------------------------------------------------------------------------
-    // --- STEP - 5 - Item is a new upload so fresh start
-    // ---------------------------------------------------------------------------
+    // -------------------------------------------------------------------------
+    // --- STEP 5: Start a BRAND NEW upload session
+    // -------------------------------------------------------------------------
 
-    //  generate the ne uplaod id to give
     const uploadId = uuidv4()
 
-    //  her this is fodler creation with the userId - in future you want to shift to this approch here
-    // const userDir = path.join(FILES_DIR, String(owner))
-    // if (!fs.existsSync(userDir)) {
-    //   fs.mkdirSync(userDir, { recursive: true })
-    // }
-    // const storagePath = path.join(userDir, `${uploadId}.tmp`)
+    // Init the upload here
+    // if the AWS then it will gives the url to upaldo chunks
+    const initData = await storage.initNewUpload(uploadId, fileType, totalChunks, fileSize);
 
-    // get storage path here
-    const bucketDir = getBucketPath(uploadId)
-    const bucket = uploadId.substring(0, 2)
-    const absoluteTmpPath = path.join(bucketDir, `${uploadId}.tmp`)
-    const storagePath = `files/${bucket}/${uploadId}.tmp`
-
-    //  now here main point we are doin glike when first user upload a file here wo we are pre-alocating full file size to the disk
-    //  so when random index chunks arrive here we can write at the position here
-    const fd = fs.openSync(absoluteTmpPath, "w")
-    fs.ftruncateSync(fd, fileSize)
-    fs.closeSync(fd)    //after allocation file close that file
-
-    //  --------------------------------------------------------------------------
-    // --- STEP - 6 - Create new fresh record in mongo db with all field
-    // ---------------------------------------------------------------------------
+    // -------------------------------------------------------------------------
+    // --- STEP 6: Save the new file record to MongoDB
+    // -------------------------------------------------------------------------
     let fileData = await uploadModel.create({
       name: fileName,
       type: "file",
@@ -180,31 +187,32 @@ export const initUpload = async (req, res) => {
       uploadId,
       fileSize,
       fileType,
-      storagePath,
+      storagePath: initData.storagePath,
       totalChunks,
       uploadStatus: "uploading",
       lastActivity: new Date(),
-      replacesFileId: replacesFileId || null
-      // uploadedChunks removed — using chunkModel collection now
-    })
+      replacesFileId: replacesFileId || null,
+      s3_uplaod_id: initData.s3UploadId // null for local disk, string for S3
+    });
 
-    //  here we are saving  the item id in the database liek with sahred ids if file is shared or not 
-    const result = await uploadModel.updateOne(
-      {
-        _id: parent,
-        "sharedWith.userId": owner
-      },
-      {
-        $addToSet: {
-          "sharedWith.$.file_ids": fileData._id
-        }
-      }
-    )
 
-    //  --------------------------------------------------------------------------
-    // --- STEP - 7 - Send response
-    // ---------------------------------------------------------------------------
-    res.json({ success: true, status: "new", uploadId })
+    // Add this file to the shared folder permissions if applicable
+    if (parent) {
+      await uploadModel.updateOne(
+        { _id: parent, "sharedWith.userId": owner },
+        { $addToSet: { "sharedWith.$.file_ids": fileData._id } }
+      );
+    }
+    // Send the URLs back to the frontend to begin the upload!
+    res.json({ 
+        success: true, 
+        status: "new", 
+        uploadId, 
+        s3UploadId: initData.s3UploadId, 
+        urls: initData.urls, 
+        singlePutUrl: initData.singlePutUrl 
+    });
+
 
   } catch (error) {
     logger.error(error);
@@ -231,7 +239,7 @@ export const completeUpload = async (req, res) => {
     //  --------------------------------------------------------------------------
     // --- STEP - 1 - Getting input from the body and current useer
     // ---------------------------------------------------------------------------
-    const { uploadId } = req.body;
+    const { uploadId, parts } = req.body;
     const owner = req.user._id
 
     //  --------------------------------------------------------------------------
@@ -240,62 +248,41 @@ export const completeUpload = async (req, res) => {
     const record = await uploadModel.findOne({ uploadId, owner })
     if (!record) return res.status(404).json({ success: false, message: "uploadModel not found" })
 
-    //  --------------------------------------------------------------------------
-    // --- STEP - 3 - Get all chunk uplaoded count with uplaod id and match with original count 
-    // ---------------------------------------------------------------------------
-    const uploadedCount = await chunkModel.countDocuments({ uploadId })
-    console.log(`[COMPLETE DEBUG]`, {
-      fileName: record.name,
-      uploadId: uploadId,
-      expectedChunks: record.totalChunks,
-      foundChunks: uploadedCount,
-      mismatch: uploadedCount !== record.totalChunks,
-      missingCount: record.totalChunks - uploadedCount
-    })
 
-    //  here we are finding the totoal chunks from the main Upload Modal and total chunks uplaoded in chunks modal 
-    if (uploadedCount !== record.totalChunks) {
-      console.error(`[COMPLETE ERROR] Mismatch for ${record.name}. id: ...${uploadId.slice(-6)} | Found: ${uploadedCount}, Expected: ${record.totalChunks}`);
-      return res.status(400).json({ success: false, message: "Missing chunks" })
+    //  --------------------------------------------------------------------------
+    // --- STEP - 3 & 4 - Get the which stroage and then saev it 
+    // ---------------------------------------------------------------------------
+    const storage = getStorage();
+    const finalExtension = record.name?.includes(".") ? "." + record.name.split(".").pop() : "";
+    let newRelativePath;
+
+    try {
+      newRelativePath = await storage.completeUpload(
+        uploadId, 
+        record.storagePath, 
+        record.s3_uplaod_id, 
+        record.totalChunks, 
+        finalExtension
+      );
+    } catch (storageError) {
+      if (storageError.message.includes("Missing") || storageError.message.includes("Failed") || storageError.message.includes("temp file missing")) {
+         return res.status(400).json({ success: false, message: storageError.message });
+      }
+      throw storageError; 
     }
 
-    //  --------------------------------------------------------------------------
-    // --- STEP - 3 - Chunk middleware clear caching after uplaod complete 
     // ---------------------------------------------------------------------------
-    await cleanupUploadResources(uploadId)
-    // release fd and clear cache BEFORE renameSync
-    // releaseFd(uploadId)
-    // clearUploadCache(uploadId)
-    // clearWriteQueue(uploadId)
-
-    //  --------------------------------------------------------------------------
-    // --- STEP - 4 - FIle Renaming replace .tmp with actual item extension
+    // --- STEP 5: Update mongo record for item from uploading to completed
     // ---------------------------------------------------------------------------
-    //  here we are replacing the file name 
-    const ext = record.name?.includes(".") ? "." + record.name.split(".").pop() : ""
-    const bucketDir = getBucketPath(uploadId)
-    const bucket = uploadId.substring(0, 2)
-    const oldAbsPath = getAbsolutePath(record.storagePath)
-    const newAbsPath = path.join(bucketDir, `${uploadId}${ext}`)
-    const newRelativePath = `files/${bucket}/${uploadId}${ext}`
-
-    if (oldAbsPath && fs.existsSync(oldAbsPath)) {
-      fs.renameSync(oldAbsPath, newAbsPath)
-    }
-
-    //  --------------------------------------------------------------------------
-    // --- STEP - 5 - Update mongo record for item form uploading to completed
-    // ---------------------------------------------------------------------------
-
-    //  update here status after complete upload 
     await uploadModel.updateOne(
       { uploadId, owner },
       {
         uploadStatus: "completed",
         storagePath: newRelativePath,
-        lastActivity: new Date()
+        lastActivity: new Date(),
+        s3_uplaod_id: null // clear this out since session is done - aws will give null
       }
-    )
+    );
 
     //  --------------------------------------------------------------------------
     // --- STEP - 6 - Replace Old item data with new item 
@@ -320,16 +307,8 @@ export const completeUpload = async (req, res) => {
           }
         )
 
-        // delete the old file reord from disk
-        const oldAbsolute = getAbsolutePath(oldRecord.storagePath)
-        if (oldAbsolute && fs.existsSync(oldAbsolute)) {
-          try {
-            fs.unlinkSync(oldAbsolute)
-          } catch (error) {
-            logger.error(error);
-            console.log("Old file record ")
-          }
-        }
+        //  delete the old file from s3 or local disk
+        await storage.deleteFile(oldRecord.storagePath)
 
         // delete the record from mongodb
         await uploadModel.deleteOne({ _id: record.replacesFileId })
@@ -353,7 +332,7 @@ export const completeUpload = async (req, res) => {
       //  find that parent folder info like shared with info 
       let currentParent = await uploadModel.findById(record.parent).select("sharedWith parent owner")
 
-      //  now goes to bottom to top to find main pretn folder and shared with info
+      //  now goes to bottom to top to find main parent folder and shared with info
       while (currentParent) {
         if (currentParent.owner) {
           //  socket event for owner screen
@@ -377,6 +356,8 @@ export const completeUpload = async (req, res) => {
     // ---------------------------------------------------------------------------
     await chunkModel.deleteMany({ uploadId })
     res.json({ success: true, id: record._id })
+
+
 
     //  --------------------------------------------------------------------------
     // --- STEP - 8 - Scanning the file with CalmAv and virus total
@@ -425,7 +406,7 @@ export const completeUpload = async (req, res) => {
 // }
 
 
-// NOTE - this function will run when user will upload a sall files like under 1-MB
+// NOTE - this function will run when user will upload a small files like under 1-MB
 // For small files we are not using busboy we directly saving file to disk here 
 export const uploadSmallBatch = async (req, res) => {
   try {
@@ -435,6 +416,10 @@ export const uploadSmallBatch = async (req, res) => {
     const owner = req.user._id;
     const metadata = JSON.parse(req.body.metadata);
     const parentId = metadata[0]?.parentId || null;
+
+
+    //  get the storage AWS or local
+    const storage = getStorage();
 
     //  ---------------------------------------------------------------------
     // --- STEP - 2 - Chck permission if user is uploading item inside folder
@@ -552,20 +537,15 @@ export const uploadSmallBatch = async (req, res) => {
       // 2) we are generating mongo id for all files here so frontend dont nned to wait here
       const fileId = new mongoose.Types.ObjectId();
 
-      // 3) getting the file extension name
-      const ext = meta.fileName?.includes(".")
-        ? "." + meta.fileName.split(".").pop()
-        : "";
-      const bucketDir = getBucketPath(uploadId)
-      const bucket = uploadId.substring(0, 2)
-      const absoluteStoragePath = path.join(bucketDir, `${uploadId}${ext}`)
-      const relativeStoragePath = `files/${bucket}/${uploadId}${ext}`
-
-      // 4) write file to disk storage path - all 50 files will write at same time 
-      //  all file will write at same time and we are pushing here refresh of that file into array to know when it will be done
+      // 3) Calculate storage path
+      const ext = meta.fileName?.includes(".") ? "." + meta.fileName.split(".").pop() : "";
+      const bucket = uploadId.substring(0, 2);
+      const relativeStoragePath = `files/${bucket}/${uploadId}${ext}`;
+      // 4) Push the upload promise to the same array so they all upload in parallel!
       pendingDiskWrites.push(
-        fs.promises.writeFile(absoluteStoragePath, file.buffer)
+        storage.uploadBuffer(relativeStoragePath, file.buffer, meta.fileType)
       );
+      
 
       //  5) We are pushing object in to array when all complet so we can bult write to the mongodb
       pendingDbRecords.push({
@@ -913,6 +893,8 @@ export const checkFilesBulk = async (req, res) => {
   }
 }
 
+
+
 export const cancelUpload = async (req, res) => {
   try {
     const { uploadId } = req.params;
@@ -933,16 +915,14 @@ export const cancelUpload = async (req, res) => {
     // clearWriteQueue(uploadId)
     await cleanupUploadResources(uploadId)
 
-    // delete physical file if exists
-    const cancelAbsPath = getAbsolutePath(record.storagePath)
-    if (cancelAbsPath && fs.existsSync(cancelAbsPath)) {
-      try {
-        fs.unlinkSync(cancelAbsPath)
-      } catch (err) {
-        logger.error(err);
-        console.error("File delete failed:", err.message)
-      }
-    }
+    const storage = getStorage();
+    await storage.cancelUpload(
+      record.storagePath, 
+      record.s3_uplaod_id, 
+      uploadId // This 3rd argument triggers cleanupUploadResources() in your localDiskStorage file!
+    );
+
+    
 
     await Promise.all([
       chunkModel.deleteMany({ uploadId }),
@@ -962,6 +942,7 @@ export const cancelFolderUpload = async (req, res) => {
   try {
     const { uploadIds, folderIds, rootFolderId } = req.body
     const owner = req.user._id
+    const isS3 = process.env.STORAGE_PROVIDER === "s3";
 
     // STEP 1 — release and delete in-progress files
     if (uploadIds?.length) {
@@ -971,25 +952,19 @@ export const cancelFolderUpload = async (req, res) => {
         uploadStatus: { $ne: "completed" } // Safety: only cleanup in-progress files
       })
 
-      records.forEach(record => {
-        releaseFd(record.uploadId)
-        clearUploadCache(record.uploadId)
-        clearWriteQueue(record.uploadId)
-      })
+      // records.forEach(record => {
+      //   if (!isS3) {
+      //     releaseFd(record.uploadId)
+      //     clearUploadCache(record.uploadId)
+      //     clearWriteQueue(record.uploadId)
+      //   }
+      // })
 
       await Promise.all(
         records
           .filter(r => r.storagePath)
-          .map(r => {
-            const absPath = getAbsolutePath(r.storagePath)
-            if (absPath && fs.existsSync(absPath)) {
-              return fs.promises.unlink(absPath).catch(err =>
-                console.error(`File delete failed for ${r.uploadId}:`, err.message)
-              )
-            }
-            return Promise.resolve()
-          })
-      )
+          .map(r => storage.cancelUpload(r.storagePath, r.s3_uplaod_id, r.uploadId))
+      );
 
       const verifiedUploadIds = records.map(r => r.uploadId)
       await Promise.all([
@@ -1016,20 +991,12 @@ export const cancelFolderUpload = async (req, res) => {
         }
       }
 
-      // delete physical files
+      // Delegate the physical deletion of all completely uploaded files to the storage service
       await Promise.all(
         toDelete
           .filter(r => r.storagePath)
-          .map(r => {
-            const absPath = getAbsolutePath(r.storagePath)
-            if (absPath && fs.existsSync(absPath)) {
-              return fs.promises.unlink(absPath).catch(err =>
-                console.error(`File delete failed:`, err.message)
-              )
-            }
-            return Promise.resolve()
-          })
-      )
+          .map(r => storage.deleteFile(r.storagePath))
+      );
 
       const allIds = toDelete.map(r => r._id)
       const allUploadIds = toDelete.filter(r => r.uploadId).map(r => r.uploadId)
@@ -1065,6 +1032,8 @@ export const completeFolderReplace = async (req, res) => {
     const { newFolderId, replacesFileId } = req.body;
     const owner = req.user._id;
 
+    const storage = getStorage();
+
     //  first find the older folder here
     const oldFolder = await uploadModel.findOne({ _id: replacesFileId, owner });
     if (!oldFolder) {
@@ -1099,16 +1068,7 @@ export const completeFolderReplace = async (req, res) => {
         if (child.type === "folder") {
           await deleteRecursive(child._id)
         } else if (child.type === "file") {
-          // delete file from disk
-          const childAbsPath = getAbsolutePath(child.storagePath)
-          if (childAbsPath && fs.existsSync(childAbsPath)) {
-            try {
-              fs.unlinkSync(childAbsPath)
-            } catch (err) {
-              logger.error(err);
-              console.error("File delete failed:", err.message)
-            }
-          }
+          await storage.deleteFile(child.storagePath);
         }
         await uploadModel.deleteOne({ _id: child._id })
       }

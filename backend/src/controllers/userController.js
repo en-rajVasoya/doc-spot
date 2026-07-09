@@ -106,11 +106,13 @@ export const userLogin = async (req, res) => {
             ? 7 * 24 * 60 * 60 * 1000   // 7 days
             : 24 * 60 * 60 * 1000;      // 1 day
 
+        const isProduction = process.env.NODE_ENV === "production";
+
         //  now saving this toke in cookie
         res.cookie("auth_token", token, {
             httpOnly: true,
-            secure: false,      // Must be FALSE for localhost (HTTP)
-            sameSite: "lax",    // Required for cross-origin localhost requests
+            secure: isProduction,      
+            sameSite: isProduction ? "none" : "lax",    
             maxAge
         });
 
@@ -136,9 +138,13 @@ export const userLogin = async (req, res) => {
 // Clear token when user logged out
 export const userLogout = async (req, res) => {
     try {
+        const isProduction = process.env.NODE_ENV === "production";
+
         // clear cookies
         res.clearCookie("auth_token", {
             httpOnly: true,
+            secure: isProduction,
+            sameSite: isProduction ? "none" : "lax",
             maxAge: 0
         })
 
@@ -176,7 +182,9 @@ export const currentUser = async (req, res) => {
 //  function to update user profile details 
 export const updateProfile = async (req, res) => {
     try {
-        const { name, email, user_id, password, currentPassword } = req.body;
+        if (req.body.name) req.body.name = req.body.name.trim();
+
+        const { name, password, currentPassword } = req.body;
 
         let userID = req.user._id;
 
@@ -187,37 +195,10 @@ export const updateProfile = async (req, res) => {
         }
 
         // ==============================
-        // USERNAME CHECK
-        // ==============================
-        if (user_id && user_id !== userData.user_id) {
-            const exists = await User.findOne({ user_id });
-
-            if (exists) {
-                return res.status(400).json({
-                    message: "User ID already taken"
-                });
-            }
-
-            userData.user_id = user_id;
-        }
-
-        // ==============================
         // NAME UPDATE
         // ==============================
         if (name) {
             userData.name = name;
-        }
-
-        if (email) {
-            const normalizedEmail = email.trim().toLowerCase()
-
-            //  Email validation email must contains @ - domain - . - extension
-            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-            if (!emailRegex.test(normalizedEmail)) {
-                return res.status(400).json({ success: false, message: "Email is invalid" })
-            }
-
-            userData.email = normalizedEmail;
         }
 
         if (password || currentPassword) {
@@ -226,6 +207,11 @@ export const updateProfile = async (req, res) => {
             }
             if (!password) {
                 return res.status(400).json({ message: "New password is required" });
+            }
+
+            const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+            if (!passwordRegex.test(password)) {
+                return res.status(400).json({ message: "Password must be 8 characters, one uppercase and one special symbol" });
             }
 
             const isMatch = await bcrypt.compare(currentPassword, userData.password);
@@ -251,7 +237,7 @@ export const updateProfile = async (req, res) => {
             // ==============================
             // DELETE OLD AVATAR
             // ==============================
-            if (userData.avatar) {
+            if (userData.profilePic) {
                 try {
                     if (userData.profilePic) {
                         fs.unlinkSync(
@@ -404,10 +390,25 @@ export const validateResetToken = async (req, res) => {
 export const resetPassword = async (req, res) => {
     try {
         const { token } = req.params;
-        const { password } = req.body;
+        const { password, confirmPassword } = req.body;
 
-        if (!password) {
-            return res.status(400).json({ success: false, message: "New password is required" });
+        //  check if passwro dand confirm password bothe field exist here
+        if (!password || confirmPassword) {
+            return res.status(400).json({ success: false, message: "Password and Confirm Password are required." });
+        }
+
+        // verify that here passwrod and confirm passwrod match here
+        if (password !== confirmPassword) {
+            return res.status(400).json({ success: false, message: "Passwords do not match." });
+        }
+
+        // 3. Verify backend password complexity rules
+        const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+        if (!passwordRegex.test(password)) {
+            return res.status(400).json({
+                success: false,
+                message: "Password must be at least 8 characters, with 1 uppercase, 1 lowercase, 1 number, and 1 special character."
+            });
         }
 
         // Hash the token from the URL

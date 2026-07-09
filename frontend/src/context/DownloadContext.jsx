@@ -306,7 +306,7 @@ export function DownloadProvider({ children }) {
 
         const progress = parseFloat(((savedChunks.size / totalChunks) * 100).toFixed(1))
 
-        const sessionId = crypto.randomUUID()
+        const sessionId = (window.crypto && window.crypto.randomUUID) ? window.crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).substring(2)
 
         setSessions(prev => [{
             id: sessionId,
@@ -352,7 +352,7 @@ export function DownloadProvider({ children }) {
 
         inProgressFoldersRef.current.add(folderId.toString())
 
-        const sessionId = crypto.randomUUID()
+        const sessionId = (window.crypto && window.crypto.randomUUID) ? window.crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).substring(2)
 
         setSessions(prev => [{
             id: sessionId,
@@ -485,7 +485,7 @@ export function DownloadProvider({ children }) {
 
         inProgressMultipleRef.current.add(stableKey)  
 
-        const sessionId = crypto.randomUUID()
+        const sessionId = (window.crypto && window.crypto.randomUUID) ? window.crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).substring(2)
 
         setSessions(prev => [{
             id: sessionId,

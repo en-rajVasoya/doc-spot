@@ -87,9 +87,12 @@ function ResetPassword() {
     //  when user click on the submit button
     const handleSubmit = async (e) => {
         e.preventDefault()
+        if (!isPasswordValid || password !== confirmPassword) {
+            return
+        }
         setLoading(true)
         try {
-            const res = await axiosApi.post(`/auth/reset_password/${token}`, { password })
+            const res = await axiosApi.post(`/auth/reset_password/${token}`, { password, confirmPassword  })
             if (res.data.success) {
                 showNotification("Password reset successfully! Please login.", "success", "bottom-center")
                 navigate("/") // Redirect back to login page
@@ -148,7 +151,7 @@ function ResetPassword() {
                                 {/* New Password */}
                                 <Form.Group className="mb-3" controlId="formNewPassword">
                                     <Form.Label className="required-star">New Password</Form.Label>
-                                    <div className='form-control-single-icon'>
+                                    <div className={`form-control-single-icon ${password.length > 0 && !isPasswordValid ? "has-error" : ""}`}>
                                         <InteractiveIcon
                                             defaultIcon={passwordIcon}
                                             alt=""
@@ -165,7 +168,7 @@ function ResetPassword() {
                                         <Form.Control
                                             type={showPassword ? "text" : "password"}
                                             placeholder="Enter New Password"
-                                            className='custom-form-control h-34'
+                                            className={`custom-form-control h-34 ${password.length > 0 && !isPasswordValid ? "is-invalid" : ""}`}
                                             value={password}
                                             onChange={(e) => setPassword(e.target.value)}
                                             disabled={loading}
@@ -202,7 +205,7 @@ function ResetPassword() {
                                 {/* Confirm Password */}
                                 <Form.Group className="mb-3" controlId="formConfirmPassword">
                                     <Form.Label className="required-star">Confirm Password</Form.Label>
-                                    <div className='form-control-single-icon'>
+                                    <div className={`form-control-single-icon ${confirmPassword.length > 0 && password !== confirmPassword ? "has-error" : ""}`}>
                                         <InteractiveIcon
                                             defaultIcon={passwordIcon}
                                             alt=""
@@ -219,7 +222,7 @@ function ResetPassword() {
                                         <Form.Control
                                             type={showConfirmPassword ? "text" : "password"}
                                             placeholder="Confirm New Password"
-                                            className='custom-form-control h-34'
+                                            className={`custom-form-control h-34 ${confirmPassword.length > 0 && password !== confirmPassword ? "is-invalid" : ""}`}
                                             value={confirmPassword}
                                             onChange={(e) => setConfirmPassword(e.target.value)}
                                             disabled={loading}
@@ -238,6 +241,7 @@ function ResetPassword() {
                                         type="submit"
                                         className='btn-black btn-lg w-100 btn'
                                         disabled={loading}
+                                        style={{ pointerEvents: (!password || !confirmPassword || !isPasswordValid || password !== confirmPassword) ? "none" : "auto" }}
                                     >
                                         {loading ? (
                                             <div className="file-upload-loader"></div>
@@ -254,7 +258,7 @@ function ResetPassword() {
                 </div>
             </div>
 
-             {/* Animation file section */}
+            {/* Animation file section */}
             <div className='login-animation-wrapper'>
                 <div className="login-bg-icon slow an-1">
                     <InteractiveIcon defaultIcon={listFolder1Icon} alt="" />

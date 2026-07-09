@@ -377,10 +377,11 @@ function DocViewer({ file: fileData }) {
                 } else if (fileData instanceof ArrayBuffer) {
                     blob = new Blob([fileData])
                 } else if (typeof fileData === "object" && fileData?.storagePath) {
-                    const url = fileData.storagePath
+                    const FILE_BASE_URL = import.meta.env.VITE_FILE_BASE_URL || import.meta.env.VITE_API_URL.replace(/\/api$/, "");
+                    const url = `${FILE_BASE_URL}${fileData.storagePath}`
                     const response = await fetch(url, {
+                        credentials: "include",
                         headers: {
-                            Authorization: `Bearer ${localStorage.getItem("token")}`,
                             Accept: "application/octet-stream",
                         },
                     })
@@ -399,7 +400,7 @@ function DocViewer({ file: fileData }) {
                         ignoreWidth: false,
                         ignoreHeight: false,
                         ignoreFonts: false,
-                        breakPages: true,
+                        breakPages: false,
                         ignoreLastRenderedPageBreak: true,
                         experimental: false,
                         trimXmlDeclaration: true,
@@ -492,20 +493,20 @@ function DocViewer({ file: fileData }) {
                             className={`image-preview-btn${scale <= 0.5 ? " pdf-preview__btn--disabled" : ""}`}
                             onClick={zoomOut} disabled={scale <= 0.5}
                         >
-                           <InteractiveIcon
-                            defaultIcon={nagativIcon}
-                            width={24}
-                        />
+                            <InteractiveIcon
+                                defaultIcon={nagativIcon}
+                                width={24}
+                            />
                         </button>
 
                         <button
                             className={`image-preview-btn${scale >= 3 ? " pdf-preview__btn--disabled" : ""}`}
                             onClick={zoomIn} disabled={scale >= 3}
                         >
-                           <InteractiveIcon
-                            defaultIcon={plusIcon}
-                            width={24}
-                        />
+                            <InteractiveIcon
+                                defaultIcon={plusIcon}
+                                width={24}
+                            />
                         </button>
                     </div>
                     <div className="new-preview-zoom-controls-sub">

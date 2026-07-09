@@ -4,6 +4,7 @@ import uploadModel from "#models/uploadModel"
 // utils - helper
 import { getUserPermission } from "#utils/userPermissionUtil";
 import { logger } from "#utils/logger"
+import { getFileUrl } from "#config/s3";
 
 //  helper functino when user sarc (), [] something here 
 const escapeRegex = (string) => {
@@ -319,6 +320,8 @@ export const searchFiles = async (req, res) => {
         // ##################################################
         // ---- STEP 14: Format paths for search results ----
         // ##################################################
+        const isS3 = process.env.STORAGE_PROVIDER === "s3";
+
         const resultsWithPath = results.map(item => {
             const path = []
             let currentParent = item.parent?.toString()
@@ -337,6 +340,11 @@ export const searchFiles = async (req, res) => {
             }
             return {
                 ...item,
+                // --- CloudFront / S3 Full URL Logic (Commented out for Backend Proxy) ---
+                // storagePath: item.storagePath
+                //     ? (isS3 ? getFileUrl(item.storagePath) : `/${item.storagePath}`)
+                //     : null,
+                // ------------------------------------------------------------------------
                 storagePath: item.storagePath ? `/${item.storagePath}` : null,
                 locationPath: path.join(" / ")
             }

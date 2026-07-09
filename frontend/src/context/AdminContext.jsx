@@ -59,7 +59,13 @@ export function AdminAuthProvider({ children }) {
 
     useEffect(() => {
         fetchUsers()
+        // setSelectedIds(new Set())
     }, [searchQuery, roleFilter, activeFilter, pagination.page, pagination.limit, sortBy, sortOrder])  // add sortBy, sortOrder
+
+    // Clear selection ONLY when search query changes
+    useEffect(() => {
+        setSelectedIds(new Set())
+    }, [searchQuery])
 
     const selectAllAcrossPages = () => {
         setSelectedIds(new Set(allMatchingIds))
@@ -197,7 +203,7 @@ export function AdminAuthProvider({ children }) {
                 createUser,
                 updateUser,
                 deleteUsers,
-                allMatchingIds,  
+                allMatchingIds,
                 selectAllAcrossPages,
                 checkAvailability,
             }}>

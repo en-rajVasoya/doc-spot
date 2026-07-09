@@ -7,15 +7,19 @@ import { useFileExplorer } from '../../context/FileExplorerContext.jsx';
 import { useEffect } from 'react';
 import Tooltip from "../layout/Tooltip";
 
+import { useAuth } from '../../context/AuthContext.jsx';
+
 function ItemInfoModal({ data, onClose }) {
   const [shake, setShake] = useState(false);
 
   //  if acidantly modal sned multiple data so pick only one item to show item info 
   const item = Array.isArray(data) ? data[0] : data;
-    const isFolder = item.type === "folder";
+  const isFolder = item.type === "folder";
 
   //  here we need to fetch owner and shared user list 
-  const { getSharedUsersApi, trail, getFolderSizeApi  } = useFileExplorer();
+  const { getSharedUsersApi, trail, getFolderSizeApi } = useFileExplorer();
+  const {user: loggedInUser} = useAuth()
+
   const [owner, setOwner] = useState(null);
   const [sharedWith, setSharedWith] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
@@ -40,9 +44,9 @@ function ItemInfoModal({ data, onClose }) {
 
 
     const fetchFolderSize = async () => {
-      if(isFolder){
+      if (isFolder) {
         const size = await getFolderSizeApi(item._id)
-        if(size !== null){
+        if (size !== null) {
           setCalculatedSize(size)
         }
       }
@@ -56,7 +60,7 @@ function ItemInfoModal({ data, onClose }) {
 
   // Helper to format bytes to KB/MB
   const formatSize = (bytes) => {
-    if (!bytes) return "—";
+    if (!bytes) return "0 Bytes";
     const k = 1024;
     const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
@@ -79,7 +83,7 @@ function ItemInfoModal({ data, onClose }) {
       if (fileName && fileName.includes(".")) return fileName.split('.').pop().toUpperCase() + " File";
       return "File";
     }
-    
+
     if (mimeType === "application/pdf") return "PDF Document";
     if (mimeType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" || mimeType === "application/vnd.ms-excel") return "Excel Spreadsheet";
     if (mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || mimeType === "application/msword") return "Word Document";
@@ -93,7 +97,7 @@ function ItemInfoModal({ data, onClose }) {
     if (fileName && fileName.includes(".")) {
       return fileName.split('.').pop().toUpperCase() + " File";
     }
-    
+
     return "File";
   };
 
@@ -105,8 +109,38 @@ function ItemInfoModal({ data, onClose }) {
   // Determine if it is a folder or file to show the correct Name property
 
   const itemName = item.name;
+
+  // helper function to get the parent root label - my doc spot shared with me or shared
+  const getRootLabel = () => {
+    const itemOwnerId = item.owner?._id || item.owner;
+    const isOwnerMe = itemOwnerId ? (itemOwnerId === loggedInUser?._id) : true
+
+    // check if it is shared with me label
+    const isSharedWithMe = item.isSharedWithMe ||
+      (!isOwnerMe) ||
+      (trail && trail.some(t => t.isSharedWithMe));
+
+    if(isSharedWithMe){
+      return "Shared with me";
+    }
+
+    // check if item is shared by me here
+    const isSharedByMe = item.isShared ||
+      (sharedWith && sharedWith.length > 0) ||
+      (trail && trail.some(t => t.isShared && !t.isSharedWithMe))
+
+      if(isSharedByMe){
+        return "Shared";
+      }
+
+      // default doc spot
+      return "My Docspot"
+
+  }
+
+  const rootLabel = getRootLabel();
   const trailNames = trail && trail.length > 0 ? trail.map(t => t.name).join(" / ") : "";
-  const itemLocation = trailNames ? `My Docspot / ${trailNames}` : "My Docspot";
+  const itemLocation = trailNames ? `${rootLabel} / ${trailNames}` : rootLabel;
 
 
   return (
@@ -121,12 +155,12 @@ function ItemInfoModal({ data, onClose }) {
       <Modal.Header className="border-0">
         <Modal.Title>{isFolder ? "Folder" : "File"} details</Modal.Title>
         <Tooltip text="Close" offset={8}>
-        <button
-          className="btn-only-icon"
-          onClick={onClose}
-        >
-          <InteractiveIcon defaultIcon={closeIcon} width={24} alt="close" />
-        </button>
+          <button
+            className="btn-only-icon"
+            onClick={onClose}
+          >
+            <InteractiveIcon defaultIcon={closeIcon} width={24} alt="close" />
+          </button>
         </Tooltip>
       </Modal.Header>
       <Modal.Body className="p-0">

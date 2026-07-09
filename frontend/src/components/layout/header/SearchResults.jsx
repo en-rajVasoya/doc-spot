@@ -191,14 +191,14 @@ function SearchResults({ setSearchBarOpen, showViewButtons, view, setView }) {
                         </button>
                     </div>
                 )}
-                {selectedIds.size === 1 && (
+                {/* {selectedIds.size === 1 && (
                     <div className="search-suggestion-filter-content">
                         <span className="search-suggestion-label">Selected Location</span>
                         <button className="search-suggestion-chip selected-location-chip">
                             {searchResults.find(item => item._id === Array.from(selectedIds)[0])?.locationPath || "Unknown"}
                         </button>
                     </div>
-                )}
+                )} */}
                 {/* Clear all filters button */}
                 <button className="search-suggestion-clear-all-chip " onClick={() => {
                     clearSearch();

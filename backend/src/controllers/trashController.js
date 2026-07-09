@@ -12,6 +12,9 @@ import { notifySharedUsers } from "#utils/userNotification";
 import { getAbsolutePath } from "#utils/pathHelper";
 
 
+import { getStorage } from "../services/storageFactory.js";
+import { getFileUrl, deleteFromS3 } from "#config/s3";
+
 
 //  here when user delete some item move it to trash here
 // export const trashItem = async (req, res) => {
@@ -684,10 +687,19 @@ export const getTrashedItems = async (req, res) => {
         // --- STEP - 3 - helper function to fix file paths
         // -----------------------------------------
         // remove the base storage directory from the file path for frontend display
-        const fixPath = (item) => ({
-            ...item,
-            storagePath: item.storagePath ? `/${item.storagePath}` : null
-        })
+        const isS3 = process.env.STORAGE_PROVIDER === "s3";
+
+        const fixPath = (item) => {
+            if (!item.storagePath) return item;
+            
+            // --- CloudFront / S3 Full URL Logic (Commented out for Backend Proxy) ---
+            // if (isS3) {
+            //     return { ...item, storagePath: getFileUrl(item.storagePath) };
+            // }
+            // ------------------------------------------------------------------------
+            
+            return { ...item, storagePath: `/${item.storagePath}` };
+        };
 
         // ------------------------------------------
         // --- STEP - 4 - fetch items if user is inside a trashed folder
@@ -987,15 +999,29 @@ export const deleteForver = async (req, res) => {
 
         // Phase 6: Asynchronously clean up files on disk in the background
         if (filesToUnlink.length > 0) {
+            const isS3 = process.env.STORAGE_PROVIDER === "s3";
+            const storage = getStorage();
+
             (async () => {
                 for (const file of filesToUnlink) {
                     try {
+                        // Check if any other copy still references this storagePath
                         const count = await uploadModel.countDocuments({ storagePath: file.storagePath });
-                        const absPath = getAbsolutePath(file.storagePath);
-                        if (count === 0 && absPath && fs.existsSync(absPath)) {
-                            await fs.promises.unlink(absPath);
-                            console.log(`[BACKGROUND DELETE] Unlinked file: ${absPath}`);
-                        }
+                        
+                        if(count === 0 && file.storagePath){
+                            if(isS3){
+                                //  get the cloud frotn url if other wise the s3 url here
+                                const cloudFrontUrl = getFileUrl(file.storagePath);
+
+                                await deleteFromS3(cloudFrontUrl)
+                                console.log(`[BACKGROUND DELETE S3] Deleted file: ${file.storagePath}`);
+                            } else {
+                                //  local stroage deelte
+                                await storage.deleteFile(file.storagePath);
+                                console.log(`[BACKGROUND DELETE LOCAL] Unlinked file: ${file.storagePath}`);
+                            }
+                        } 
+                       
                     } catch (err) {
                         logger.error(err);
                         console.error(`[BACKGROUND DELETE ERROR] Failed to delete file: ${file.storagePath}`, err.message);

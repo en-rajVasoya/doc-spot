@@ -16,9 +16,11 @@ import { processProfileImage } from "#utils/imageProcessor";
 export const createUser = async (req, res) => {
     try {
 
-        // #################################################
-        // ---- STEP 1: Extract inputs -------------
-        // ###############################################
+        // Trim inputs in request body first
+        if (req.body.name) req.body.name = req.body.name.trim();
+        if (req.body.user_id) req.body.user_id = req.body.user_id.trim();
+        if (req.body.email) req.body.email = req.body.email.trim();
+
         let { user_id, name, email, password, role, is_active } = req.body;
 
         // ##################################################
@@ -39,10 +41,6 @@ export const createUser = async (req, res) => {
             const errors = Object.fromEntries(Object.entries(validations.errors).map(([field, error]) => [field, error.message]));
             return res.status(400).json({ success: false, errors });
         }
-
-        // Normalize the fields 
-        name = name.trim()
-        user_id = user_id.trim()
 
         const normalizedEmail = email.trim().toLowerCase()
 
@@ -260,8 +258,17 @@ export const getUsers = async (req, res) => {
 // ----------------------------- UPDATE USER ----------------------------------
 export const updateUser = async (req, res) => {
     try {
-        const { name, email, user_id, password, is_active, role  } = req.body;
+        // Trim inputs in request body first
+        if (req.body.name) req.body.name = req.body.name.trim();
+        if (req.body.user_id) req.body.user_id = req.body.user_id.trim();
+        if (req.body.email) req.body.email = req.body.email.trim();
+
+        const { name, email, user_id, password, is_active, role } = req.body;
         const { update_user_id } = req.params;
+
+        //  if user id is same so dont change status and role here
+        const isSelf = req.user._id.toString() === update_user_id.toString()
+
         const userData = await userModel.findById(update_user_id);
 
         if (!userData) {
@@ -298,24 +305,48 @@ export const updateUser = async (req, res) => {
             if (!emailRegex.test(normalizedEmail)) {
                 return res.status(400).json({ success: false, message: "Email is invalid" })
             }
-
+            
+            if (normalizedEmail !== userData.email) {
+                //  here chek liek if email id is already register here or not
+                const existingEmail = await userModel.findOne({email: normalizedEmail})
+                if (existingEmail) {
+                    return res.status(400).json({ success: false, message: "Email already registered" })
+                }
+            }
+            
             userData.email = normalizedEmail;
         }
 
-        if (is_active) {
-            userData.is_active = is_active;
+        //    user active status
+        if (is_active !== undefined) {
+            const isActiveBool = is_active === "true" || is_active === true
+            if (isSelf && !isActiveBool) {
+                return res.status(400).json({ message: "You cannot deactivate your own account." });
+            }
+            userData.is_active = isActiveBool
         }
 
-        if(role){
-            // validate the role
-            if(role === "admin" || role === "user"){
-                userData.role = role
+        if (role) {
+            //  vlaidate the role 
+            if (isSelf && role !== userData.role) {
+                return res.status(400).json({ message: "You cannot change your own role." });
+            }
+
+            if (role === "admin" || role === "user") {
+                userData.role = role;
             } else {
                 return res.status(400).json({ message: "Invalid role" });
             }
         }
 
         if (password) {
+            const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+            if (!passwordRegex.test(password)) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Password must be 8 characters, one uppercase and one special symbol"
+                });
+            }
             const hashedPassword = await bcrypt.hash(password, 10);
             userData.password = hashedPassword;
         }
@@ -334,7 +365,7 @@ export const updateUser = async (req, res) => {
             // ==============================
             // DELETE OLD AVATAR
             // ==============================
-            if (userData.avatar) {
+            if (userData.profilePic) {
                 try {
                     if (userData.profilePic) {
                         fs.unlinkSync(
@@ -377,12 +408,12 @@ export const updateUser = async (req, res) => {
             req.emitToUser(userData._id.toString(), "force_logout", {})
         } else {
             //  instant update the profile of other user socket
-            req.emitToUser(safeUserData._id.toString(), "profile_updated", safeUserData); 
+            req.emitToUser(safeUserData._id.toString(), "profile_updated", safeUserData);
         }
 
         return res.status(200).json({
             message: "Profile updated successfully",
-            data: safeUserData 
+            data: safeUserData
         });
 
     } catch (error) {
@@ -419,6 +450,12 @@ export const deleteUser = async (req, res) => {
 
         if (!Array.isArray(user_ids) || user_ids.length === 0) {
             return res.status(400).json({ success: false, message: "user_ids must be a non-empty array" });
+        }
+
+
+        //  if there is the same user id as logged in user so disabled it here
+        if(user_ids.some(id => id.toString() === req.user._id.toString())){
+            return res.status(400).json({ success: false, message: "You cannot delete your own admin account." });
         }
 
         const result = await userModel.updateMany(

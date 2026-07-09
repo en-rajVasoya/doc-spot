@@ -19,6 +19,8 @@ export const initSocket = (httpServer) => {
                 "https://192.168.1.35:5177",
                 "http://192.168.1.112:5177",
                 "https://192.168.1.112:5177",
+                "http://docspot-frontend-web.s3-website.ap-south-1.amazonaws.com",
+                "https://d2u61zpmg3hahd.cloudfront.net",
             ],
             credentials: true
         },

@@ -904,7 +904,8 @@ function PdfViewer({ file: fileData }) {
                             return
                         }
                     }
-                    source = { url: `${fileData.storagePath}`, withCredentials: true }
+                    const FILE_BASE_URL = import.meta.env.VITE_FILE_BASE_URL || import.meta.env.VITE_API_URL.replace(/\/api$/, "");
+                    source = { url: `${FILE_BASE_URL}${fileData.storagePath}`, withCredentials: true }
                 } else if (typeof fileData === "object" && fileData.data) {
                     // ✅ data object ke liye size check
                     if (fileData.data?.byteLength) {
