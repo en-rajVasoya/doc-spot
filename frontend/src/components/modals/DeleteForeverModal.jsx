@@ -5,10 +5,11 @@ import { useTrash } from "../../context/TrashContext";
 import InteractiveIcon from "../layout/InteractiveIcon";
 import closeIcon from "@images/icon/close-icon.svg"
 import Tooltip from "../layout/Tooltip";
-
+import useResponsive from "../../hooks/useResponsive";
 
 function DeleteForeverModal({ data, onClose }) {
     const { deleteForeverApi, items, trail } = useTrash()
+    const { isMobile } = useResponsive()
 
     // Shake animation
     const [shake, setShake] = useState(false);
@@ -32,8 +33,13 @@ function DeleteForeverModal({ data, onClose }) {
 
     const handleOutsideClick = (e) => {
         if (modalRef.current && !modalRef.current.contains(e.target)) {
-            setShake(true);
-            setTimeout(() => setShake(false), 400);
+            if (isMobile) {
+                onClose()
+            } else {
+                setShake(true);
+                setTimeout(() => setShake(false), 400);
+            }
+
         }
     };
 
@@ -58,16 +64,16 @@ function DeleteForeverModal({ data, onClose }) {
                     <Modal.Header className="border-0">
                         <Modal.Title>Delete forever?</Modal.Title>
                         <Tooltip text="Close" offset={8}>
-                        <button
-                            className="btn-only-icon"
-                            onClick={onClose}
-                        >
-                            <InteractiveIcon defaultIcon={closeIcon} width={24} alt="close" />
-                        </button>
+                            <button
+                                className="btn-only-icon"
+                                onClick={onClose}
+                            >
+                                <InteractiveIcon defaultIcon={closeIcon} width={24} alt="close" />
+                            </button>
                         </Tooltip>
                     </Modal.Header>
                     <Modal.Body>
-                         <p className="m-0 message-delete-modal">
+                        <p className="m-0 message-delete-modal">
                             {deleteMessage}
                         </p>
 

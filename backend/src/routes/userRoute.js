@@ -1,5 +1,5 @@
 import express from "express"
-import { currentUser, registerUser, userLogin, userLogout, updateProfile, forgotPassword, validateResetToken, resetPassword } from "#controllers/userController";
+import { currentUser, registerUser, userLogin, userLogout, updateProfile, forgotPassword, validateResetToken, resetPassword, refreshAccessToken } from "#controllers/userController";
 import authMiddleware from "#middleware/authMiddleware";
 import profilePicUploadMiddleware from "#middleware/profilePicMiddleware";
 
@@ -13,6 +13,8 @@ userRouter.post("/register", registerUser)
 //  for user login route
 userRouter.post("/login", userLogin)
 
+//  for generating new acces token every 5 min here
+userRouter.get("/refresh_token", refreshAccessToken)
 
 //  for getting the current user
 userRouter.get("/me", authMiddleware, currentUser)

@@ -3,7 +3,7 @@
 import { createContext, useContext, useState, useRef, useEffect } from "react"
 import { openDB } from "idb"
 import axiosApi from "../utils/api.js"
-import streamSaver from "streamsaver"
+import { useNotification } from "./NotificationContext.jsx"
 
 const DownloadContext = createContext()
 
@@ -37,6 +37,7 @@ const initDB = async () => {
 }
 
 export function DownloadProvider({ children }) {
+    const { showNotification } = useNotification()
 
     const [sessions, setSessions] = useState([])
     const [isPanelOpen, setIsPanelOpen] = useState(false)
@@ -49,6 +50,74 @@ export function DownloadProvider({ children }) {
     const inProgressMultipleRef = useRef(new Set())
 
     const sessionsRef = useRef([])
+
+    // Sync sessionsRef with sessions state
+    useEffect(() => {
+        sessionsRef.current = sessions
+    }, [sessions])
+
+    // Listen to messages from our self-hosted streamsaver service worker
+    useEffect(() => {
+        const handleServiceWorkerMessage = async (event) => {
+            const { type, fileId, progress } = event.data || {}
+
+            if (type === "NATIVE_DOWNLOAD_PROGRESS") {
+                setSessions(prev => prev.map(s => {
+                    // Match either by fileId or zipId (since fileId inside the SW is the fileId/zipId)
+                    if (s.fileId === fileId || s.zipId === fileId) {
+                        return { ...s, status: "assembling", progress: 100, assemblyProgress: progress }
+                    }
+                    return s
+                }))
+            }
+
+            if (type === "DOWNLOAD_COMPLETE") {
+                console.log(`[SW Streamer] Native download completed for fileId: ${fileId}`)
+                const db = await initDB()
+
+                const session = sessionsRef.current.find(s => s.fileId === fileId || s.zipId === fileId)
+                if (session) {
+                    if (session.isFolder) {
+                        try {
+                            const zipJob = await getZipJob(db, session.fileId)
+                            if (zipJob) {
+                                await deleteZipJob(db, session.fileId)
+                                await axiosApi.delete(`/download/zip/${zipJob.zipId}`)
+                            } else if (session.zipId) {
+                                await axiosApi.delete(`/download/zip/${session.zipId}`)
+                            }
+                        } catch (err) {
+                            console.error("SW Download complete cleanup failed:", err)
+                        }
+                    }
+
+                    // Delete chunks from IndexedDB once streamed to disk
+                    try {
+                        const totalChunks = session.totalChunks || Math.ceil(session.fileSize / CHUNK_SIZE)
+                        await cleanupChunks(db, fileId, totalChunks)
+                    } catch (e) {
+                        console.error("Cleanup chunks failed:", e)
+                    }
+
+                    setSessions(prev => prev.map(s => {
+                        if (s.fileId === fileId || s.zipId === fileId) {
+                            return { ...s, status: "done", progress: 100 }
+                        }
+                        return s
+                    }))
+                }
+            }
+        }
+
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.addEventListener('message', handleServiceWorkerMessage)
+        }
+        return () => {
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.removeEventListener('message', handleServiceWorkerMessage)
+            }
+        }
+    }, [])
 
 
     // update a specific download session
@@ -98,56 +167,26 @@ export function DownloadProvider({ children }) {
     //  this funtion will start here service worker to stream file chunks from index db to the chrome downloa dpanel
     const assembleAndSave = async (db, fileId, totalChunks, fileName, fileType, fileSize, sessionId, isFolder = false, folderId = null, signal = null) => {
         try {
-            const fileStream = streamSaver.createWriteStream(fileName, {
-                size: fileSize,
-            });
+            console.log(`[SW Streamer] Triggering Service Worker download for ${fileName} (${fileSize} bytes)...`);
 
-            const writer = fileStream.getWriter();
+            // Create a hidden iframe to initiate the service-worker intercepted GET request
+            const iframe = document.createElement("iframe");
+            iframe.style.display = "none";
+            iframe.src = `/native-download/${fileId}?name=${encodeURIComponent(fileName)}&size=${fileSize}`;
+            document.body.appendChild(iframe);
 
-            for (let i = 0; i < totalChunks; i++) {
-                if (signal?.aborted) {
-                    console.log(`[StreamSaver] Assembly aborted by user for session ${sessionId}`);
-                    try {
-                        await writer.abort("Canceled");
-                    } catch (e) {}
-                    return;
+            // Clean up the iframe DOM element after 30 seconds
+            setTimeout(() => {
+                if (iframe.parentNode) {
+                    document.body.removeChild(iframe);
                 }
-                const chunk = await db.get(STORE_NAME, `${fileId}_chunk_${i}`);
-                if (!chunk) {
-                    if (signal?.aborted) return; // Exit silently if aborted during DB lookup
-                    throw new Error(`Missing chunk ${i}`);
-                }
-                await writer.write(new Uint8Array(chunk));
-            }
+            }, 30000);
 
-            await writer.close();
-
-            await cleanupChunks(db, fileId, totalChunks);
-
-            // auto delete zip from backend after successful assembly
-            if (isFolder && folderId) {
-                try {
-                    const zipJob = await getZipJob(db, folderId)
-                    if (zipJob) {
-                        await axiosApi.delete(`/download/zip/${zipJob.zipId}`)
-                        await deleteZipJob(db, folderId)
-                    }
-                } catch (err) {
-                    console.error("Auto zip cleanup failed:", err.message)
-                }
-            }
-
-            setSessions(prev => prev.map(s => {
-                if (s.id === sessionId) {
-                    return { ...s, status: "done", progress: 100 }
-                }
-                return s;
-            }));
-
-            console.log(`[SUCCESS] StreamSaver assembled and saved ${fileName} perfectly!`);
+            console.log(`[SUCCESS] Native download triggered for ${fileName}`);
 
         } catch (error) {
-            console.error("StreamSaver assembly failed:", error);
+            console.error("Service worker assembly failed:", error);
+            updateSession(sessionId, { status: "error", error: error.message || "Trigger failed" });
         }
     }
 
@@ -185,7 +224,7 @@ export function DownloadProvider({ children }) {
 
         try {
             const db = await initDB()
-            const totalChunks = Math.ceil(fileSize / CHUNK_SIZE)
+            // const totalChunks = Math.ceil(fileSize / CHUNK_SIZE)
             const savedChunks = await getSavedChunks(db, fileId, totalChunks)
             let downloadedCount = savedChunks.size
 
@@ -224,10 +263,34 @@ export function DownloadProvider({ children }) {
                     if (!chunk) break
 
                     try {
+                        let lastLoaded = 0;
+
                         const response = await axiosApi.get(endpoint, {
                             headers: { Range: `bytes=${chunk.start}-${chunk.end}` },
                             responseType: "arraybuffer",
-                            signal: abortController.signal
+                            signal: abortController.signal,
+                            onDownloadProgress: (progressEvent) => {
+                                if (abortController.signal.aborted) return;
+
+                                const currentLoaded = progressEvent.loaded || 0;
+                                const diff = currentLoaded - lastLoaded;
+                                lastLoaded = currentLoaded;
+
+                                bytesInWindow += diff;
+
+                                const now = Date.now();
+                                const elapsed = now - windowStart;
+
+                                if (elapsed >= SPEED_UPDATE_INTERVAL) {
+                                    const speedMBps = (bytesInWindow / (1024 * 1024)) / (elapsed / 1000);
+                                    const currentProgress = parseFloat(((downloadedCount / totalChunks) * 100).toFixed(1));
+
+                                    updateSession(sessionId, { progress: currentProgress, speed: speedMBps });
+
+                                    bytesInWindow = 0;
+                                    windowStart = now;
+                                }
+                            }
                         })
 
                         if (abortController.signal.aborted) break
@@ -235,22 +298,9 @@ export function DownloadProvider({ children }) {
                         await saveChunk(db, fileId, chunk.index, response.data)
 
                         downloadedCount++
-                        bytesInWindow += chunk.end - chunk.start + 1
 
-                        const now = Date.now()
-                        const elapsed = now - windowStart
                         const progress = parseFloat(((downloadedCount / totalChunks) * 100).toFixed(1))
-
-                        const sessionKey = sessionId
-
-                        if (elapsed >= SPEED_UPDATE_INTERVAL) {
-                            const speedMBps = (bytesInWindow / (1024 * 1024)) / (elapsed / 1000)
-                            updateSession(sessionKey, { progress, speed: speedMBps })
-                            bytesInWindow = 0
-                            windowStart = now
-                        } else {
-                            updateSession(sessionKey, { progress })
-                        }
+                        updateSession(sessionId, { progress })
 
                         await new Promise(r => setTimeout(r, 100))
 
@@ -413,7 +463,7 @@ export function DownloadProvider({ children }) {
                                 pollingIntervalsRef.current.delete(folderId)
                                 resolve(statusData.fileSize)
                             }
-                            if(statusData.status === "creating"){
+                            if (statusData.status === "creating") {
                                 updateSession(sessionId, { zipProgress: statusData.progress || 0 })
                             }
 
@@ -481,9 +531,9 @@ export function DownloadProvider({ children }) {
 
         // check if already downloading this exact selection
         if (sessions.some(s => s.fileId === stableKey && (s.status === "downloading" || s.status === "assembling" || s.status === "creating"))) return
-        if (inProgressMultipleRef.current.has(stableKey)) return 
+        if (inProgressMultipleRef.current.has(stableKey)) return
 
-        inProgressMultipleRef.current.add(stableKey)  
+        inProgressMultipleRef.current.add(stableKey)
 
         const sessionId = (window.crypto && window.crypto.randomUUID) ? window.crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).substring(2)
 

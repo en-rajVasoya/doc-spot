@@ -4,13 +4,14 @@ import { useFileExplorer } from "../../context/FileExplorerContext";
 import InteractiveIcon from "../layout/InteractiveIcon";
 import Tooltip from "../layout/Tooltip";
 import closeIcon from "@images/icon/close-icon.svg"
-
+import useResponsive from "../../hooks/useResponsive";
 
 function DeleteModal({ data, onClose }) {
     const { deleteItemApi, items, currentFolderId, currentFolderMeta } = useFileExplorer()
     // Shake animation
     const [shake, setShake] = useState(false);
     const modalRef = useRef(null);
+     const {isMobile} = useResponsive()
 
     //  get item name here 
     const selectedItems = items.filter(i => data.includes(i._id))
@@ -31,8 +32,13 @@ function DeleteModal({ data, onClose }) {
 
     const handleOutsideClick = (e) => {
         if (modalRef.current && !modalRef.current.contains(e.target)) {
-            setShake(true);
-            setTimeout(() => setShake(false), 400);
+            if (isMobile) {
+                onClose()
+            } else {
+                setShake(true);
+                setTimeout(() => setShake(false), 400);
+            }
+
         }
     };
 

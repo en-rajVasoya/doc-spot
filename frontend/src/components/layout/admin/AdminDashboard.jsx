@@ -8,7 +8,9 @@ import CustomSelect from '../CustomSelect';
 import { Form } from "react-bootstrap";
 import arrowLeftIcon from "@images/icon/arrow-left.svg";
 import arrowRightIcon from "@images/icon/arrow-right.svg";
-import UserAvatar from '../UserAvatar'
+import plusIcon from "@images/icon/plus.svg";
+import UserAvatar from '../UserAvatar';
+import useResponsive from '../../../hooks/useResponsive'
 
 const limitOptions = [
   { value: 10, label: "10" },
@@ -20,6 +22,8 @@ const limitOptions = [
 function AdminDashboard({ setModal }) {
   const { users, isLoading, pagination, setPagination, selectedIds, setSelectedIds, sortBy, setSortBy, sortOrder, setSortOrder, roleFilter, setRoleFilter, activeFilter, setActiveFilter, allMatchingIds, searchQuery } = useAdmin()
   const pageInputRef = useRef(null)
+  const { isMobile, isTablet, isDesktop } = useResponsive();
+
 
   //  escape key un select all checkbox user here
   useEffect(() => {
@@ -37,8 +41,8 @@ function AdminDashboard({ setModal }) {
 
   // this fucntino is used for highlight the text when admin search user here
   const highlightMatch = (text, query) => {
-    if(!text) return ""
-    if(!query || !query.trim()) return text
+    if (!text) return ""
+    if (!query || !query.trim()) return text
 
     // spicial regext char  in search query
     const escapedQuery = query.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
@@ -46,12 +50,12 @@ function AdminDashboard({ setModal }) {
 
     const parts = text.split(regex)
 
-    return parts.map((part, index) => 
+    return parts.map((part, index) =>
       part.toLowerCase() === query.toLowerCase() ? (
         <strong key={index}>{part}</strong>
       ) : (part)
     )
-    
+
   }
 
   const handleColumnSort = (column) => {
@@ -118,9 +122,7 @@ function AdminDashboard({ setModal }) {
   const startEntry = ((pagination?.page - 1) * pagination?.limit) + 1
   const endEntry = Math.min(pagination?.page * pagination?.limit, pagination?.total)
 
-  if (isLoading) return (
-    <p>loading</p>
-  )
+  // No early return for isLoading
 
   return (
 
@@ -153,11 +155,24 @@ function AdminDashboard({ setModal }) {
                 />
               </Form.Group>
 
-              <button type='button' className='btn-black btn-lg m-0'
-                onClick={() => setModal({ type: "addUserAdminModal" })}
-              >
-                Add User
-              </button>
+
+
+              {isMobile ? (
+                <button type='button' className='btn-black btn-lg m-0 add-user-btn'
+                  onClick={() => setModal({ type: "addUserAdminModal" })}
+                >
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M18.5 12H12.5M12.5 12H6.5M12.5 12V6M12.5 12V18" stroke="white" stroke-width="2" stroke-linecap="round" />
+                  </svg>
+
+                </button>
+              ) : (
+                <button type='button' className='btn-black btn-lg m-0'
+                  onClick={() => setModal({ type: "addUserAdminModal" })}
+                >
+                  Add User
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -214,9 +229,10 @@ function AdminDashboard({ setModal }) {
                   </div>
 
                   {/* Role  */}
-                  <div className="table-cell" style={{ width: "150px" }}>
+                  {/* <div className="table-cell" style={{ width: "150px" }}>
                     <div className="sorting-label-text">Role</div>
-                  </div>
+                  </div> */}
+
 
                   {/*  user status */}
                   <div className="table-cell" onClick={() => handleColumnSort("is_active")} style={{ width: "150px" }}>
@@ -246,12 +262,21 @@ function AdminDashboard({ setModal }) {
                 </div>
 
                 {/* Empty State */}
-                {users.length === 0 && (
+                {users.length === 0 && !isLoading && (
                   <div className="page-empty-state">No users found</div>
                 )}
 
+                {/* Loading State */}
+                {isLoading && (
+                  <div className="loader-wrapper-box" style={{ padding: "100px 0", width: "100%" }}>
+                    <div className="cma-messages-are-loader-wrapper">
+                      <span className="loader"></span>
+                    </div>
+                  </div>
+                )}
+
                 {/* Rows */}
-                {users.map((user) => (
+                {!isLoading && users.map((user) => (
                   <div
                     key={user._id}
                     className="table-row col-xl-2 col-lg-3 col-md-4 col-sm-6 col-6"
@@ -292,11 +317,11 @@ function AdminDashboard({ setModal }) {
                       </div>
 
                       {/* Role */}
-                      <div className="table-cell">
+                      {/* <div className="table-cell">
                         <span className="badge-pill badge-pill--white">
                           {user.role === "admin" ? "Admin" : "User"}
                         </span>
-                      </div>
+                      </div> */}
 
                       {/* Status */}
                       <div className="table-cell">
@@ -309,9 +334,12 @@ function AdminDashboard({ setModal }) {
                       {/* Created At */}
                       <div className="table-cell">
                         {user.createdAt ? (
-                          <div className="d-flex flex-column">
+                          <div className="d-flex gap-2 align-items-center">
                             <span className="created-date">
                               {new Date(user.createdAt).toLocaleDateString("en-GB").replace(/\//g, "-")}
+                            </span>
+                            <span className="created-date">
+                              -
                             </span>
                             <span className="created-time text-muted">
                               {new Date(user.createdAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}

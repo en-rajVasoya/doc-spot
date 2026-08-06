@@ -31,7 +31,7 @@ export default function TextViewer({ file, contentRef }) {
         setError(null);
         setTooBig(false);
 
-        fetch(src)
+        fetch(src, { credentials: "include" })
             .then(r => {
                 if (!r.ok) throw new Error("Failed to fetch");
                 const size = Number(r.headers.get("content-length") || 0);

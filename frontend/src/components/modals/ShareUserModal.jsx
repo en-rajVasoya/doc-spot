@@ -19,18 +19,30 @@ import closeIcon from "@images/icon/close-icon.svg"
 
 import UserAvatar from "../layout/UserAvatar.jsx";
 
+import useResponsive from '../../hooks/useResponsive';
+
 //  helper to copy link 
 import { generateShareLinks } from "../../utils/generateShareLinks.js";
 import { useNotification } from "../../context/NotificationContext.jsx";
+import { useSocket } from "../../context/SocketContext.jsx";
 
 const BASE_URL = import.meta.env.VITE_API_URL?.replace(/\/api\/?$/, "") || "";
 
 
 function ShareUserModal({ data, onClose }) {
     const [loading, setLoading] = useState(true);
-    const { searchUsersApi, getSharedUsersApi, shareItemApi, unshareItemApi, selectedIds, getSuggestedUsersApi, updateSharedWith } = useFileExplorer()
+    const { searchUsersApi, unshareItemApi, shareItemApi, selectedIds, getSuggestedUsersApi, updateSharedWith, suggestedUsers, sharedUsersData, loadSharedUsers, clearSharedUsers } = useFileExplorer()
+
     const { user } = useAuth()
     const { showNotification } = useNotification()
+    const { socket } = useSocket()
+
+
+    const { isMobile, isTablet, isDesktop } = useResponsive();
+
+    const owner = sharedUsersData.owner
+    const sharedWith = sharedUsersData.sharedWith
+
 
     // // safely handle if data is an array (multiple items selected) or object (single item)
     // const itemId = Array.isArray(data) ? data[0] : (data?._id || [...selectedIds][0]);
@@ -52,10 +64,6 @@ function ShareUserModal({ data, onClose }) {
     // selected users to add (map of userId => { user, permission })
     const [selectedUsers, setSelectedUsers] = useState(new Map())
 
-    // already shared users fetched from the backend
-    const [owner, setOwner] = useState(null)
-    const [sharedWith, setSharedWith] = useState([])
-
     // default permission dropdown state
     const [permission, setPermission] = useState("viewer")
 
@@ -70,29 +78,22 @@ function ShareUserModal({ data, onClose }) {
     const [passwordShow, setPasswordShow] = useState(false)
 
     const [isFocused, setIsFocused] = useState(false);
+    const [passwordError, setPasswordError] = useState(false);
 
 
 
     //  this state is used for the suggested user show in this modal when user click on the input
-    const [suggestedUsers, setSuggestedUsers] = useState([])
     const [inputFocused, setInputFocused] = useState(false)
 
 
     // automatically fetch the existing shared users for this item when modal opens
     useEffect(() => {
         if (!itemId) return;
-        const fetch = async () => {
-            setLoading(false);
-            const data = await getSharedUsersApi(itemId);
-            if (data) {
-                // save owner and existing shared users to state
-                setOwner(data.owner);
-                setSharedWith(data.sharedWith);
-            }
-            setLoading(false);
-        };
+        setLoading(true);
+        loadSharedUsers(itemId).finally(() => setLoading(false));
 
-        fetch();
+        // clear when modal unmounts / itemId changes
+        return () => clearSharedUsers();
     }, [itemId]);
 
 
@@ -116,12 +117,10 @@ function ShareUserModal({ data, onClose }) {
 
     //  when share user modal opens so thsi will fetch suggested users here
     useEffect(() => {
-        const fetchSuggestedUsers = async () => {
-            const users = await getSuggestedUsersApi()
-            setSuggestedUsers(users)
-        }
-        fetchSuggestedUsers()
+        getSuggestedUsersApi()
     }, [])
+
+
 
     // Helper to generate a random 8-character numeric password to bypass the strict backend validator!
     const generateRandomPassword = () => {
@@ -152,10 +151,15 @@ function ShareUserModal({ data, onClose }) {
     }
 
     // checks if the currently logged-in user is the owner of the item
-    const isOwner =
-        owner &&
-        user &&
-        String(owner.userId) === String(user._id);
+    const isOwner = owner && user && String(owner.userId) === String(user._id);
+
+
+    // Get current user's permission for this item
+    const currentUserEntry = sharedWith.find(s => String(s.userId || s._id) === String(user?._id))
+    const currentPermission = data?.permission || allSelectedItems[0]?.permission || (isOwner ? "owner" : currentUserEntry?.permission)
+
+    // Allow sharing if user is Owner OR Editor
+    const canShare = isOwner || currentPermission === "editor" || currentPermission === "owner";
 
 
     // Fixed: React-Select portal click
@@ -171,8 +175,13 @@ function ShareUserModal({ data, onClose }) {
         if (isReactSelect) return;
 
         if (modalRef.current && !modalRef.current.contains(e.target)) {
-            setShake(true)
-            setTimeout(() => setShake(false), 400)
+            if (isMobile) {
+                onClose()
+            } else {
+                setShake(true)
+                setTimeout(() => setShake(false), 400)
+            }
+
         }
     }
 
@@ -188,6 +197,7 @@ function ShareUserModal({ data, onClose }) {
         // clear search box after selecting
         setSearchTerm("")
         setSearchResults([])
+        setInputFocused(false)
     }
 
 
@@ -221,14 +231,6 @@ function ShareUserModal({ data, onClose }) {
         if (viewerIds.length > 0) await shareItemApi(itemIds, viewerIds, "viewer")
         if (editorIds.length > 0) await shareItemApi(itemIds, editorIds, "editor")
 
-        // refresh the shared users list from the backend after sharing
-        const updated = await getSharedUsersApi(itemId)
-        if (updated) {
-            setOwner(updated.owner)
-            setSharedWith(updated.sharedWith)
-            updateSharedWith(itemId, updated.sharedWith, updated.sharedWith.length > 0)
-        }
-
         // clear the selection and close the modal
         setSelectedUsers(new Map())
         onClose()
@@ -239,12 +241,7 @@ function ShareUserModal({ data, onClose }) {
     const handleUnshare = async (userId) => {
         const itemIds = allSelectedIds.length > 1 ? allSelectedIds : [itemId]
         await unshareItemApi(itemIds, [userId])
-        // instantly remove them from the UI
-        setSharedWith(prev => {
-            const next = prev.filter(s => s.userId !== userId)
-            updateSharedWith(itemId, next, next.length > 0)
-            return next
-        })
+        // socket event (share_removed) will trigger loadSharedUsers automatically via context
     }
 
 
@@ -282,15 +279,21 @@ function ShareUserModal({ data, onClose }) {
                 payload.expire_date = `${yyyy}-${mm}-${dd}`;
             }
 
-            // Only attach password if they actually ticked the box AND generated one
-            if (passwordProtect && password) {
-                // Ensure password is at least 8 characters
-                if (password.length >= 8) {
-                    payload.password = password;
-                } else {
-                    showNotification("Password must be at least 8 characters!", "error", "bottom-center");
+            // Only attach password if they actually ticked the box
+            if (passwordProtect) {
+                const isPasswordValid = [
+                    /[A-Z]/.test(password),
+                    /[a-z]/.test(password),
+                    /[0-9]/.test(password),
+                    /[!@#$%^&*?]/.test(password),
+                    password.length >= 8,
+                ].every(Boolean);
+
+                if (!password || !isPasswordValid) {
+                    setPasswordError(true);
                     return;
                 }
+                payload.password = password;
             }
 
             await axiosApi.post("/links/store", payload)
@@ -339,6 +342,8 @@ function ShareUserModal({ data, onClose }) {
     const filteredSuggestedUsers = filterOutExistingUsers(suggestedUsers);
     const filteredSearchResults = filterOutExistingUsers(searchResults);
 
+
+
     return (
         <div onClick={handleOutsideClick}>
             <Modal
@@ -363,40 +368,98 @@ function ShareUserModal({ data, onClose }) {
                         </Tooltip>
                     </Modal.Header>
                     <Modal.Body>
-                        {/* ONLY the owner can search for and add new people */}
-                        {isOwner === true ? (
-                            <>
-                                <div className="search-box-sec">
-                                    <Form.Group className="mb-0">
-                                        <div className="form-control-single-icon">
-                                            <InteractiveIcon
-                                                defaultIcon={searchIcon}
-                                                width={24}
-                                                height={24}
-                                                className="form-left-icon"
-                                            />
-                                            <Form.Control
-                                                type="text"
-                                                placeholder="Search by name or email..."
-                                                value={searchTerm}
-                                                onChange={(e) => setSearchTerm(e.target.value)}
-                                                onFocus={() => setInputFocused(true)}
-                                                onBlur={() => setTimeout(() => setInputFocused(false), 200)}
-                                                className='custom-form-control h-36'
-                                            />
-                                        </div>
-                                    </Form.Group>
-                                    <h3 class="modal-title-sub">Shared with people</h3>
+                        {/* EVERYONE sees this structure, but we disable inputs if not owner */}
+                        <>
+                            <div className="search-box-sec" style={{ opacity: !canShare ? 0.7 : 1 }}>
+                                <Form.Group className="mb-0">
+                                    <div className="form-control-single-icon">
+                                        <InteractiveIcon
+                                            defaultIcon={searchIcon}
+                                            width={24}
+                                            height={24}
+                                            className="form-left-icon"
+                                        />
+                                        <Form.Control
+                                            type="text"
+                                            placeholder="Search by name or email..."
+                                            value={searchTerm}
+                                            onChange={(e) => setSearchTerm(e.target.value)}
+                                            onFocus={() => setInputFocused(true)}
+                                            onBlur={() => setTimeout(() => setInputFocused(false), 200)}
+                                            className='custom-form-control h-36'
+                                            disabled={!canShare}
+                                        />
+                                    </div>
+                                </Form.Group>
+                                <h3 class="modal-title-sub">Shared with people</h3>
 
-                                    {/* show suggested users on focus with empty input */}
-                                    {inputFocused && searchTerm.trim().length === 0 && filteredSuggestedUsers.length > 0 && (
-                                        <div className="input-dd">
-                                            <ul className="mb-0 py-2">
-                                                {/* mapping filtered suggested users */}
-                                                {filteredSuggestedUsers.slice(0, 5).map(user => (
-                                                    <li key={user._id} onClick={() => handleSelectUser(user)}>
-                                                        <div className="share-user-list-dd d-flex align-items-center cursor-pointer p-2">
-                                                            <div className='profile-single-box'>
+                                {/* show suggested users on focus with empty input */}
+                                {inputFocused && canShare && searchTerm.trim().length === 0 && filteredSuggestedUsers.length > 0 && (
+                                    <div className="input-dd">
+                                        <ul className="mb-0 py-2">
+                                            {/* mapping filtered suggested users */}
+                                            {filteredSuggestedUsers.slice(0, 5).map(user => (
+                                                <li key={user._id} onMouseDown={() => handleSelectUser(user)}>
+                                                    <div className="share-user-list-dd d-flex align-items-center cursor-pointer p-2">
+                                                        <div className='profile-single-box'>
+                                                            <UserAvatar user={user} />
+                                                        </div>
+                                                        <div className="ms-2 ps-1">
+                                                            <p className="user-name mb-0">{user.name}</p>
+                                                            <p className="user-email mb-0 small text-muted">{user.email}</p>
+                                                        </div>
+                                                    </div>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+                                {/* Show the dropdown list if we have search results */}
+                                {filteredSearchResults.length > 0 && searchTerm.trim().length >= 2 && (
+                                    <div className="input-dd">
+                                        <ul className="mb-0 py-2">
+                                            {/* mapping filtered search results */}
+                                            {filteredSearchResults.map(user => (
+                                                <li key={user._id} onMouseDown={() => handleSelectUser(user)}>
+                                                    <div className="share-user-list-dd d-flex align-items-center cursor-pointer p-2">
+                                                        {/* <InteractiveIcon
+                                                                defaultIcon={`${BASE_URL}${user.profilePic}`}
+                                                                width={48}
+                                                                height={48}
+                                                            /> */}
+                                                        <UserAvatar user={user} />
+                                                        <div className="ms-2 ps-1">
+                                                            <p className="user-name mb-0">{user.name}</p>
+                                                            <p className="user-email mb-0 small text-muted">{user.email}</p>
+                                                        </div>
+                                                    </div>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="position-relative">
+                                <div className="share-user-shade"></div>
+                                <div className="share-user-shade2"></div>
+
+                                {/* Show the list of NEW users waiting to be shared */}
+                                {selectedUsers.size > 0 && (
+                                    <>
+                                        {/* mapping selected pending users */}
+
+                                        <ul className="share-user-container">
+                                            {[...selectedUsers.entries()].map(([userId, { user, permission }]) => (
+                                                <li key={userId}>
+                                                    <div className="share-user-list d-flex justify-content-between align-items-center">
+                                                        <div className="d-flex align-items-center">
+                                                            <div className="share-user-profilepic">
+                                                                {/* <InteractiveIcon
+                                                                        defaultIcon={`${BASE_URL}${user.profilePic}`}
+                                                                        width={48}
+                                                                        height={48}
+                                                                    /> */}
                                                                 <UserAvatar user={user} />
                                                             </div>
                                                             <div className="ms-2 ps-1">
@@ -404,197 +467,51 @@ function ShareUserModal({ data, onClose }) {
                                                                 <p className="user-email mb-0 small text-muted">{user.email}</p>
                                                             </div>
                                                         </div>
-                                                    </li>
-                                                ))}
-                                            </ul>
-                                        </div>
-                                    )}
-                                    {/* Show the dropdown list if we have search results */}
-                                    {filteredSearchResults.length > 0 && searchTerm.trim().length >= 2 && (
-                                        <div className="input-dd">
-                                            <ul className="mb-0 py-2">
-                                                {/* mapping filtered search results */}
-                                                {filteredSearchResults.map(user => (
-                                                    <li key={user._id} onClick={() => handleSelectUser(user)}>
-                                                        <div className="share-user-list-dd d-flex align-items-center cursor-pointer p-2">
-                                                            {/* <InteractiveIcon
-                                                                defaultIcon={`${BASE_URL}${user.profilePic}`}
-                                                                width={48}
-                                                                height={48}
-                                                            /> */}
-                                                            <UserAvatar user={user} />
-                                                            <div className="ms-2 ps-1">
-                                                                <p className="user-name mb-0">{user.name}</p>
-                                                                <p className="user-email mb-0 small text-muted">{user.email}</p>
-                                                            </div>
+
+                                                        <div className="d-flex align-items-center gap-2">
+                                                            <Form.Group className="m-0" onClick={(e) => e.stopPropagation()}>
+                                                                <CustomSelect
+                                                                    options={shareFileEditOptions}
+                                                                    isSearchable={false}
+                                                                    showIndicatorSeparator={false}
+                                                                    value={shareFileEditOptions.find(opt => opt.value === permission)}
+                                                                    styles={{
+                                                                        control: (base) => ({ ...base, minWidth: '130px' }),
+                                                                        menu: (base) => ({ ...base, width: 'max-content', minWidth: '100%', right: 0 }),
+                                                                        option: (base) => ({ ...base, whiteSpace: 'nowrap' })
+                                                                    }}
+                                                                    onChange={(val) => {
+                                                                        setSelectedUsers(prev => {
+                                                                            const next = new Map(prev);
+                                                                            next.set(userId, { user, permission: val.value });
+                                                                            return next;
+                                                                        });
+                                                                    }}
+                                                                    placeholder="Select permission"
+                                                                />
+                                                            </Form.Group>
+                                                            <button className="btn-only-icon ms-2" onClick={() => handleRemoveSelected(userId)}> <InteractiveIcon defaultIcon={closeIcon} width={22} alt="close" /></button>
                                                         </div>
-                                                    </li>
-                                                ))}
-                                            </ul>
-                                        </div>
-                                    )}
-                                </div>
-
-                                <div className="position-relative">
-                                    <div className="share-user-shade"></div>
-                                    <div className="share-user-shade2"></div>
-
-                                    {/* Show the list of NEW users waiting to be shared */}
-                                    {selectedUsers.size > 0 && (
-                                        <>
-                                            {/* mapping selected pending users */}
-                                            {[...selectedUsers.entries()].map(([userId, { user, permission }]) => (
-                                                <ul className="share-user-container" key={userId}>
-                                                    <li>
-                                                        <div className="share-user-list d-flex justify-content-between align-items-center">
-                                                            <div className="d-flex align-items-center">
-                                                                <div className="share-user-profilepic">
-                                                                    {/* <InteractiveIcon
-                                                                        defaultIcon={`${BASE_URL}${user.profilePic}`}
-                                                                        width={48}
-                                                                        height={48}
-                                                                    /> */}
-                                                                    <UserAvatar user={user} />
-                                                                </div>
-                                                                <div className="ms-2 ps-1">
-                                                                    <p className="user-name mb-0">{user.name}</p>
-                                                                    <p className="user-email mb-0 small text-muted">{user.email}</p>
-                                                                </div>
-                                                            </div>
-
-                                                            <div className="d-flex align-items-center gap-2">
-                                                                <Form.Group className="m-0" onClick={(e) => e.stopPropagation()}>
-                                                                    <CustomSelect
-                                                                        options={shareFileEditOptions}
-                                                                        isSearchable={false}
-                                                                        showIndicatorSeparator={false}
-                                                                        value={shareFileEditOptions.find(opt => opt.value === permission)}
-                                                                        styles={{
-                                                                            control: (base) => ({ ...base, minWidth: '130px' }),
-                                                                            menu: (base) => ({ ...base, width: 'max-content', minWidth: '100%', right: 0 }),
-                                                                            option: (base) => ({ ...base, whiteSpace: 'nowrap' })
-                                                                        }}
-                                                                        onChange={(val) => {
-                                                                            setSelectedUsers(prev => {
-                                                                                const next = new Map(prev);
-                                                                                next.set(userId, { user, permission: val.value });
-                                                                                return next;
-                                                                            });
-                                                                        }}
-                                                                        placeholder="Select permission"
-                                                                    />
-                                                                </Form.Group>
-                                                                <button className="btn-only-icon ms-2" onClick={() => handleRemoveSelected(userId)}> <InteractiveIcon defaultIcon={closeIcon} width={22} alt="close" /></button>
-                                                            </div>
-                                                        </div>
-                                                    </li>
-                                                </ul>
+                                                    </div>
+                                                </li>
                                             ))}
-                                        </>
-                                    )}
+                                        </ul>
 
-                                    <ul className="share-user-container">
-                                        {/* Always show the owner at the top of the list */}
-                                        {owner && (
-                                            <li>
-                                                <div className="share-user-list d-flex justify-content-between align-items-center">
-                                                    <div className="d-flex align-items-center">
-                                                        <div className="share-user-profilepic">
-                                                            {/* <InteractiveIcon
-                                                                defaultIcon={owner.profilePic ? `${BASE_URL}${owner.profilePic}` : userProfileIcon}
-                                                                width={48}
-                                                                height={48}
-                                                            /> */}
-                                                            <UserAvatar user={owner} />
-                                                        </div>
-                                                        <div className="ms-2 ps-1">
-                                                            <p className="user-name mb-0">{owner.name}</p>
-                                                            <p className="user-email mb-0 small text-muted">{owner.email}</p>
-                                                        </div>
-                                                    </div>
-                                                    <p className="owner-tag mb-0">Owner</p>
-                                                </div>
-                                            </li>
-                                        )}
+                                    </>
+                                )}
 
-                                        {/* mapping existing shared users */}
-                                        {/* {sharedWith.map(s => ( */}
-                                        {/* mapping existing shared users */}
-                                        {sharedWith
-                                            .filter(s => !owner || String(s.userId) !== String(owner.userId))
-                                            .map(s => (
-                                            <li key={s.userId}>
-                                                <div className="share-user-list d-flex justify-content-between align-items-center">
-                                                    <div className="d-flex align-items-center">
-                                                        <div className="share-user-profilepic">
-                                                            {/* <InteractiveIcon
-                                                                defaultIcon={s.profilePic ? `${BASE_URL}${s.profilePic}` : userProfileIcon}
-                                                                width={48}
-                                                                height={48}
-                                                            /> */}
-                                                            <UserAvatar user={s} />
-                                                        </div>
-                                                        <div className="ms-2 ps-1">
-                                                            <p className="user-name mb-0">{s.name}</p>
-                                                            <p className="user-email mb-0 small text-muted">{s.email}</p>
-                                                        </div>
-                                                    </div>
-                                                    <div className="d-flex align-items-center gap-2">
-                                                        <Form.Group
-                                                            className="m-0"
-                                                            onClick={(e) => e.stopPropagation()}
-                                                            style={{ opacity: s.inherited ? 0.5 : 1, pointerEvents: s.inherited ? 'none' : 'auto' }}
-                                                        >
-                                                            <CustomSelect
-                                                                isDisabled={s.inherited}
-                                                                options={shareFileEditOptionsTwo}
-                                                                isSearchable={false}
-                                                                showIndicatorSeparator={false}
-                                                                value={shareFileEditOptionsTwo.find(opt => opt.value === s.permission)}
-                                                                styles={{
-                                                                    control: (base) => ({ ...base, minWidth: '130px' }),
-                                                                    menu: (base) => ({ ...base, width: 'max-content', minWidth: '100%', right: 0 }),
-                                                                    option: (base) => ({ ...base, whiteSpace: 'nowrap' })
-                                                                }}
-                                                                onChange={async (val) => {
-                                                                    if (val.value === "remove") {
-                                                                        handleUnshare(s.userId);
-                                                                        return;
-                                                                    }
-                                                                    setSharedWith(prev =>
-                                                                        prev.map(item =>
-                                                                            item.userId === s.userId
-                                                                                ? { ...item, permission: val.value }
-                                                                                : item
-                                                                        )
-                                                                    );
-                                                                    const itemIdsToUpdate = allSelectedIds.length > 1 ? allSelectedIds : [itemId];
-                                                                    await shareItemApi(itemIdsToUpdate, [s.userId], val.value);
-                                                                }}
-                                                                placeholder="Select permission"
-                                                            />
-                                                        </Form.Group>
-                                                    </div>
-                                                </div>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            </>
-                        ) : (
-                            <>
-                                {/* SIMPLE VIEW FOR NON-OWNER: They only see who the owner is, they cannot change permissions */}
-                                {owner && (
-                                    <ul className="share-user-container">
+                                <ul className="share-user-container">
+                                    {/* Always show the owner at the top of the list */}
+                                    {owner && (
                                         <li>
                                             <div className="share-user-list d-flex justify-content-between align-items-center">
                                                 <div className="d-flex align-items-center">
                                                     <div className="share-user-profilepic">
                                                         {/* <InteractiveIcon
-                                                            defaultIcon={owner.profilePic ? `${BASE_URL}${owner.profilePic}` : userProfileIcon}
-                                                            width={48}
-                                                            height={48}
-                                                        /> */}
+                                                                defaultIcon={owner.profilePic ? `${BASE_URL}${owner.profilePic}` : userProfileIcon}
+                                                                width={48}
+                                                                height={48}
+                                                            /> */}
                                                         <UserAvatar user={owner} />
                                                     </div>
                                                     <div className="ms-2 ps-1">
@@ -605,174 +522,238 @@ function ShareUserModal({ data, onClose }) {
                                                 <p className="owner-tag mb-0">Owner</p>
                                             </div>
                                         </li>
-                                    </ul>
-                                )}
-                            </>
-                        )}
-
-
-                        <div className="create-link-section">
-                            <div className="create-link-section-header">
-                                <h3 className="modal-title-sub">Create Link</h3>
-                            </div>
-
-                            {/* Access Type */}
-                            <div className="create-link-items">
-                                <div className="access-single-box">
-                                    <div className="access-single-wrapper">
-                                        <div className={`access-single-icon ${accessType === "public" ? "public-link" : ""}`}>
-                                            <InteractiveIcon
-                                                defaultIcon={accessType === "public" ? publicLinkIcon : passwordIcon}
-                                                width={24}
-                                                alt=""
-                                            />
-                                        </div>
-                                        <div className="access-single-contetn">
-                                            <div className="access-single-dropdown-box">
-                                                <span className="access-single-name">
-                                                    {accessType === "restricted" ? "People with access" : "Public link"}
-                                                </span>
-                                                <Dropdown className="magic-dropdown dropdown-no-arrow">
-                                                    <Dropdown.Toggle as="div" className="magic-dropdown__toggle">
-                                                        <span className="magic-dropdown__chevron-wrapper">
-                                                            <InteractiveIcon
-                                                                defaultIcon={arrowDownIcon}
-                                                                width={20}
-                                                                alt=""
-                                                                className="magic-dropdown__chevron-icon"
-                                                            />
-                                                        </span>
-                                                    </Dropdown.Toggle>
-
-                                                    <Dropdown.Menu align="start" className="magic-dropdown__menu">
-                                                        {/* Hide 'restricted' option if already restricted */}
-                                                        {accessType !== "restricted" && (
-                                                            <Dropdown.Item
-                                                                className="magic-dropdown__item"
-                                                                onClick={() => setAccessType("restricted")}
-                                                            >
-                                                                People with access
-                                                            </Dropdown.Item>
-                                                        )}
-                                                        {/* Hide 'public' option if already public */}
-                                                        {accessType !== "public" && (
-                                                            <Dropdown.Item
-                                                                className="magic-dropdown__item"
-                                                                onClick={() => setAccessType("public")}
-                                                            >
-                                                                Public link
-                                                            </Dropdown.Item>
-                                                        )}
-                                                    </Dropdown.Menu>
-                                                </Dropdown>
-                                            </div>
-                                            <span className="access-single-sun-name">
-                                                {accessType === "restricted"
-                                                    ? "People listed above have access."
-                                                    : "Anyone with the link."}
-                                            </span>
-                                        </div>
-                                    </div>
-                                    {accessType === "public" && (
-                                        <p className="modal-tag">View & Download</p>
                                     )}
-                                </div>
+
+                                    {/* mapping existing shared users */}
+                                    {/* {sharedWith.map(s => ( */}
+                                    {/* mapping existing shared users */}
+                                    {sharedWith
+                                        .filter(s => !owner || String(s.userId) !== String(owner.userId))
+                                        .map(s => {
+                                            const isUserOwner = String(s.userId) === String(owner?.userId);
+                                            const isUserSelf = String(s.userId) === String(user?._id);
+                                            const isDisabled = s.inherited || !canShare || (!isOwner && (isUserOwner || isUserSelf));
+
+                                            return (
+                                                <li key={s.userId}>
+                                                    <div className="share-user-list d-flex justify-content-between align-items-center">
+                                                        <div className="d-flex align-items-center">
+                                                            <div className="share-user-profilepic">
+                                                                <UserAvatar user={s} />
+                                                            </div>
+                                                            <div className="ms-2 ps-1">
+                                                                <p className="user-name mb-0">{s.name}</p>
+                                                                <p className="user-email mb-0 small text-muted">{s.email}</p>
+                                                            </div>
+                                                        </div>
+                                                        <div className="d-flex align-items-center gap-2">
+                                                            <Form.Group
+                                                                className="m-0"
+                                                                onClick={(e) => e.stopPropagation()}
+                                                                style={{ opacity: isDisabled ? 0.5 : 1, pointerEvents: isDisabled ? 'none' : 'auto' }}
+                                                            >
+                                                                <CustomSelect
+                                                                    isDisabled={isDisabled}
+                                                                    options={shareFileEditOptionsTwo}
+                                                                    isSearchable={false}
+                                                                    showIndicatorSeparator={false}
+                                                                    value={shareFileEditOptionsTwo.find(opt => opt.value === s.permission)}
+                                                                    styles={{
+                                                                        control: (base) => ({ ...base, minWidth: '130px' }),
+                                                                        menu: (base) => ({ ...base, width: 'max-content', minWidth: '100%', right: 0 }),
+                                                                        option: (base) => ({ ...base, whiteSpace: 'nowrap' })
+                                                                    }}
+                                                                    onChange={async (val) => {
+                                                                        if (val.value === "remove") {
+                                                                            handleUnshare(s.userId);
+                                                                            return;
+                                                                        }
+                                                                        const itemIdsToUpdate = allSelectedIds.length > 1 ? allSelectedIds : [itemId];
+                                                                        await shareItemApi(itemIdsToUpdate, [s.userId], val.value);
+                                                                        // sharedUsersData refreshes automatically via the share_added socket event in context
+                                                                    }}
+                                                                    placeholder="Select permission"
+                                                                />
+                                                            </Form.Group>
+                                                        </div>
+                                                    </div>
+                                                </li>
+                                            );
+                                        })}
+                                </ul>
                             </div>
-                              
+                        </>
 
-                            {/* Link Expiration Section: ONLY shows if the access type is set to Public */}
-                            {accessType === "public" && (
-                                <div className={`create-link-items ${linkExpiry ? "" : "disable"}`}>
-                                    <div className="create-link-items-content">
-                                        <div className="form-check-group m-0">
-                                            <label htmlFor="Link-expirtation" style={{ cursor: 'pointer' }}>
-                                                <InteractiveIcon defaultIcon={checkboxIcon} alt="" />
-                                            </label>
-                                            <input
-                                                type="checkbox"
-                                                className="checkbox"
-                                                id="Link-expirtation"
-                                                checked={linkExpiry}
-                                                onChange={() => {
-                                                    // If unticked, clear the expiry date to null
-                                                    if (linkExpiry) {
-                                                        setExpiryDay(null)
-                                                    } else {
-                                                        // If ticked, set the default to '1 Day'
-                                                        setExpiryDay(expiryDayOption[0])
-                                                    }
-                                                    // toggle the checkbox boolean
-                                                    setLinkExpiry(prev => !prev)
-                                                }}
-                                            />
-                                            <span
-                                                className='form-label m-0'
-                                                onClick={() => {
-                                                    if (linkExpiry) {
-                                                        setExpiryDay(null)
-                                                    } else {
-                                                        setExpiryDay(expiryDayOption[0])
-                                                    }
-                                                    setLinkExpiry(prev => !prev)
-                                                }}
-                                                style={{ cursor: 'pointer' }}
-                                            >
-                                                Link expirtation
-                                            </span>
-                                        </div>
 
-                                        <div className="link-expirtation-day" onClick={(e) => e.stopPropagation()}>
-                                            {/* If checkbox is NOT ticked, just show simple text */}
-                                            {!linkExpiry ? (
-                                                <p className="modal-tag">No expiration</p>
-                                            ) : (
-                                                <Form.Group className="mb-0">
-                                                    <CustomSelect
-                                                        options={expiryDayOption}
-                                                        value={expiryDay}
-                                                        onChange={(val) => setExpiryDay(val)}
-                                                        placeholder="No expiration"
-                                                        showIndicatorSeparator={false}
-                                                        isSearchable={false}
-                                                        className="expiry-select"
-                                                    />
-                                                </Form.Group>
-                                            )}
+
+                        {/* create link for MOBILE */}
+                        {isMobile ? (
+                            <div className="create-link-section create-link-section-mobile" style={{ pointerEvents: !canShare ? 'none' : 'auto', opacity: !canShare ? 0.6 : 1 }}>
+                                <div className="create-link-section-header">
+                                    <h3 className="modal-title-sub">Create Link</h3>
+                                </div>
+
+                                {/* Access Type */}
+                                <div className="create-link-items">
+                                    <div className="access-single-box">
+                                        <div className="access-single-wrapper">
+                                            <div className={`access-single-icon ${accessType === "public" ? "public-link" : ""}`}>
+                                                <InteractiveIcon
+                                                    defaultIcon={accessType === "public" ? publicLinkIcon : passwordIcon}
+                                                    width={24}
+                                                    alt=""
+                                                />
+                                            </div>
+                                            <div className="access-single-contetn">
+                                                <div className="access-single-dropdown-box">
+                                                    <span className="access-single-name">
+                                                        {accessType === "restricted" ? "People with access" : "Public link"}
+                                                    </span>
+                                                    <Dropdown className="magic-dropdown dropdown-no-arrow">
+                                                        <Dropdown.Toggle as="div" className="magic-dropdown__toggle">
+                                                            <span className="magic-dropdown__chevron-wrapper">
+                                                                <InteractiveIcon
+                                                                    defaultIcon={arrowDownIcon}
+                                                                    width={20}
+                                                                    alt=""
+                                                                    className="magic-dropdown__chevron-icon"
+                                                                />
+                                                            </span>
+                                                        </Dropdown.Toggle>
+
+                                                        <Dropdown.Menu align="start" className="magic-dropdown__menu">
+                                                            {/* Hide 'restricted' option if already restricted */}
+                                                            {accessType !== "restricted" && (
+                                                                <Dropdown.Item
+                                                                    className="magic-dropdown__item"
+                                                                    onClick={() => setAccessType("restricted")}
+                                                                >
+                                                                    People with access
+                                                                </Dropdown.Item>
+                                                            )}
+                                                            {/* Hide 'public' option if already public */}
+                                                            {accessType !== "public" && (
+                                                                <Dropdown.Item
+                                                                    className="magic-dropdown__item"
+                                                                    onClick={() => setAccessType("public")}
+                                                                >
+                                                                    Public link
+                                                                </Dropdown.Item>
+                                                            )}
+                                                        </Dropdown.Menu>
+                                                    </Dropdown>
+                                                </div>
+                                                <span className="access-single-sun-name">
+                                                    {accessType === "restricted"
+                                                        ? "People listed above have access."
+                                                        : "Anyone with the link."}
+                                                </span>
+                                            </div>
                                         </div>
+                                        {accessType === "public" && (
+                                            <p className="modal-tag">View & Download</p>
+                                        )}
                                     </div>
                                 </div>
-                            )}
 
-                            {/* Password Protect Section: ONLY shows if the access type is set to Public */}
-                            {accessType === "public" && (
-                                <div className={`create-link-items ${passwordProtect ? "" : "disable"}`}>
-                                    <div className="create-link-items-content">
-                                        <div className="form-check-group m-0" onClick={generateRandomPassword}>
-                                            <label htmlFor="password-protect" style={{ cursor: 'pointer' }}>
-                                                <InteractiveIcon defaultIcon={checkboxIcon} alt="" />
-                                            </label>
-                                            <input
-                                                type="checkbox"
-                                                className="checkbox"
-                                                id="password-protect"
-                                                checked={passwordProtect}
-                                                onChange={() => {
-                                                    if (passwordProtect) setPassword("")
-                                                    setPasswordProtect(prev => !prev)
-                                                }}
-                                            />
-                                            <span
-                                                className='form-label m-0'
-                                                onClick={() => {
-                                                    if (passwordProtect) setPassword("")
-                                                    setPasswordProtect(prev => !prev)
-                                                }}
-                                                style={{ cursor: 'pointer' }}
-                                            >
-                                                Password protect
-                                            </span>
+
+                                {/* Link Expiration Section: ONLY shows if the access type is set to Public */}
+                                {accessType === "public" && (
+                                    <div className={`create-link-items ${linkExpiry ? "" : "disable"}`}>
+                                        <div className="create-link-items-content">
+                                            <div className="form-check-group m-0">
+                                                <label htmlFor="Link-expirtation" style={{ cursor: 'pointer' }}>
+                                                    <InteractiveIcon defaultIcon={checkboxIcon} alt="" />
+                                                </label>
+                                                <input
+                                                    type="checkbox"
+                                                    className="checkbox"
+                                                    id="Link-expirtation"
+                                                    checked={linkExpiry}
+                                                    onChange={() => {
+                                                        // If unticked, clear the expiry date to null
+                                                        if (linkExpiry) {
+                                                            setExpiryDay(null)
+                                                        } else {
+                                                            // If ticked, set the default to '1 Day'
+                                                            setExpiryDay(expiryDayOption[0])
+                                                        }
+                                                        // toggle the checkbox boolean
+                                                        setLinkExpiry(prev => !prev)
+                                                    }}
+                                                />
+                                                <span
+                                                    className='form-label m-0'
+                                                    onClick={() => {
+                                                        if (linkExpiry) {
+                                                            setExpiryDay(null)
+                                                        } else {
+                                                            setExpiryDay(expiryDayOption[0])
+                                                        }
+                                                        setLinkExpiry(prev => !prev)
+                                                    }}
+                                                    style={{ cursor: 'pointer' }}
+                                                >
+                                                    Link expirtation
+                                                </span>
+                                            </div>
+
+                                            <div className="link-expirtation-day" onClick={(e) => e.stopPropagation()}>
+                                                {/* If checkbox is NOT ticked, just show simple text */}
+                                                {!linkExpiry ? (
+                                                    <p className="modal-tag">No expiration</p>
+                                                ) : (
+                                                    <Form.Group className="mb-0">
+                                                        <CustomSelect
+                                                            options={expiryDayOption}
+                                                            value={expiryDay}
+                                                            onChange={(val) => setExpiryDay(val)}
+                                                            placeholder="No expiration"
+                                                            showIndicatorSeparator={false}
+                                                            isSearchable={false}
+                                                            className="expiry-select"
+                                                        />
+                                                    </Form.Group>
+                                                )}
+                                            </div>
                                         </div>
+                                    </div>
+                                )}
 
+                                {/* Password Protect Section: ONLY shows if the access type is set to Public */}
+                                {accessType === "public" && (
+                                    <div className={`create-link-items ${passwordProtect ? "" : "disable"}`}>
+                                        <div className="create-link-items-content">
+                                            <div className="form-check-group m-0" onClick={generateRandomPassword}>
+                                                <label htmlFor="password-protect" style={{ cursor: 'pointer' }}>
+                                                    <InteractiveIcon defaultIcon={checkboxIcon} alt="" />
+                                                </label>
+                                                <input
+                                                    type="checkbox"
+                                                    className="checkbox"
+                                                    id="password-protect"
+                                                    checked={passwordProtect}
+                                                    onChange={() => {
+                                                        if (passwordProtect) setPassword("")
+                                                        setPasswordError(false)
+                                                        setPasswordProtect(prev => !prev)
+                                                    }}
+                                                />
+                                                <span
+                                                    className='form-label m-0'
+                                                    onClick={() => {
+                                                        if (passwordProtect) setPassword("")
+                                                        setPasswordError(false)
+                                                        setPasswordProtect(prev => !prev)
+                                                    }}
+                                                    style={{ cursor: 'pointer' }}
+                                                >
+                                                    Password protect
+                                                </span>
+                                            </div>
+
+
+                                        </div>
                                         <div className="link-expirtation-day" onClick={(e) => e.stopPropagation()}>
                                             {!passwordProtect ? (
                                                 <p className="modal-tag d-none">No password</p>
@@ -786,7 +767,7 @@ function ShareUserModal({ data, onClose }) {
                                                                 /[A-Z]/.test(password),
                                                                 /[a-z]/.test(password),
                                                                 /[0-9]/.test(password),
-                                                                /[@$!%*?&]/.test(password),
+                                                                /[!@#$%^&*?]/.test(password),
                                                                 password.length >= 8,
                                                             ];
                                                             const passed = checks.filter(Boolean).length;
@@ -828,7 +809,7 @@ function ShareUserModal({ data, onClose }) {
                                                         })()}
 
                                                         {/* Input */}
-                                                        <div className='form-control-single-icon'>
+                                                        <div className={`form-control-single-icon${passwordError ? " has-error" : ""}`}>
                                                             <InteractiveIcon
                                                                 defaultIcon={passwordShow ? viewIcon : viewHideIcon}
                                                                 alt=""
@@ -838,36 +819,40 @@ function ShareUserModal({ data, onClose }) {
                                                             />
                                                             <Form.Control
                                                                 type={passwordShow ? "text" : "password"}
-                                                                className='custom-form-control h-34'
+                                                                className={`custom-form-control h-34${passwordError ? " is-invalid" : ""}`}
                                                                 value={password}
-                                                                onChange={(e) => setPassword(e.target.value)}
+                                                                onChange={(e) => {
+                                                                    setPassword(e.target.value);
+                                                                    setPasswordError(false);
+                                                                }}
                                                                 onFocus={() => setIsFocused(true)}
                                                                 onBlur={() => setIsFocused(false)}
                                                             />
+                                                            {/* Strength bar — input ke niche */}
+                                                            {password.length > 0 && (() => {
+                                                                const checks = [
+                                                                    /[A-Z]/.test(password),
+                                                                    /[a-z]/.test(password),
+                                                                    /[0-9]/.test(password),
+                                                                    /[!@#$%^&*?]/.test(password),
+                                                                    password.length >= 8,
+                                                                ];
+                                                                const passed = checks.filter(Boolean).length;
+                                                                const strengthClass = passed <= 2 ? "weak" : passed <= 4 ? "medium" : "strong";
+                                                                return (
+                                                                    <div className="pwd-strength-bar-wrapper">
+                                                                        {[1, 2, 3, 4, 5].map((i) => (
+                                                                            <div
+                                                                                key={i}
+                                                                                className={`pwd-strength-bar-segment ${i <= passed ? strengthClass : ""}`}
+                                                                            />
+                                                                        ))}
+                                                                    </div>
+                                                                );
+                                                            })()}
                                                         </div>
 
-                                                        {/* Strength bar — input ke niche */}
-                                                        {password.length > 0 && (() => {
-                                                            const checks = [
-                                                                /[A-Z]/.test(password),
-                                                                /[a-z]/.test(password),
-                                                                /[0-9]/.test(password),
-                                                                /[@$!%*?&]/.test(password),
-                                                                password.length >= 8,
-                                                            ];
-                                                            const passed = checks.filter(Boolean).length;
-                                                            const strengthClass = passed <= 2 ? "weak" : passed <= 4 ? "medium" : "strong";
-                                                            return (
-                                                                <div className="pwd-strength-bar-wrapper">
-                                                                    {[1, 2, 3, 4, 5].map((i) => (
-                                                                        <div
-                                                                            key={i}
-                                                                            className={`pwd-strength-bar-segment ${i <= passed ? strengthClass : ""}`}
-                                                                        />
-                                                                    ))}
-                                                                </div>
-                                                            );
-                                                        })()}
+
 
                                                     </Form.Group>
 
@@ -878,15 +863,293 @@ function ShareUserModal({ data, onClose }) {
                                             )}
                                         </div>
                                     </div>
-                                </div>
-                            )}
+                                )}
 
-                        </div>
+                            </div>
+                        ) : (
+                            <div className="create-link-section" style={{ pointerEvents: !canShare ? 'none' : 'auto', opacity: !canShare ? 0.6 : 1 }}>
+                                <div className="create-link-section-header">
+                                    <h3 className="modal-title-sub">Create Link</h3>
+                                </div>
+
+                                {/* Access Type */}
+                                <div className="create-link-items">
+                                    <div className="access-single-box">
+                                        <div className="access-single-wrapper">
+                                            <div className={`access-single-icon ${accessType === "public" ? "public-link" : ""}`}>
+                                                <InteractiveIcon
+                                                    defaultIcon={accessType === "public" ? publicLinkIcon : passwordIcon}
+                                                    width={24}
+                                                    alt=""
+                                                />
+                                            </div>
+                                            <div className="access-single-contetn">
+                                                <div className="access-single-dropdown-box">
+                                                    <span className="access-single-name">
+                                                        {accessType === "restricted" ? "People with access" : "Public link"}
+                                                    </span>
+                                                    <Dropdown className="magic-dropdown dropdown-no-arrow">
+                                                        <Dropdown.Toggle as="div" className="magic-dropdown__toggle">
+                                                            <span className="magic-dropdown__chevron-wrapper">
+                                                                <InteractiveIcon
+                                                                    defaultIcon={arrowDownIcon}
+                                                                    width={20}
+                                                                    alt=""
+                                                                    className="magic-dropdown__chevron-icon"
+                                                                />
+                                                            </span>
+                                                        </Dropdown.Toggle>
+
+                                                        <Dropdown.Menu align="start" className="magic-dropdown__menu">
+                                                            {/* Hide 'restricted' option if already restricted */}
+                                                            {accessType !== "restricted" && (
+                                                                <Dropdown.Item
+                                                                    className="magic-dropdown__item"
+                                                                    onClick={() => setAccessType("restricted")}
+                                                                >
+                                                                    People with access
+                                                                </Dropdown.Item>
+                                                            )}
+                                                            {/* Hide 'public' option if already public */}
+                                                            {accessType !== "public" && (
+                                                                <Dropdown.Item
+                                                                    className="magic-dropdown__item"
+                                                                    onClick={() => setAccessType("public")}
+                                                                >
+                                                                    Public link
+                                                                </Dropdown.Item>
+                                                            )}
+                                                        </Dropdown.Menu>
+                                                    </Dropdown>
+                                                </div>
+                                                <span className="access-single-sun-name">
+                                                    {accessType === "restricted"
+                                                        ? "People listed above have access."
+                                                        : "Anyone with the link."}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        {accessType === "public" && (
+                                            <p className="modal-tag">View & Download</p>
+                                        )}
+                                    </div>
+                                </div>
+
+
+                                {/* Link Expiration Section: ONLY shows if the access type is set to Public */}
+                                {accessType === "public" && (
+                                    <div className={`create-link-items ${linkExpiry ? "" : "disable"}`}>
+                                        <div className="create-link-items-content">
+                                            <div className="form-check-group m-0">
+                                                <label htmlFor="Link-expirtation" style={{ cursor: 'pointer' }}>
+                                                    <InteractiveIcon defaultIcon={checkboxIcon} alt="" />
+                                                </label>
+                                                <input
+                                                    type="checkbox"
+                                                    className="checkbox"
+                                                    id="Link-expirtation"
+                                                    checked={linkExpiry}
+                                                    onChange={() => {
+                                                        // If unticked, clear the expiry date to null
+                                                        if (linkExpiry) {
+                                                            setExpiryDay(null)
+                                                        } else {
+                                                            // If ticked, set the default to '1 Day'
+                                                            setExpiryDay(expiryDayOption[0])
+                                                        }
+                                                        // toggle the checkbox boolean
+                                                        setLinkExpiry(prev => !prev)
+                                                    }}
+                                                />
+                                                <span
+                                                    className='form-label m-0'
+                                                    onClick={() => {
+                                                        if (linkExpiry) {
+                                                            setExpiryDay(null)
+                                                        } else {
+                                                            setExpiryDay(expiryDayOption[0])
+                                                        }
+                                                        setLinkExpiry(prev => !prev)
+                                                    }}
+                                                    style={{ cursor: 'pointer' }}
+                                                >
+                                                    Link expirtation
+                                                </span>
+                                            </div>
+
+                                            <div className="link-expirtation-day" onClick={(e) => e.stopPropagation()}>
+                                                {/* If checkbox is NOT ticked, just show simple text */}
+                                                {!linkExpiry ? (
+                                                    <p className="modal-tag">No expiration</p>
+                                                ) : (
+                                                    <Form.Group className="mb-0">
+                                                        <CustomSelect
+                                                            options={expiryDayOption}
+                                                            value={expiryDay}
+                                                            onChange={(val) => setExpiryDay(val)}
+                                                            placeholder="No expiration"
+                                                            showIndicatorSeparator={false}
+                                                            isSearchable={false}
+                                                            className="expiry-select"
+                                                        />
+                                                    </Form.Group>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Password Protect Section: ONLY shows if the access type is set to Public */}
+                                {accessType === "public" && (
+                                    <div className={`create-link-items ${passwordProtect ? "" : "disable"}`}>
+                                        <div className="create-link-items-content">
+                                            <div className="form-check-group m-0" onClick={generateRandomPassword}>
+                                                <label htmlFor="password-protect" style={{ cursor: 'pointer' }}>
+                                                    <InteractiveIcon defaultIcon={checkboxIcon} alt="" />
+                                                </label>
+                                                <input
+                                                    type="checkbox"
+                                                    className="checkbox"
+                                                    id="password-protect"
+                                                    checked={passwordProtect}
+                                                    onChange={() => {
+                                                        if (passwordProtect) setPassword("")
+                                                        setPasswordError(false)
+                                                        setPasswordProtect(prev => !prev)
+                                                    }}
+                                                />
+                                                <span
+                                                    className='form-label m-0'
+                                                    onClick={() => {
+                                                        if (passwordProtect) setPassword("")
+                                                        setPasswordError(false)
+                                                        setPasswordProtect(prev => !prev)
+                                                    }}
+                                                    style={{ cursor: 'pointer' }}
+                                                >
+                                                    Password protect
+                                                </span>
+                                            </div>
+
+                                            <div className="link-expirtation-day" onClick={(e) => e.stopPropagation()}>
+                                                {!passwordProtect ? (
+                                                    <p className="modal-tag d-none">No password</p>
+                                                ) : (
+                                                    <>
+                                                        <Form.Group className="mb-0 position-relative" controlId="formPassword">
+
+                                                            {/* Requirements box + strength bar */}
+                                                            {password.length > 0 && (() => {
+                                                                const checks = [
+                                                                    /[A-Z]/.test(password),
+                                                                    /[a-z]/.test(password),
+                                                                    /[0-9]/.test(password),
+                                                                    /[!@#$%^&*?]/.test(password),
+                                                                    password.length >= 8,
+                                                                ];
+                                                                const passed = checks.filter(Boolean).length;
+                                                                const allPassed = checks.every(Boolean);
+                                                                const strengthClass = passed <= 2 ? "weak" : passed <= 4 ? "medium" : "strong";
+
+                                                                return (
+                                                                    <>
+                                                                        {/* Requirements box */}
+                                                                        {!allPassed && isFocused && (
+                                                                            <div className="pwd-requirements-box">
+                                                                                <p className="pwd-req-title">Password requirements</p>
+                                                                                <ul className="pwd-req-list">
+                                                                                    <li className={`pwd-req-item ${checks[0] ? "pass" : "fail"}`}>
+                                                                                        <span className="pwd-req-icon">{checks[0] ? "✓" : "✕"}</span>
+                                                                                        Password must include at least one uppercase letter.
+                                                                                    </li>
+                                                                                    <li className={`pwd-req-item ${checks[1] ? "pass" : "fail"}`}>
+                                                                                        <span className="pwd-req-icon">{checks[1] ? "✓" : "✕"}</span>
+                                                                                        Password must include at least one lowercase letter.
+                                                                                    </li>
+                                                                                    <li className={`pwd-req-item ${checks[2] ? "pass" : "fail"}`}>
+                                                                                        <span className="pwd-req-icon">{checks[2] ? "✓" : "✕"}</span>
+                                                                                        Password must include at least one number.
+                                                                                    </li>
+                                                                                    <li className={`pwd-req-item ${checks[3] ? "pass" : "fail"}`}>
+                                                                                        <span className="pwd-req-icon">{checks[3] ? "✓" : "✕"}</span>
+                                                                                        Password must include at least one special character.
+                                                                                    </li>
+                                                                                    <li className={`pwd-req-item ${checks[4] ? "pass" : "fail"}`}>
+                                                                                        <span className="pwd-req-icon">{checks[4] ? "✓" : "✕"}</span>
+                                                                                        Password must be at least eight characters long.
+                                                                                    </li>
+                                                                                </ul>
+                                                                            </div>
+                                                                        )}
+                                                                    </>
+                                                                );
+                                                            })()}
+
+                                                            {/* Input */}
+                                                            <div className={`form-control-single-icon${passwordError ? " has-error" : ""}`}>
+                                                                <InteractiveIcon
+                                                                    defaultIcon={passwordShow ? viewIcon : viewHideIcon}
+                                                                    alt=""
+                                                                    className="form-right-icon"
+                                                                    width={24}
+                                                                    onClick={() => setPasswordShow(!passwordShow)}
+                                                                />
+                                                                <Form.Control
+                                                                    type={passwordShow ? "text" : "password"}
+                                                                    className={`custom-form-control h-34${passwordError ? " is-invalid" : ""}`}
+                                                                    value={password}
+                                                                    onChange={(e) => {
+                                                                        setPassword(e.target.value);
+                                                                        setPasswordError(false);
+                                                                    }}
+                                                                    onFocus={() => setIsFocused(true)}
+                                                                    onBlur={() => setIsFocused(false)}
+                                                                />
+                                                            </div>
+
+                                                            {/* Strength bar — input ke niche */}
+                                                            {password.length > 0 && (() => {
+                                                                const checks = [
+                                                                    /[A-Z]/.test(password),
+                                                                    /[a-z]/.test(password),
+                                                                    /[0-9]/.test(password),
+                                                                    /[!@#$%^&*?]/.test(password),
+                                                                    password.length >= 8,
+                                                                ];
+                                                                const passed = checks.filter(Boolean).length;
+                                                                const strengthClass = passed <= 2 ? "weak" : passed <= 4 ? "medium" : "strong";
+                                                                return (
+                                                                    <div className="pwd-strength-bar-wrapper">
+                                                                        {[1, 2, 3, 4, 5].map((i) => (
+                                                                            <div
+                                                                                key={i}
+                                                                                className={`pwd-strength-bar-segment ${i <= passed ? strengthClass : ""}`}
+                                                                            />
+                                                                        ))}
+                                                                    </div>
+                                                                );
+                                                            })()}
+
+                                                        </Form.Group>
+
+                                                        <button className="btn-black btn-lg m-0" type="button" onClick={generateRandomPassword}>
+                                                            Generate
+                                                        </button>
+                                                    </>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                            </div>
+                        )}
+
 
                     </Modal.Body>
 
                     <Modal.Footer className="d-flex align-items-center justify-content-between border-0">
-                        <button className="modal-add-new-btn" onClick={handleCopyLink}>
+                        <button className="modal-add-new-btn" onClick={handleCopyLink} disabled={!canShare} style={{ opacity: !canShare ? 0.5 : 1, cursor: !canShare ? 'not-allowed' : 'pointer' }}>
                             <InteractiveIcon defaultIcon={copyLinkIcon} width={24} alt="add" />
                             Copy link
                         </button>
@@ -910,5 +1173,29 @@ function ShareUserModal({ data, onClose }) {
 }
 
 export default ShareUserModal
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 

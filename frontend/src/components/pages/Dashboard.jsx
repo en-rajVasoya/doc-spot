@@ -20,9 +20,9 @@ import SearchResults from '../layout/header/SearchResults';
 
 function Dashboard() {
   const [searchBarOpen, setSearchBarOpen] = useState(false)
-  const { search: urlSearch } = useLocation();
+  const { search: urlSearch, state: locationState } = useLocation();
   const { isSearchMode, searchResults, searchLoading, searchError, clearSearch, searchApi } = useSearch()
-  const { clearSelection, items, sortBy, setSortBy, sortOrder, setSortOrder, selectedIds, setSelectedIds, loading, error } = useFileExplorer()
+  const { clearSelection, items, sortBy, setSortBy, sortOrder, setSortOrder, selectedIds, setSelectedIds, loading, error, setOnItemsRemoved } = useFileExplorer()
   const [isSidebarNavOpen, setIsSidebarNavOpen] = useState(false);
   const headerRef = useRef(null);
   const [headerHeight, setHeaderHeight] = useState(215);
@@ -102,6 +102,29 @@ function Dashboard() {
     }
   }
 
+  // Filter out and auto-close modals referencing item IDs that get unshared/removed in real-time
+  useEffect(() => {
+    if (!setOnItemsRemoved) return;
+    setOnItemsRemoved((removedIds) => {
+      const removedSet = new Set(removedIds.map(String));
+      setModals(prev => prev.filter(m => {
+        if (!m || !m.data) return true;
+
+        const getItemId = (item) => (typeof item === 'object' && item !== null ? (item._id || item.id || item.itemId) : item);
+
+        if (Array.isArray(m.data)) {
+          return !m.data.some(item => {
+            const id = getItemId(item);
+            return id && removedSet.has(String(id));
+          });
+        }
+
+        const singleId = getItemId(m.data);
+        return singleId ? !removedSet.has(String(singleId)) : true;
+      }));
+    });
+  }, [setOnItemsRemoved]);
+
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === "Escape") {
@@ -117,25 +140,36 @@ function Dashboard() {
     const query = params.get("search");
     const fileType = params.get("fileType");
 
-    if (!query && !fileType) return;
+    const dateFrom = params.get("dateFrom");
+    const dateTo = params.get("dateTo");
+    const date = params.get("date");
+    const owner = params.get("owner");
+    const location = params.get("location");
+    const personIds = params.get("personIds");
+
+    if (!query && !fileType && !owner && !location && !dateFrom && !dateTo && !personIds) return;
 
     searchApi({
       query: query || null,
       fileType: fileType || null,
-      ownerFilter: params.get("owner") || null,
-      location: params.get("location") || null,
-      dateFrom: params.get("dateFrom") || null,
-      dateTo: params.get("dateTo") || null,
-      personIds: params.get("personIds") ? params.get("personIds").split(",") : null,
+      ownerFilter: owner || null,
+      location: location || null,
+      dateFrom: dateFrom || null,
+      dateTo: dateTo || null,
+      date: date || null,
+      personIds: personIds ? personIds.split(",") : null,
+      personNames: locationState?.personNames || null,
+      personProfilePics: locationState?.personProfilePics || null,
+      personEmails: locationState?.personEmails || null,
       folderId: null,
     });
-  }, [urlSearch]);
+  }, [urlSearch, locationState]);
 
 
 
   return (
     <>
-      <div className="page-wrapper" >
+      <div className="page-wrapper all-page-search-bar" >
         <div className='content-wrapper-main' >
 
           {/* Main header top */}
@@ -193,7 +227,7 @@ function Dashboard() {
         <ModalManager modals={modals} setModal={setModal} />
         <UploadPanel setModal={setModal} />
         <DownloadPanel />
-        <SidebarNav isSidebarNavOpen={isSidebarNavOpen} />
+        <SidebarNav isSidebarNavOpen={isSidebarNavOpen} closeSidebar={() => setIsSidebarNavOpen(false)} />
         {/* <TransferPanel /> */}
       </div>
     </>

@@ -20,7 +20,10 @@ import viewHideIcon from "@images/icon/view-hide.svg";
 import passwordIcon from "@images/icon/password.svg";
 import userIcon from "@images/icon/user.svg";
 import singleUserIcon from "@images/icon/single-user-icon.svg";
-import editUserIcon from "@images/icon/edit-user-icon.svg"
+import editUserIcon from "@images/icon/edit-user-icon.svg";
+import deleteIcon from "@images/icon/trash.svg";
+import uploadIcon from "@images/icon/upload-icon.svg";
+import useResponsive from "../../hooks/useResponsive.js";
 
 function UpdateUserProfile() {
     const navigate = useNavigate();
@@ -46,6 +49,8 @@ function UpdateUserProfile() {
     const [avatarUrl, setAvatarUrl] = useState(null);
     const [avatarFile, setAvatarFile] = useState(null);
     const [errors, setErrors] = useState({});
+
+    const { isMobile, isTablet, isDesktop, isSmallMobile } = useResponsive();
 
 
     //  here this state is used for active tabe like personal info and passwrod tab here
@@ -85,7 +90,7 @@ function UpdateUserProfile() {
             setDisplayName(user.name || "");
             setUsername(user.user_id || "");
             setEmail(user.email || "");
-            setAvatarUrl(user.profilePic || null);
+            setAvatarUrl(user.thumbnail_profile_pic || user.compressed_profile_pic || user.profilePic || null);
         }
     }, [user]);
 
@@ -146,9 +151,11 @@ function UpdateUserProfile() {
 
         if (avatarFile) {
             formData.append("profilePic", avatarFile);
+        } else if (avatarUrl === null) {
+            formData.append("removeProfilePic", "true");
         }
 
-        const result = await updateProfile(formData);
+        const result = await updateProfile(formData, false);
 
         // Clear password state since we didn't update it (prevents stale state issues)
         setPassword("");
@@ -160,9 +167,9 @@ function UpdateUserProfile() {
     const handleUpdatePassword = async () => {
         let newErrors = {};
 
-        if (password && checks.includes(false)) {
-            newErrors.password = "Password does not meet all requirements";
-        }
+        // if (password && checks.includes(false)) {
+        //     newErrors.password = "Password does not meet all requirements";
+        // }
 
         if (!currentPassword) {
             newErrors.currentPassword = "Current password is required";
@@ -181,7 +188,7 @@ function UpdateUserProfile() {
         formData.append("password", password);
         formData.append("currentPassword", currentPassword);
 
-        const result = await updateProfile(formData);
+        const result = await updateProfile(formData, true);
 
         // If successful, clear the password fields
         if (result?.success) {
@@ -192,7 +199,7 @@ function UpdateUserProfile() {
     };
 
     return (
-        <div className="page-wrapper">
+        <div className="page-wrapper all-page-search-bar">
             <div className="content-wrapper-main">
 
                 {/* 1. Main header top (Exact same class as Dashboard) */}
@@ -263,7 +270,7 @@ function UpdateUserProfile() {
                                                 {/* Avatar Section */}
                                                 <div className="edit-profile-avatar-section">
                                                     <div className="profile-single-box">
-                                                        <UserAvatar src={avatarUrl} name={displayName} />
+                                                        <UserAvatar src={avatarUrl} name={displayName} user={user} />
                                                     </div>
 
                                                     <div className="edit-profile-avatar-actions">
@@ -274,16 +281,41 @@ function UpdateUserProfile() {
                                                             accept="image/*"
                                                             onChange={handleImageUpload}
                                                         />
-                                                        <button
+                                                        
+
+                                                        {isSmallMobile ? (                                                           
+                                                            <button
+                                                            className="btn-black btn-lg m-0"
+                                                            onClick={() => fileInputRef.current?.click()}
+                                                        >
+                                                           <InteractiveIcon defaultIcon={uploadIcon} alt="" width={20} />
+                                                        </button>
+
+                                                        ) : (
+                                                            <button
                                                             className="btn-black btn-lg m-0"
                                                             onClick={() => fileInputRef.current?.click()}
                                                         >
                                                             Upload Profile
                                                         </button>
+
+                                                        )}
                                                         {avatarUrl && (
-                                                            <button className="btn-secondary btn-lg m-0" onClick={handleRemoveImage}>
-                                                                Remove
-                                                            </button>
+                                                            isSmallMobile ? (
+                                                                <button
+                                                                    className="btn-secondary btn-lg  "
+                                                                    onClick={handleRemoveImage}
+                                                                >
+                                                                    <InteractiveIcon defaultIcon={deleteIcon} alt="" width={20} />
+                                                                </button>
+                                                            ) : (
+                                                                <button
+                                                                    className="btn-secondary btn-lg m-0"
+                                                                    onClick={handleRemoveImage}
+                                                                >
+                                                                    Remove
+                                                                </button>
+                                                            )
                                                         )}
                                                     </div>
                                                 </div>
@@ -425,7 +457,7 @@ function UpdateUserProfile() {
             </div>
 
             {/* 3. The Sidebar Menu (Exact same as Dashboard) */}
-            <SidebarNav isSidebarNavOpen={isSidebarNavOpen} />
+            <SidebarNav isSidebarNavOpen={isSidebarNavOpen} closeSidebar={() => setIsSidebarNavOpen(false)} />
             <ModalManager modals={modals} setModal={setModal} />
 
         </div>

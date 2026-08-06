@@ -377,7 +377,7 @@ function ZipViewer({ file }) {
                 // 1. Check size if missing
                 if (!currentSize) {
                     try {
-                        const r = await fetch(zipUrl, { method: "HEAD" });
+                        const r = await fetch(zipUrl, { method: "HEAD", credentials: "include" });
                         currentSize = Number(r.headers.get("content-length") || 0);
                     } catch (e) { }
                 }
@@ -391,7 +391,10 @@ function ZipViewer({ file }) {
 
                 setLoading(true);
 
-                const res = await fetch(zipUrl)
+                const res = await fetch(zipUrl, { credentials: "include" })
+                if (!res.ok) {
+                    throw new Error(`Server returned ${res.status}: Is the file URL correct and public?`);
+                }
                 const blob = await res.blob()
                 // zip bomb check
                 const zip = await JSZip.loadAsync(blob)

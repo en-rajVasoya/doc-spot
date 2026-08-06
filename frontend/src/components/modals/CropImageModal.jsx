@@ -361,10 +361,14 @@ import { useState, useRef, useEffect } from "react";
 import InteractiveIcon from "../layout/InteractiveIcon";
 import Tooltip from "../layout/Tooltip";
 import closeIcon from "@images/icon/close-icon.svg";
+import useResponsive from "../../hooks/useResponsive";
 
 function CropImageModal({ data, onClose }) {
     const { imgSrc, onSave } = data || {};
     const onCancel = onClose;
+    const { isMobile } = useResponsive();
+    const [shake, setShake] = useState(false);
+    const modalRef = useRef(null);
 
     const CONTAINER = 200;
     const CIRCLE = 200;
@@ -463,81 +467,96 @@ function CropImageModal({ data, onClose }) {
         img.src = imgSrc;
     };
 
+    const handleOutsideClick = (e) => {
+        if (modalRef.current && !modalRef.current.contains(e.target)) {
+            if (isMobile) {
+                onCancel();
+            } else {
+                setShake(true);
+                setTimeout(() => setShake(false), 400);
+            }
+        }
+    };
+
     return (
-        <Modal
-            show={true}
-            backdrop="static"
-            keyboard={false}
-            centered
-            dialogClassName="modal-dialog-sm"
-            className=" crop-img-modal profile-crop-img"
-        >
-            <Modal.Header className="border-0">
-                <Modal.Title>Crop Profile</Modal.Title>
-                <Tooltip text="Close" offset={8}>
-                    <button className="btn-only-icon" onClick={onCancel}>
-                        <InteractiveIcon defaultIcon={closeIcon} width={24} alt="close" />
-                    </button>
-                </Tooltip>
-            </Modal.Header>
+        <div onClick={handleOutsideClick}>
+            <Modal
+                show={true}
+                backdrop="static"
+                keyboard={false}
+                centered
+                dialogClassName={`modal-dialog-sm ${shake ? "shake" : ""}`}
+                className=" crop-img-modal profile-crop-img"
+            >
+                <div ref={modalRef} className="position-relative">
+                    <Modal.Header className="border-0">
+                        <Modal.Title>Crop Profile</Modal.Title>
+                        <Tooltip text="Close" offset={8}>
+                            <button className="btn-only-icon" onClick={onCancel}>
+                                <InteractiveIcon defaultIcon={closeIcon} width={24} alt="close" />
+                            </button>
+                        </Tooltip>
+                    </Modal.Header>
 
-            <Modal.Body className="p-0">
-                <div className="crop-preview-wrapper">
-                    <div className="crop-outer-box">
-                        {imgSrc && (
-                            <img
-                                src={imgSrc}
-                                alt="bg"
-                                draggable={false}
-                                className="crop-bg-img"
-                                style={getImgStyle()}
-                            />
-                        )}
-                        <div className="crop-overlay" />
-                        <div className="crop-circle">
-                            {imgSrc && (
-                                <img
-                                    src={imgSrc}
-                                    alt="crop"
-                                    draggable={false}
-                                    className="crop-main-img"
-                                    style={getImgStyle()}
+                    <Modal.Body className="p-0">
+                        <div className="crop-preview-wrapper">
+                            <div className="crop-outer-box">
+                                {imgSrc && (
+                                    <img
+                                        src={imgSrc}
+                                        alt="bg"
+                                        draggable={false}
+                                        className="crop-bg-img"
+                                        style={getImgStyle()}
+                                    />
+                                )}
+                                <div className="crop-overlay" />
+                                <div className="crop-circle">
+                                    {imgSrc && (
+                                        <img
+                                            src={imgSrc}
+                                            alt="crop"
+                                            draggable={false}
+                                            className="crop-main-img"
+                                            style={getImgStyle()}
+                                        />
+                                    )}
+                                </div>
+                                <div
+                                    ref={containerRef}
+                                    className={`crop-drag-handler ${dragging ? "dragging" : ""}`}
+                                    onMouseDown={onMouseDown}
+                                    onMouseMove={onMouseMove}
+                                    onMouseUp={stopDrag}
+                                    onMouseLeave={stopDrag}
+                                    onTouchStart={onTouchStart}
+                                    onTouchMove={onTouchMove}
+                                    onTouchEnd={stopDrag}
                                 />
-                            )}
+                            </div>
                         </div>
-                        <div
-                            ref={containerRef}
-                            className={`crop-drag-handler ${dragging ? "dragging" : ""}`}
-                            onMouseDown={onMouseDown}
-                            onMouseMove={onMouseMove}
-                            onMouseUp={stopDrag}
-                            onMouseLeave={stopDrag}
-                            onTouchStart={onTouchStart}
-                            onTouchMove={onTouchMove}
-                            onTouchEnd={stopDrag}
-                        />
-                    </div>
-                </div>
 
-                <div className="crop-slide-bar">
-                    <input
-                        type="range"
-                        min="0"
-                        max="500"
-                        step="1"
-                        value={Math.round(scale * 100)}
-                        onChange={(e) => setScale(e.target.value / 100)}
-                        className="crop-slider"
-                    />
-                </div>
+                        <div className="crop-slide-bar">
+                            <input
+                                type="range"
+                                min="0"
+                                max="500"
+                                step="1"
+                                value={Math.round(scale * 100)}
+                                onChange={(e) => setScale(e.target.value / 100)}
+                                className="crop-slider"
+                            />
+                        </div>
 
-                <div className="static-btn-box-modal justify-content-center">
-                    <button className="btn-black btn-lg m-0" onClick={handleSave}>
-                        Choose
-                    </button>
+                        <div className="static-btn-box-modal justify-content-center">
+                            <button className="btn-black btn-lg m-0" onClick={handleSave}>
+                                Choose
+                            </button>
+                        </div>
+                    </Modal.Body>
                 </div>
-            </Modal.Body>
-        </Modal>
+            </Modal>
+        </div>
     );
 }
 

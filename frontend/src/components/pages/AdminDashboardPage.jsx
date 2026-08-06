@@ -1,12 +1,22 @@
 import MainHeader from '../layout/header/MainHeader'
 import AdminDashboard from '../layout/admin/AdminDashboard'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import ModalManager from '../modals/ModalManager'
+import { useAdmin } from '../../context/AdminContext'
+import SidebarNav from '../layout/header/SidebarNav'
 
 function AdminDashboardPage() {
   const [modals, setModals] = useState([]); // Array of stacked modals
   const [isSidebarNavOpen, setIsSidebarNavOpen] = useState(false)
   const [searchBarOpen, setSearchBarOpen] = useState(false);
+  const { setSelectedIds } = useAdmin();
+
+  // Clear selected users when modals are closed
+  useEffect(() => {
+    if (modals.length === 0) {
+      setSelectedIds(new Set());
+    }
+  }, [modals.length, setSelectedIds]);
 
   // The ultimate adapter function! Child components never even know the stack exists.
   const setModal = (modalData) => {
@@ -26,7 +36,7 @@ function AdminDashboardPage() {
             isAdmin={true}
             onMobileSidebarNavclick={() => setIsSidebarNavOpen(prev => !prev)}
             searchBarOpen={searchBarOpen} 
-   setSearchBarOpen={setSearchBarOpen}
+            setSearchBarOpen={setSearchBarOpen}
           />
         </div>
         <div className="content-view-wrapper">
@@ -35,7 +45,8 @@ function AdminDashboardPage() {
           </div>
         </div>
       </div>
-       <ModalManager modals={modals} setModal={setModal} />
+      <SidebarNav isSidebarNavOpen={isSidebarNavOpen} closeSidebar={() => setIsSidebarNavOpen(false)} isAdmin={true} />
+      <ModalManager modals={modals} setModal={setModal} />
     </div>
   )
 }

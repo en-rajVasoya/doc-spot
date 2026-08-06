@@ -188,6 +188,31 @@ function DownloadPanel() {
 
     const [cancelModal, setCancelModal] = useState({ show: false, session: null, isAll: false });
 
+    //  this code is for the when new item uplado or downlaod so that panel comes infront
+    const [zIndex, setZIndex] = useState(9998);
+
+    useEffect(() => {
+        const handleFocus = (e) => {
+            if (e.detail === "download") setZIndex(9999);
+            else setZIndex(9998);
+        };
+        window.addEventListener("panel-focus", handleFocus);
+        return () => window.removeEventListener("panel-focus", handleFocus);
+    }, []);
+
+    // Bring to front when a new session starts
+    useEffect(() => {
+        if (isPanelOpen) {
+            window.dispatchEvent(new CustomEvent("panel-focus", { detail: "download" }));
+        }
+    }, [isPanelOpen, sessions.length]);
+
+    const handleBringToFront = () => {
+        if (zIndex !== 9999) {
+            window.dispatchEvent(new CustomEvent("panel-focus", { detail: "download" }));
+        }
+    };
+
 
     //  this use efect will close the download panel auto  after 4 second after all dwonload is completed
     // useEffect(() => {
@@ -235,7 +260,7 @@ function DownloadPanel() {
     };
 
     return (
-        <div className="download-panel-box">
+        <div className="download-panel-box"  onMouseDown={handleBringToFront}>
             <div className="upload-file-box">
                 <div className="upload-file-sub-box">
 

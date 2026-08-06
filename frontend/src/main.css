@@ -1,6 +1,6 @@
 /* ============================================================
    ROOT VARIABLES
-   ============================================================ */
+============================================================ */
 
 :root {
     --primary: #FFC400;
@@ -41,7 +41,7 @@
 
 
 /* ============================================================
-FONTS — ROBOTO
+    FONTS — ROBOTO
 ============================================================ */
 
 @font-face {
@@ -174,7 +174,7 @@ FONTS — NUNITO
 }
 
 /* ============================================================
-FONT UTILITY CLASSES
+    FONT UTILITY CLASSES
 ============================================================ */
 /* Roboto */
 .fw-d-bold {
@@ -229,7 +229,7 @@ FONT UTILITY CLASSES
 }
 
 /* ============================================================
-RESET & BASE
+    RESET & BASE
 ============================================================ */
 * {
     margin: 0;
@@ -288,21 +288,24 @@ img {
 
 ::-webkit-scrollbar {
     width: 5px;
+    height: 5px;
 }
 
 ::-webkit-scrollbar-track {
-    background: #0000;
+    background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
     background: var(--dark-12);
-    opacity: 0.4;
     border-radius: 20px;
-    cursor: pointer !important;
 }
 
 ::-webkit-scrollbar-thumb:hover {
     background: var(--dark-20);
+}
+
+::-webkit-scrollbar-corner {
+    background: transparent;
 }
 
 .row>* {
@@ -311,7 +314,7 @@ img {
 }
 
 /* ============================================================
-COMMON UTILITIES
+    COMMON UTILITIES
 ============================================================ */
 .w-100 {
     width: 100%;
@@ -329,7 +332,6 @@ COMMON UTILITIES
     pointer-events: unset !important;
 }
 
-/* height: calc(100dvh - 215px); */
 .max-width-base {
     max-width: 1320px;
     padding: 0 10px;
@@ -412,7 +414,6 @@ COMMON UTILITIES
     pointer-events: none;
 }
 
-/* .no-data-found-single-box-wrapper { width: 100%; height: calc(100vh - 250px); } */
 .no-data-found-single-box-wrapper {
     width: 100%;
     height: 100%;
@@ -445,9 +446,8 @@ COMMON UTILITIES
     color: var(--dark-87);
 }
 
-
 /* ============================================================
-NAV TAB BUTTON
+    NAV TAB BUTTON
 ============================================================ */
 .nav-tab {
     height: auto;
@@ -491,7 +491,7 @@ NAV TAB BUTTON
 }
 
 /* ============================================================
-ANIMATIONS
+    ANIMATIONS
 ============================================================ */
 @keyframes shake {
     0% {
@@ -583,16 +583,6 @@ ANIMATIONS
     }
 }
 
-@keyframes floatBehind {
-    0% {
-        transform: translateY(120vh) rotate(0deg);
-    }
-
-    100% {
-        transform: translateY(-120vh) rotate(360deg);
-    }
-}
-
 @keyframes pdf-skeleton-shimmer {
     0% {
         background-position: 200% 0;
@@ -624,8 +614,13 @@ ANIMATIONS
 }
 
 /* ============================================================
-BUTTONS
+    BUTTONS
 ============================================================ */
+.disabled-action-btn {
+    opacity: 0.5 !important;
+    cursor: not-allowed !important;
+}
+
 .btn {
     border-radius: 8px;
     border: 1px solid var(--secondary);
@@ -783,7 +778,7 @@ BUTTONS
 }
 
 /* ============================================================
-DROPDOWN
+    DROPDOWN
 ============================================================ */
 .dropdown .no-border-btn::after,
 .drop-bottom .no-border-btn::after {
@@ -944,7 +939,7 @@ DROPDOWN
 }
 
 /* ============================================================
-RIGHT-CLICK DROPDOWN CONTEXT MENU 
+    RIGHT-CLICK DROPDOWN CONTEXT MENU 
 ============================================================ */
 .custom-context-menu {
     margin: 16px;
@@ -975,7 +970,7 @@ RIGHT-CLICK DROPDOWN CONTEXT MENU
 }
 
 /* ============================================================
-FORM CONTROLS
+    FORM CONTROLS
 ============================================================ */
 .custom-form-control {
     border-radius: 8px;
@@ -1124,8 +1119,17 @@ input[type="number"] {
     cursor: not-allowed !important;
 }
 
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 1000px var(--white) inset !important;
+    -webkit-text-fill-color: var(--dark-87) !important;
+    transition: background-color 5000s ease-in-out 0s;
+}
+
 /* ============================================================
-CHECKBOX — SQUARE
+    CHECKBOX — SQUARE
 ============================================================ */
 .form-check-group {
     position: relative;
@@ -1254,9 +1258,8 @@ CHECKBOX — SQUARE
     background-color: var(--green);
 }
 
-
 /* ============================================================
-CHECKBOX — ROUNDED (RADIO STYLE)
+    CHECKBOX — ROUNDED (RADIO STYLE)
 ============================================================ */
 .rounded-checkbox-wrapper {
     display: flex;
@@ -1271,8 +1274,6 @@ CHECKBOX — ROUNDED (RADIO STYLE)
     align-items: center;
     gap: 12px;
 }
-
-
 
 .custom-radio-card {
     display: flex;
@@ -1352,7 +1353,7 @@ CHECKBOX — ROUNDED (RADIO STYLE)
 }
 
 /* ============================================================
-PROFILE & USER
+    PROFILE & USER
 ============================================================ */
 .profile-edit {
     position: absolute;
@@ -1433,7 +1434,7 @@ span.user-avatar-initials-text {
 }
 
 /* ============================================================
-TOOLTIP
+    TOOLTIP
 ============================================================ */
 .tooltip {
     z-index: 9999 !important;
@@ -1459,7 +1460,7 @@ TOOLTIP
 }
 
 /* ============================================================
-MASTER HEADER
+    MASTER HEADER
 ============================================================ */
 .master-header {
     padding: 20px 0;
@@ -1573,6 +1574,10 @@ MASTER HEADER
     background-size: 360px;
 }
 
+.master-header .profile-dropdown .dropdown-menu span.user-avatar-initials-text {
+    font-size: 28px;
+}
+
 .master-header .dropdown-item {
     padding: 8px 12px;
     color: var(--dark-60);
@@ -1596,12 +1601,13 @@ MASTER HEADER
     margin-right: 16px;
 }
 
+
 .master-header .dropdown-item:hover img {
     opacity: 1;
 }
 
 .master-header .toolbar-box {
-    margin-left: -74px;
+    margin-left: -59px;
 }
 
 .master-header .toolbar {
@@ -1774,7 +1780,7 @@ MASTER HEADER
 }
 
 /* ============================================================
-PAGE HEADER (BREADCRUMB + VIEW TOGGLE)
+    PAGE HEADER (BREADCRUMB + VIEW TOGGLE)
 ============================================================ */
 .header {
     position: relative;
@@ -1871,6 +1877,8 @@ PAGE HEADER (BREADCRUMB + VIEW TOGGLE)
 .over-breadcrumb-links-folder .dropdown-menu.show {
     display: block;
     margin: 1px 0 0 -3px;
+    max-height: 300px;
+    overflow-y: auto;
 }
 
 .over-breadcrumb-links-folder .no-border-btn {
@@ -1899,8 +1907,22 @@ PAGE HEADER (BREADCRUMB + VIEW TOGGLE)
     background-color: var(--transparent);
 }
 
+.breadcrumb-mobile-row .breadcrumb li.breadcrumb-indicator:first-of-type {
+    background-image: url(./assets/images/icon/breadcrumb-indicator-icon.svg);
+    width: 24px;
+    background-size: contain;
+    height: 24px;
+    background-repeat: no-repeat;
+    margin-top: 5px;
+    opacity: 0.28;
+}
+
+.breadcrumb-mobile-row .breadcrumb li.breadcrumb-indicator:first-of-type img {
+    display: none;
+}
+
 /* ============================================================
-SORTING FILE WRAPPER
+    SORTING FILE WRAPPER
 ============================================================ */
 .sorting-file-container {
     display: flex;
@@ -1954,7 +1976,7 @@ SORTING FILE WRAPPER
 }
 
 /* ============================================================
-SIDEBAR NAV
+    SIDEBAR NAV
 ============================================================ */
 .sidebar2 {
     position: absolute;
@@ -2082,7 +2104,203 @@ SIDEBAR NAV
 }
 
 /* ============================================================
-LIST VIEW
+   MOBILE SIDEBAR (Slide-in Drawer)
+============================================================ */
+.mobile-sidebar-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100dvh;
+    background-color: rgba(190, 190, 199, 0.40);
+    z-index: 9999;
+    animation: fadeIn 0.3s ease forwards;
+}
+
+.mobile-sidebar {
+    position: fixed;
+    top: 0;
+    left: -75%;
+    width: 75%;
+    max-width: 270px;
+    height: 100dvh;
+    background-color: var(--white);
+    z-index: 9999;
+    border-radius: 0;
+    transition: left 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.mobile-sidebar.open {
+    left: 0;
+    box-shadow: 12px 0 32px rgba(0, 0, 0, 0.08);
+}
+
+.mobile-sidebar-sub {
+    padding: 16px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    height: 100%;
+    overflow-y: auto;
+}
+
+.mobile-sidebarItem {
+    color: var(--black);
+    display: flex;
+    align-items: center;
+    justify-content: start;
+    gap: 12px;
+    border-radius: 8px;
+    border: 0px;
+    padding: 8px 12px;
+    line-height: 19px;
+    font-size: 14px;
+    transition: all 0.25s ease;
+}
+
+.mobile-sidebarItem:hover {
+    background-color: var(--dark-06);
+    color: var(--black);
+}
+
+.mobile-sidebarItem img {
+    width: 22px;
+    transition: all 0.25s ease;
+}
+
+.mobile-sidebarItemActive {
+    background-color: var(--black);
+    color: var(--white);
+}
+
+.mobile-sidebarItemActive:hover {
+    background-color: var(--dark-80);
+    color: var(--white);
+}
+
+.mobile-sidebarItemActive img {
+    opacity: 1;
+    filter: brightness(0) invert(1);
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        backdrop-filter: blur(0px);
+    }
+
+    to {
+        opacity: 1;
+        backdrop-filter: blur(0px);
+    }
+}
+
+.sidebar-profile-dropdown-mobile {
+    position: relative;
+    padding: 16px 12px;
+}
+
+.sidebar-profile-dropdown-mobile .custom-profile-toggle {
+    padding: 8px 0 0 0;
+}
+
+.sidebar-profile-dropdown-mobile .custom-profile-toggle .custom-profile-arrow {
+    border-radius: 50%;
+    background-color: var(--dark-12);
+    padding: 4px;
+    height: 20px;
+    width: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.sidebar-profile-dropdown-mobile .custom-profile-menu-list {
+    width: 100%;
+    background: var(--white);
+    border-radius: 0;
+    border-top: 1px solid var(--dark-12);
+    padding: 8px 0;
+    color: var(--black);
+}
+
+.sidebar-profile-dropdown-mobile .custom-menu-item {
+    padding: 8px 12px;
+    color: var(--dark-60);
+    font-family: 'robotoregular', sans-serif;
+    max-width: unset;
+    border-radius: 8px;
+    line-height: 16px;
+    font-size: 15px;
+    cursor: pointer;
+}
+
+.sidebar-profile-dropdown-mobile .custom-menu-item img {
+    opacity: 0.5;
+    margin-right: 12px;
+}
+
+.sidebar-profile-dropdown-mobile .custom-menu-item:hover img {
+    opacity: 1;
+}
+
+.sidebar-profile-dropdown-mobile .custom-menu-item:hover {
+    background-color: var(--dark-06);
+    color: var(--black);
+}
+
+.sidebar-profile-dropdown-mobile .custom-menu-divider {
+    margin: 8px 0;
+    border-top: 1px dashed var(--secondary);
+}
+
+.mobile-sidebar-header {
+    padding: 20px;
+}
+
+.mobile-sidebar-header img {
+    height: 40px;
+    width: auto;
+}
+
+.mobile-sidebar-footer {
+    margin-top: auto;
+    padding: 16px 12px !important;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--white);
+}
+
+.mobile-sidebar-user-info {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.mobile-sidebar-user-name {
+    font-size: 13px;
+    font-family: 'robotomedium', sans-serif;
+    font-weight: normal;
+    color: var(--black);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.mobile-sidebar-user-email {
+    font-size: 12px;
+    color: var(--dark-60);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ============================================================
+    LIST VIEW
 ============================================================ */
 .table> :not(caption)>*>* {
     padding: unset;
@@ -2181,9 +2399,24 @@ LIST VIEW
     border-bottom: 1px solid var(--dark-12);
 }
 
-.list-view .table-cell:first-child {
-    max-width: 250px;
-    min-width: 0;
+.list-view .table-header .table-cell:nth-child(1) {
+    min-width: 300px;
+}
+
+.list-view .table-header .table-cell:nth-child(2) {
+    min-width: 250px;
+}
+
+.list-view .table-header .table-cell:nth-child(3) {
+    min-width: 250px;
+}
+
+.list-view .table-header .table-cell:nth-child(4) {
+    min-width: 150px;
+}
+
+.list-view .table-header .table-cell:nth-child(5) {
+    min-width: 150px;
 }
 
 .list-view .folder-name {
@@ -2253,7 +2486,7 @@ LIST VIEW
 }
 
 /* ============================================================
-GRID VIEW
+    GRID VIEW
 ============================================================ */
 .grid-view .table {
     display: flex;
@@ -2310,6 +2543,12 @@ GRID VIEW
     visibility: visible;
 }
 
+/* Show ALL checkbox frames on mobile/touch when at least 1 item is selected */
+.has-selection .form-check-group {
+    opacity: 1 !important;
+    visibility: visible !important;
+}
+
 .grid-view .table-row .table-cell:first-child {
     display: block;
 }
@@ -2330,7 +2569,7 @@ GRID VIEW
     justify-content: center;
     margin: 0 auto;
     max-width: 168px;
-    width: fit-content;
+    width: 100%;
     background-color: var(--transparent);
     padding: 8px;
     border-radius: 8px;
@@ -2383,7 +2622,7 @@ GRID VIEW
 }
 
 /* ============================================================
-COLOR PICKER
+    COLOR PICKER
 ============================================================ */
 .file-color-picker {
     position: absolute;
@@ -2426,7 +2665,7 @@ COLOR PICKER
 }
 
 /* ============================================================
-MODALS
+    MODALS
 ============================================================ */
 .modal-content {
     border: 0;
@@ -2580,9 +2819,8 @@ MODALS
     display: none !important;
 }
 
-/* .create-new-file-in-modal.show .create-new-file-in-modal-wrapper { transform: translateY(0); } */
 /* ============================================================
-RENAME MODAL
+    RENAME MODAL
 ============================================================ */
 #rename .modal-body,
 #delete .modal-body {
@@ -2594,14 +2832,14 @@ RENAME MODAL
 }
 
 /* ============================================================
-DELETE MODAL
+    DELETE MODAL
 ============================================================ */
 #delete .modal-body .message {
     color: var(--dark-87);
 }
 
 /* ============================================================
-SHARE MODAL
+    SHARE MODAL
 ============================================================ */
 #share .share-user-list {
     background-color: var(--transparent);
@@ -2614,11 +2852,26 @@ SHARE MODAL
 }
 
 #share .share-user-container {
-    max-height: 300px;
+    max-height: 150px;
     padding: 8px 0;
     width: calc(100% - -48px);
     margin: 0 0 0 -24px;
-    overflow: auto;
+    overflow-x: hidden; /* Hide horizontal scrollbar */
+    overflow-y: auto;   /* Allow vertical scrollbar */
+}
+
+/* 2. Allow the left user profile div to shrink and take remaining width */
+#share .share-user-list > div:first-child {
+    min-width: 0;
+    flex: 1;
+    margin-right: 12px; /* Space between user info and permission dropdown */
+}
+
+
+/* 3. Allow the inner name/email wrapper div to shrink */
+#share .share-user-list > div:first-child > div:last-child {
+    min-width: 0;
+    flex: 1;
 }
 
 #share .share-user-container:has(.custom-select2 .customSelect2__control--menu-is-open) {
@@ -2632,6 +2885,10 @@ SHARE MODAL
     font-weight: normal;
     margin-bottom: 6px;
     line-height: normal;
+
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 #share .share-user-list .user-email {
@@ -2639,6 +2896,10 @@ SHARE MODAL
     font-size: 13px;
     margin-bottom: 0;
     line-height: normal;
+
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 #share .share-user-list .owner-tag {
@@ -2701,6 +2962,12 @@ SHARE MODAL
     background-color: var(--dark-03);
 }
 
+/* Ensure the text container inside the flex item can shrink */
+#share .share-user-list-dd > div:last-child {
+    min-width: 0;
+    flex: 1;
+}
+
 #share .share-user-list-dd .user-name {
     color: var(--black);
     font-size: 14px;
@@ -2708,6 +2975,11 @@ SHARE MODAL
     font-weight: normal;
     margin-bottom: 6px;
     line-height: normal;
+
+    /* Truncate long names with ... */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 #share .share-user-list-dd .user-email {
@@ -2715,6 +2987,11 @@ SHARE MODAL
     font-size: 13px;
     margin-bottom: 0;
     line-height: normal;
+
+    /* Truncate long emails with ... */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 #share .share-user-list-dd .owner-tag {
@@ -2827,7 +3104,6 @@ SHARE MODAL
     line-height: 18px;
 }
 
-/* #share .access-single-wrapper span { display: block; } */
 #share .access-single-dropdown-box .magic-dropdown {
     margin-left: 12px;
 }
@@ -2882,9 +3158,8 @@ SHARE MODAL
     z-index: 10;
 }
 
-
 /* ============================================================
-MOVE / COPY MODAL
+    MOVE / COPY MODAL
 ============================================================ */
 .folder-single-list {
     margin: 0;
@@ -2976,7 +3251,7 @@ button.btn.move-btn {
 }
 
 /* ============================================================
-UPLOAD ISSUES MODAL
+    UPLOAD ISSUES MODAL
 ============================================================ */
 .upload-issues-modal .upload-issues-list-box .file-name {
     margin-bottom: 8px;
@@ -3009,7 +3284,7 @@ UPLOAD ISSUES MODAL
 }
 
 /* ============================================================
-UPLOAD OPTION MODAL
+    UPLOAD OPTION MODAL
 ============================================================ */
 .upload-option-modal .upload-option-file-name {
     display: -webkit-box;
@@ -3024,7 +3299,7 @@ UPLOAD OPTION MODAL
 }
 
 /* ============================================================
-FILE DETAILS MODAL
+    FILE DETAILS MODAL
 ============================================================ */
 .file-details-modal .file-details-modal-body {
     height: min(calc(100vh - 270px), 640px);
@@ -3050,6 +3325,9 @@ FILE DETAILS MODAL
     color: var(--black);
     line-height: 17px;
     margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    width: 100%;
 }
 
 .file-details-modal .file-details-shared-list {
@@ -3071,8 +3349,30 @@ FILE DETAILS MODAL
 }
 
 /* ============================================================
-ADD USER ANDMIN MODAL 
+    ADD USER ANDMIN MODAL 
 ============================================================ */
+.admin-page-wrapper .list-view .table-header .table-cell:nth-child(1) {
+    width: 300px;
+}
+
+.admin-page-wrapper .list-view .table-header .table-cell:nth-child(2) {
+    width: 280px;
+}
+
+.admin-page-wrapper .list-view .table-header .table-cell:nth-child(3) {
+    width: 100px;
+}
+
+.admin-page-wrapper .list-view .table-header .table-cell:nth-child(4) {
+    width: 250px;
+}
+
+.add-user-btn {
+    width: 36px !important;
+    height: 36px;
+    padding: 0 !important;
+}
+
 .add-user-admin-custom-scroll-body {
     padding: 0 24px !important;
     max-height: min(calc(100dvh - 200px), 600px);
@@ -3146,7 +3446,7 @@ ADD USER ANDMIN MODAL
 }
 
 /* ============================================================
-EDIT USER ADMIN DETAIL MODAL
+    EDIT USER ADMIN DETAIL MODAL
 ============================================================ */
 .edit-user-details-custom-scroll-body {
     padding: 0 24px !important;
@@ -3154,10 +3454,21 @@ EDIT USER ADMIN DETAIL MODAL
 }
 
 /* ============================================================
-VIEW ANDMIN MODAL  
+    VIEW ANDMIN MODAL  
 ============================================================ */
 .view-admin-modal .add-user-avatar-wrapper {
     justify-content: center;
+    flex-direction: column; /* Stacks avatar on top, name on bottom */
+    align-items: center;
+    text-align: center;
+    gap: 12px;
+}
+
+.view-admin-modal .add-user-avatar-wrapper .profile-single-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
 }
 
 .view-admin-modal .add-user-status-label {
@@ -3173,9 +3484,16 @@ VIEW ANDMIN MODAL
     background-color: var(--muted);
 }
 
+.view-admin-modal .add-user-avatar-wrapper .modal-title-sub {
+    padding: 12px 0 0 0;
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis; /* Truncates long name with ... */
+}
 
 /* ============================================================
-PROFILE CROP MODAL
+    PROFILE CROP MODAL
 ============================================================ */
 .crop-img-modal .modal-dialog-sm {
     max-width: 400px;
@@ -3278,9 +3596,8 @@ PROFILE CROP MODAL
     border-top: 1px solid var(--dark-10);
 }
 
-
 /* ============================================================
-NOTIFICATION MODAL
+    NOTIFICATION MODAL
 ============================================================ */
 .notification-wrapper {
     position: relative;
@@ -3345,8 +3662,10 @@ NOTIFICATION MODAL
 .notification-panel {
     position: absolute;
     top: calc(100% + 13px);
-    right: -96px;
-    width: 400px;
+    right: -100px;
+    transform: none;
+    max-width: 400px;
+    max-width: calc(100vw - 32px);
     border-radius: 8px;
     border: 1px solid var(--secondary);
     background: var(--white);
@@ -3363,7 +3682,7 @@ NOTIFICATION MODAL
     background: var(--white);
     position: absolute;
     top: -7px;
-    right: 100px;
+    right: 103px;
     transform: rotate(45deg);
     z-index: 1000;
     border-bottom: none;
@@ -3386,6 +3705,9 @@ NOTIFICATION MODAL
     color: var(--black);
     font-family: 'robotomedium', sans-serif;
     font-weight: normal;
+    display: flex;
+    align-items: center;
+    gap: 12px;
 }
 
 .notification-divider {
@@ -3460,15 +3782,12 @@ NOTIFICATION MODAL
     font-weight: normal;
 }
 
-
-
 .notification-panel-footer {
     display: flex;
     align-items: center;
     justify-content: space-between;
     font-size: 13px;
     overflow: hidden;
-
     position: relative;
     z-index: 1;
 }
@@ -3500,7 +3819,7 @@ NOTIFICATION MODAL
 
 /* ============================================================
    EDIT PROFILE PAGE — PREMIUM FULLSCREEN
-   ============================================================ */
+============================================================ */
 .edit-profile-header {
     font-size: 18px;
     color: var(--black);
@@ -3592,7 +3911,7 @@ NOTIFICATION MODAL
 }
 
 /* ============================================================
-NOTIFICATION PAGE
+    NOTIFICATION PAGE
 ============================================================ */
 .notification-page {
     width: 100%;
@@ -3723,7 +4042,7 @@ NOTIFICATION PAGE
 }
 
 /* ============================================================
-DRAG SELECTION BOX 
+    DRAG SELECTION BOX 
 ============================================================ */
 .drag-selection-box {
     position: fixed;
@@ -3735,7 +4054,7 @@ DRAG SELECTION BOX
 }
 
 /* ============================================================
-SELECT2 — BASE
+    SELECT2 — BASE
 ============================================================ */
 .custom-select2 .customSelect2__control {
     padding: 5px 12px;
@@ -3857,7 +4176,7 @@ SELECT2 — BASE
 }
 
 /* ============================================================
-SELECT2 — MULTI
+    SELECT2 — MULTI
 ============================================================ */
 .multi-select2 .customSelect2__control {
     padding: 5px 12px;
@@ -3922,11 +4241,23 @@ SELECT2 — MULTI
     margin: 0 8px 0 0;
 }
 
+/* 1. Ensure the contact box wrapper can shrink inside flexbox */
+.multi-select-profile-contact-box {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+}
+
 .multi-select-profile-user-name {
     font-size: 14px;
     font-family: 'robotoregular', sans-serif;
     color: var(--black) !important;
     line-height: 16px;
+
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: block;
 }
 
 .multi-select-profile-email {
@@ -3961,6 +4292,8 @@ SELECT2 — MULTI
     background-color: var(--dark-08);
     padding: 3px 8px;
     border-radius: 5px;
+    max-width: 100%; /* Keeps pill within input boundaries */
+    overflow: hidden;   
 }
 
 .multi-select-profile-single-box.add-tag-box .user-add-icon {
@@ -3971,12 +4304,16 @@ SELECT2 — MULTI
 .multi-select-profile-single-box.add-tag-box .multi-select-profile-contact-box {
     display: flex;
     align-items: center;
+     min-width: 0;
+    flex: 1;
+    overflow: hidden;
 }
 
 .customSelect2__multi-value:has(.multi-select-profile-single-box.add-tag-box) {
     border: 1px solid var(--dark-20);
     border-radius: 6px;
-    width: unset;
+    width: 100%;
+    max-width: 100%;
 }
 
 .customSelect2__multi-value:has(.multi-select-profile-single-box.add-tag-box):hover {
@@ -4004,7 +4341,7 @@ SELECT2 — MULTI
 }
 
 /* ============================================================
-FLATPICKR
+    FLATPICKR
 ============================================================ */
 .flatpickr-single-box {
     width: 100%;
@@ -4301,7 +4638,7 @@ FLATPICKR
 }
 
 /* ============================================================
-SIMPLEBAR
+    SIMPLEBAR
 ============================================================ */
 .simplebar-track {
     opacity: 1 !important;
@@ -4367,10 +4704,10 @@ SIMPLEBAR
 }
 
 /* ============================================================
-DRAG AND DROP
+    DRAG AND DROP
 ============================================================ */
 .drag-and-drop-single-box {
-    position: absolute;
+    position: fixed;
     left: 0;
     top: 0;
     width: 100%;
@@ -4384,7 +4721,7 @@ DRAG AND DROP
 }
 
 /* ============================================================
-LOGIN
+    LOGIN
 ============================================================ */
 .login-wrapper-box {
     display: flex;
@@ -4432,6 +4769,7 @@ LOGIN
     left: -1px;
     height: 50px;
     background-size: 360px;
+    pointer-events: none;
 }
 
 .login-header {
@@ -4496,6 +4834,61 @@ LOGIN
 
 .login-wrapper-box .form-control-single-icon:has(.form-right-icon) .custom-form-control {
     padding: 7px 36px;
+}
+
+.login-form-anim-wrapper {
+    transition: opacity 0.22s ease, transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+    transform-style: preserve-3d;
+    perspective: 800px;
+    opacity: 1;
+    transform: scale(1) rotateX(0deg);
+}
+
+.login-form-anim-wrapper.scale-out-forward {
+    opacity: 0;
+    transform: scale(0.92) rotateX(8deg);
+}
+
+.login-form-anim-wrapper.scale-out-back {
+    opacity: 0;
+    transform: scale(1.05) rotateX(-6deg);
+}
+
+.login-form-anim-wrapper.scale-in {
+    opacity: 1;
+    transform: scale(1) rotateX(0deg);
+}
+
+.reset-icon-animate {
+    animation: lockPopIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes lockPopIn {
+    0% {
+        opacity: 0;
+        transform: scale(0.5) translateY(-10px);
+    }
+
+    60% {
+        opacity: 1;
+        transform: scale(1.1) translateY(0);
+    }
+
+    100% {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+.login-wrapper-box .clear-btn {
+    font-size: 13px;
+}
+
+.login-wrapper-box .forgot-back-btn-sec {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 24px;
 }
 
 /* Login animation */
@@ -4606,6 +4999,162 @@ LOGIN
 .an-18 {
     left: 96%;
     animation-delay: -12s;
+}
+
+@keyframes floatBehind {
+    0% {
+        transform: translateY(120vh) rotate(0deg);
+    }
+
+    100% {
+        transform: translateY(-120vh) rotate(360deg);
+    }
+}
+
+/* Login animation - base */
+.login-animation-wrapper {
+    position: absolute;
+    top: 0;
+    overflow: hidden;
+    width: 100%;
+    height: 100%;
+}
+
+.login-bg-icon {
+    opacity: 0.4;
+    z-index: 2;
+    position: absolute !important;
+    color: rgba(255, 255, 255, 0.35);
+    font-size: 3.5rem;
+    pointer-events: none;
+    animation: floatBehind 25s linear infinite;
+    transition: opacity 0.6s ease, filter 0.6s ease, transform 0.6s ease;
+}
+
+/* 18 floating icons */
+.an-1 {
+    left: 2%;
+    animation-delay: 0s;
+}
+
+.an-2 {
+    left: 7%;
+    animation-delay: -11s;
+}
+
+.an-3 {
+    left: 12%;
+    animation-delay: -4s;
+}
+
+.an-4 {
+    left: 17%;
+    animation-delay: -15s;
+}
+
+.an-5 {
+    left: 22%;
+    animation-delay: -8s;
+}
+
+.an-6 {
+    left: 27%;
+    animation-delay: -18s;
+}
+
+.an-7 {
+    left: 33%;
+    animation-delay: -2s;
+}
+
+.an-8 {
+    left: 38%;
+    animation-delay: -13s;
+}
+
+.an-9 {
+    left: 44%;
+    animation-delay: -6s;
+}
+
+.an-10 {
+    left: 49%;
+    animation-delay: -16s;
+}
+
+.an-11 {
+    left: 55%;
+    animation-delay: -1s;
+}
+
+.an-12 {
+    left: 60%;
+    animation-delay: -10s;
+}
+
+.an-13 {
+    left: 66%;
+    animation-delay: -4s;
+}
+
+.an-14 {
+    left: 72%;
+    animation-delay: -14s;
+}
+
+.an-15 {
+    left: 78%;
+    animation-delay: -7s;
+}
+
+.an-16 {
+    left: 84%;
+    animation-delay: -17s;
+}
+
+.an-17 {
+    left: 90%;
+    animation-delay: -3s;
+}
+
+.an-18 {
+    left: 96%;
+    animation-delay: -12s;
+}
+
+@keyframes floatBehind {
+    0% {
+        transform: translateY(120vh) rotate(0deg);
+    }
+
+    100% {
+        transform: translateY(-120vh) rotate(360deg);
+    }
+}
+
+.login-animation-wrapper.forgot-mode::before {
+    content: "";
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: transparent;
+    transform: translate(-50%, -50%);
+    animation: pulseRing 1s ease-out forwards;
+    z-index: 1;
+    pointer-events: none;
+}
+
+@keyframes pulseRing {
+    0% {
+        box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.45);
+    }
+
+    100% {
+        box-shadow: 0 0 0 1500px rgba(255, 255, 255, 0);
+    }
 }
 
 /* ============================================================
@@ -5057,6 +5606,8 @@ SEARCH BAR
     color: #5f6368;
     font-size: 12px;
     line-height: 14px;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
 }
 
@@ -5133,6 +5684,7 @@ SEARCH BAR
 .top-search-single-box {
     max-width: 640px;
     width: 100%;
+    margin: 0 24px;
 }
 
 .top-search-single-box .btn-only-icon {
@@ -5255,6 +5807,34 @@ SEARCH PAGE — FILTER CHIPS
     background: transparent;
 }
 
+.search-location-breadcrumbs .breadcrumb a.highlight {
+    outline: 0 !important;
+    box-shadow: none !important;
+    background-color: transparent !important;
+}
+
+.search-location-breadcrumbs .breadcrumb a.highlight::after {
+    display: none !important;
+}
+
+.search-location-breadcrumbs .over-breadcrumb-links-folder {
+    background-color: transparent !important;
+}
+
+.search-location-breadcrumbs .breadcrumb {
+    padding-left: 0 !important;
+    margin-left: 0 !important;
+}
+
+.search-location-breadcrumbs .breadcrumb li:first-child a {
+    padding-left: 0 !important;
+}
+
+.search-location-breadcrumbs {
+    margin-top: 0 !important;
+    margin-bottom: 24px !important;
+}
+
 /* ============================================================
 TRASH
 ============================================================ */
@@ -5357,7 +5937,6 @@ TRASH
 /* .admin-page-wrapper .master-header .toolbar .toolbar-container .tools {
     padding: 0 !important;
 } */
-
 .admin-page-wrapper .master-header .toolbar::before {
     min-width: 200px;
 }
@@ -5470,7 +6049,6 @@ TRASH
     border: 1px solid var(--secondary);
     color: var(--black);
     box-shadow: 0px 1px 3px 0px #00000014;
-
 }
 
 /* .pagination-goto .custom-form-control:focus { outline: 0; } */
@@ -5479,7 +6057,7 @@ TRASH
 }
 
 /* ============================================================
-ACTIVE BADGE
+    ACTIVE BADGE
 ============================================================ */
 .status-dot {
     display: inline-flex;
@@ -5548,7 +6126,7 @@ ACTIVE BADGE
 }
 
 /* ============================================================
-FOLDER VIEWER PAGE
+    FOLDER VIEWER PAGE
 ============================================================ */
 .folder-viewer-page .max-width-base {
     height: calc(-154px + 100dvh);
@@ -5559,7 +6137,7 @@ FOLDER VIEWER PAGE
 }
 
 /* ============================================================
-LOADERS
+    LOADERS
 ============================================================ */
 .loader-wrapper-box {
     display: flex;
@@ -5648,7 +6226,7 @@ LOADERS
 }
 
 /* ============================================================
-FILE PREVIEW — COMMON
+    FILE PREVIEW — COMMON
 ============================================================ */
 .file-preview-backdrop {
     position: fixed;
@@ -5657,7 +6235,7 @@ FILE PREVIEW — COMMON
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 9999;
+    z-index: 1050;
 }
 
 .file-preview-modal {
@@ -5680,14 +6258,23 @@ FILE PREVIEW — COMMON
     z-index: 111;
     background: rgb(255 255 255 / 73%);
     backdrop-filter: blur(4px);
+    min-width: 0;
+}
+
+.file-preview-header .d-flex.align-items-center.gap-2 {
+    min-width: 0;
+    flex: 1 1 auto;
 }
 
 .file-preview-header h3 {
-    margin: 0 0 0 16px;
     font-size: 16px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    display: block;
+    min-width: 0;
+    max-width: 100%;
+    flex: 1 1 auto;
 }
 
 .file-preview-actions {
@@ -5743,8 +6330,7 @@ FILE PREVIEW — COMMON
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 16px;
-    padding: 3rem 2rem;
+    padding: 24px;
     text-align: center;
     height: 100%;
 }
@@ -5767,6 +6353,7 @@ FILE PREVIEW — COMMON
     font-family: 'robotomedium', sans-serif;
     font-weight: normal;
     font-size: 16px;
+    margin-bottom: 8px !important;
 }
 
 .preview-error {
@@ -5778,7 +6365,7 @@ FILE PREVIEW — COMMON
 }
 
 /* ============================================================
-FILE PREVIEW — IMAGE
+    FILE PREVIEW — IMAGE
 ============================================================ */
 .image-preview-root {
     position: relative;
@@ -5881,7 +6468,7 @@ FILE PREVIEW — IMAGE
 }
 
 /* ============================================================
-FILE PREVIEW — VIDEO
+    FILE PREVIEW — VIDEO
 ============================================================ */
 .video-preview-root-wrapper {
     display: flex;
@@ -5920,7 +6507,7 @@ FILE PREVIEW — VIDEO
 }
 
 /* ============================================================
-FILE PREVIEW — AUDIO
+    FILE PREVIEW — AUDIO
 ============================================================ */
 .audio-preview-root {
     width: 500px;
@@ -6101,7 +6688,7 @@ FILE PREVIEW — AUDIO
 }
 
 /* ============================================================
-FILE PREVIEW — TEXT VIEWER
+    FILE PREVIEW — TEXT VIEWER
 ============================================================ */
 .txt-viewer-wrap {
     display: flex;
@@ -6135,7 +6722,7 @@ FILE PREVIEW — TEXT VIEWER
 }
 
 /* ============================================================
-FILE PREVIEW — EXCEL
+    FILE PREVIEW — EXCEL
 ============================================================ */
 .excel-preview {
     display: flex;
@@ -6324,7 +6911,7 @@ FILE PREVIEW — EXCEL
 }
 
 /* ============================================================
-FILE PREVIEW — ZIP
+    FILE PREVIEW — ZIP
 ============================================================ */
 .zip-preview-wrapper {
     height: calc(100% - 79px);
@@ -6420,7 +7007,7 @@ FILE PREVIEW — ZIP
 }
 
 /* ============================================================
-FILE PREVIEW — PDF
+    FILE PREVIEW — PDF
 ============================================================ */
 .pdf-preview {
     display: flex;
@@ -6508,6 +7095,7 @@ FILE PREVIEW — PDF
     position: relative;
     overflow: hidden;
     min-width: 0;
+    z-index: 0;
 }
 
 .pdf-preview__page-wrap {
@@ -6676,7 +7264,7 @@ span.pdf-page-of {
 }
 
 /* ============================================================
-PDF.JS TEXT LAYER
+    PDF.JS TEXT LAYER
 ============================================================ */
 .textLayer {
     position: absolute;
@@ -6764,7 +7352,7 @@ PDF.JS TEXT LAYER
 }
 
 /* ============================================================
-DOC FILE PREVIEW
+    DOC FILE PREVIEW
 ============================================================ */
 .doc-preview {
     display: flex;
@@ -6864,9 +7452,127 @@ DOC FILE PREVIEW
 }
 
 /* ============================================================
-RESPONSIVE — SIDEBAR TOGGLE
+    TOOL BAR COLOR PICK MOBILE 
 ============================================================ */
+.mobile-more-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(190, 190, 199, 0.40);
+    z-index: 9998;
+}
+
+.mobile-more-sheet {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    background: var(--white);
+    border-radius: 16px 16px 0 0;
+    z-index: 9999;
+    padding: 16px 12px;
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
+    animation: slideUpModal 0.25s ease-out;
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+.mobile-more-sheet .dropdown-item {
+    padding: 8px 12px;
+    cursor: pointer;
+}
+
+.mobile-more-sheet .dropdown-item:not(.disabled-action-btn) img,
+.toolbar-mobile-dropdown-menu .dropdown-item:not(.disabled-action-btn) img {
+    opacity: 1 !important;
+}
+
+.mobile-more-sheet .dropdown-item:not(.disabled-action-btn) span,
+.toolbar-mobile-dropdown-menu .dropdown-item:not(.disabled-action-btn) span {
+    color: var(--dark-87) !important;
+}
+
+.mobile-color-panel {
+    padding: 16px;
+    border-top: 1px dashed var(--dark-12);
+    border-bottom: 1px solid var(--dark-12);
+    margin-top: 16px;
+}
+
+.mobile-color-panel .color-list {
+    gap: 12px;
+}
+
+@keyframes slideUpModal {
+    from {
+        transform: translateY(100%);
+    }
+
+    to {
+        transform: translateY(0);
+    }
+}
+
+.toolbar-mobile-dropdown .toolbar-mobile-dropdown-menu {
+    transform: translateY(36px) !important;
+}
+
+.mobile-color-panel .color-list {
+    gap: 12px;
+}
+
+.mobile-color-panel .color-list .color {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: inline-block;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.mobile-color-panel .color-list .color.red {
+    background-color: #f44336;
+}
+
+.mobile-color-panel .color-list .color.orange {
+    background-color: #ff9800;
+}
+
+.mobile-color-panel .color-list .color.yellow {
+    background-color: #ffeb3b;
+}
+
+.mobile-color-panel .color-list .color.green {
+    background-color: #4caf50;
+}
+
+.mobile-color-panel .color-list .color.green-dark {
+    background-color: #2e7d32;
+}
+
+.mobile-color-panel .color-list .color.blue {
+    background-color: #2196f3;
+}
+
+.mobile-color-panel .color-list .color.violet {
+    background-color: #9c27b0;
+}
+
+.mobile-color-panel .color-list .color.pink {
+    background-color: #e91e63;
+}
+
+.mobile-color-panel .color-list .color.gray {
+    background-color: #9e9e9e;
+}
+
+
+
 @media (max-width: 1620px) {
+
+    /* ============================================================
+    SIDEBAR 
+============================================================ */
     .sidebar2 {
         left: -100%;
         transition: all 0.3s ease-in-out;
@@ -6881,24 +7587,532 @@ RESPONSIVE — SIDEBAR TOGGLE
     }
 }
 
+@media (max-width: 768px) {
+    .tooltip {
+        display: none !important;
+    }
 
+    /* ============================================================
+    COMMON MODAL 
+============================================================ */
+    .modal {
+        padding: 0 !important;
+        overflow: hidden;
+    }
 
+    .modal.fade .modal-dialog {
+        transition: unset;
+    }
 
+    .modal .modal-dialog {
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 0;
+        align-items: flex-end !important;
+        min-height: 100dvh !important;
+        display: flex !important;
+    }
 
+    .modal .modal-content {
+        border-radius: 16px 16px 0 0;
+        position: relative;
+        will-change: transform;
+        animation: slideUpSheet 0.8s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+        backface-visibility: hidden;
+        transform: translateZ(0);
+        border: 0;
+    }
 
+    @keyframes slideUpSheet {
+        from {
+            transform: translate3d(0, 100%, 0);
+        }
 
+        to {
+            transform: translate3d(0, 0, 0);
+        }
+    }
 
+    .modal-backdrop.fade {
+        transition: opacity 0.4s ease;
+    }
 
+    /* ============================================================
+    HEADER
+============================================================ */
+    .toolbar-mobile-dropdown .toolbar-mobile-dropdown-menu {
+        z-index: 9999;
+        margin-top: 10px;
+        overflow: unset;
+    }
 
+    .master-header .toolbar-mobile-dropdown .toolbar-mobile-dropdown-menu .dropdown-item {
+        overflow: unset;
+    }
 
-/* ============================================================
-   DISABLE AUTOFILL GRAY BACKGROUND
-   ============================================================ */
-input:-webkit-autofill,
-input:-webkit-autofill:hover,
-input:-webkit-autofill:focus,
-input:-webkit-autofill:active {
-    -webkit-box-shadow: 0 0 0 1000px var(--white) inset !important;
-    -webkit-text-fill-color: var(--dark-87) !important;
-    transition: background-color 5000s ease-in-out 0s;
+    .master-header .dropdown-item span {
+        color: var(--dark-60);
+    }
+
+    .master-header .profile-dropdown {
+        display: none;
+    }
+
+    .master-header .toolbar .toolbar-container .tools .colors-dd {
+        padding: 16px;
+        margin-right: 11px;
+        margin-top: -9px;
+    }
+
+    /* ============================================================
+    HEADER TOOLBAR
+============================================================ */
+    .master-header .toolbar-box {
+        margin: unset;
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 100%;
+        top: 0;
+        padding: 20px 10px;
+        background: var(--white);
+        z-index: 1;
+    }
+
+    .master-header .toolbar::before {
+        min-width: 300px;
+        width: unset;
+    }
+
+    .master-header .toolbar::after {
+        min-width: 300px;
+        width: unset;
+    }
+
+    /* ============================================================
+    SEARCH BAR
+============================================================ */
+    .all-page-search-bar .top-search-single-box.toolbar {
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100dvh;
+        z-index: 999;
+        background-color: var(--white);
+        max-width: unset;
+        width: 100%;
+        margin: 0;
+    }
+
+    .all-page-search-bar .search-area-box {
+        border-bottom: 1px solid var(--secondary);
+    }
+
+    .all-page-search-bar .search-container {
+        top: 0;
+        left: 0;
+        border: 0;
+        box-shadow: none;
+        border-radius: 0;
+        height: 100dvh;
+    }
+
+    .all-page-search-bar .search-container.show {
+        box-shadow: none;
+    }
+
+    .all-page-search-bar .master-header .top-search-single-box .toolbar::after {
+        content: none;
+    }
+
+    .all-page-search-bar .master-header .top-search-single-box .toolbar::before {
+        content: none;
+    }
+
+    .all-page-search-bar .search-suggestion-box {
+        border-top: 0;
+        height: 100dvh;
+        max-height: unset;
+    }
+
+    .all-page-search-bar .search-suggestion-footer {
+        position: absolute;
+        bottom: 0;
+        width: 100%;
+        border-top: 1px solid var(--secondary);
+    }
+
+    .all-page-search-bar .search-See-all-btn.search-advance-btn span {
+        background-color: var(--transparent);
+        padding: 0;
+    }
+
+    .all-page-search-bar .search-dropdown {
+        border-top: 0;
+        max-height: unset;
+        height: 100dvh;
+    }
+
+    .all-page-search-bar .search-dropdown-body {
+        flex: unset;
+        max-height: unset;
+        height: calc(100dvh - 113px);
+    }
+
+    /* ============================================================
+   ADMIN  SEARCH BAR
+============================================================ */
+    .admin-page-wrapper .top-search-single-box {
+        width: 100%;
+        max-width: unset;
+        background: var(--white);
+        left: 0;
+        position: absolute;
+        top: 0;
+        padding: 20px;
+        z-index: 1;
+        margin: 0;
+    }
+
+    .search-container {
+        position: relative;
+        top: 0;
+    }
+
+    .admin-page-wrapper .master-header .toolbar::before {
+        width: 100%;
+        max-width: unset;
+    }
+
+    /* ============================================================
+    UPLOAD / DOWNLOAD PANEL
+============================================================ */
+    .download-panel-box {
+        max-width: unset;
+        left: 0;
+        width: calc(100% - 20px);
+        bottom: 0;
+        margin: 10px;
+    }
+
+    .upload-file-single-box {
+        max-width: unset;
+        left: 0;
+        width: calc(100% - 20px);
+        bottom: 0;
+        margin: 10px;
+    }
+
+    /* ============================================================
+    SHARE MODAL
+============================================================ */
+    #share .create-link-section-mobile .link-expirtation-day>.position-relative {
+        width: 100%;
+        position: unset !important;
+    }
+
+    #share .create-link-section-mobile .link-expirtation-day {
+        margin-bottom: 10px;
+        position: relative;
+    }
+
+    #share .create-link-section-mobile .link-expirtation-day .position-relative>.pwd-requirements-box {
+        width: 100%;
+    }
+
+    #share .link-expirtation-day .form-control-single-icon .pwd-requirements-box {
+        width: 100%;
+    }
+
+    #share .link-expirtation-day .form-control-single-icon {
+        position: relative;
+    }
+
+    #share .access-single-dropdown-box .magic-dropdown__menu {
+        right: -27px !important;
+    }
+
+    #share .modal .modal-content {
+        height: calc(100dvh - 333px);
+    }
+
+    /* ============================================================
+    NOTIFICATION MODAL
+============================================================ */
+    .notification-panel {
+        left: 0;
+        position: fixed;
+        max-width: unset !important;
+        width: 100%;
+        height: 100dvh;
+        top: 0;
+        border-radius: 0;
+        border: 0;
+    }
+
+    .notification-panel-custom-scroll-wrapper {
+        width: 100%;
+    }
+
+    .notification-panel-custom-scroll {
+        width: 100%;
+    }
+
+    .notification-panel::before {
+        content: none;
+    }
+
+    .notification-panel-footer {
+        position: absolute;
+        bottom: 0;
+        width: 100%;
+        background-color: var(--white);
+    }
+
+    .notification-panel-custom-scroll {
+        height: calc(100dvh - 72px);
+        max-height: unset;
+    }
+
+    /* ============================================================
+    FILE PREVIEW — COMMON
+============================================================ */
+    .file-preview-header {
+        padding: 0 6px;
+    }
+
+    .image-preview-bar {
+        right: 16px;
+        bottom: 20px;
+    }
+
+    .new-preview-pagination-pdf-single-box {
+        left: 16px;
+        bottom: 20px;
+    }
+
+    /* ============================================================
+    DRAG
+============================================================ */
+    .drag-and-drop-img img {
+        width: 200px;
+    }
+
+    /* ============================================================
+    PROFILE
+============================================================ */
+    .toolbar-mobile-dropdown .toolbar-mobile-dropdown-menu {
+        position: fixed !important;
+        bottom: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        top: auto !important;
+        transform: none !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        border-radius: 16px 16px 0 0 !important;
+        margin: 0 !important;
+        z-index: 10000;
+        box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
+    }
+
+    /* ============================================================
+    DOC PREVIEW
+============================================================ */
+    .doc-preview {
+        padding-top: 44px;
+    }
+
+    .doc-preview__content {
+        padding-bottom: 44px;
+        padding-left: 4px;
+        padding-right: 4px;
+        overflow-x: hidden;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .image-preview-bar {
+        padding: 6px 10px;
+        gap: 8px;
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+
+    .image-preview-btn {
+        width: 32px;
+        height: 32px;
+        padding: 4px;
+    }
+
+    .preview-toobig {
+        padding: 16px;
+        text-align: center;
+    }
+
+    .preview-toobig-title {
+        font-size: 15px;
+    }
+
+    .txt-toobig-icon img {
+        width: 28px !important;
+    }
+
+    /* ============================================================
+    ZIP PREVIEW
+============================================================ */
+    .zip-preview-wrapper {
+        border: 0;
+        border-radius: 0;
+        background-color: var(--transparent);
+        box-shadow: none;
+    }
+
+    .zip-preview-list {
+        padding: 0 16px;
+    }
+
+    /* ============================================================
+   EDIT PROFILE PAGE — PREMIUM FULLSCREEN
+============================================================ */
+    .edit-profile-content {
+        display: block;
+    }
+
+    .edit-profile-content .nav-tab-list {
+        flex-direction: unset;
+        margin-bottom: 48px;
+    }
+
+    .edit-profile-content .nav-tab-list .nav-tab-item {
+        min-width: unset;
+        transition: all 0.4s ease;
+    }
+
+    .edit-profile-content .nav-tab-list {
+        gap: 16px;
+    }
+
+    .edit-profile-form-container {
+        height: calc(100% - 100px);
+        padding-left: 0;
+        padding: 0 10px;
+        width: calc(100% - -20px);
+        margin-left: -10px;
+    }
+
+    .edit-profile-avatar-section .user-avatar,
+    .edit-profile-avatar-section .user-avatar-initials {
+        width: 90px;
+        height: 90px;
+    }
+
+    .edit-profile-avatar-section .user-avatar-initials .user-avatar-initials-text {
+        font-size: 26px;
+    }
+}
+
+@media (max-width: 574px) {
+
+    /* ============================================================
+   ADMIN  SEARCH BAR
+============================================================ */
+    .pagination-footer {
+        padding: 16px 0 53px 0;
+    }
+
+    .admin-page-wrapper .grid-single-box {
+        flex: unset;
+        height: calc(100dvh - 295px);
+    }
+
+    .pagination-pages {
+        position: unset;
+        top: unset;
+        left: unset;
+        transform: unset;
+    }
+
+    .pagination-entries-text {
+        position: absolute;
+        bottom: 16px;
+        left: 50%;
+        transform: translateX(-50%);
+    }
+}
+
+@media (max-width: 424px) {
+    .edit-profile-avatar-section {
+        gap: 26px;
+    }
+
+    .edit-profile-avatar-actions .btn-lg {
+        padding: 8px 24px !important;
+    }
+
+    .add-user-avatar-wrapper {
+        gap: 26px;
+    }
+
+    .add-user-avatar-wrapper .btn-lg {
+        padding: 8px 24px !important;
+    }
+
+    /* ============================================================
+PDF PREVIEW — RESPONSIVE
+============================================================ */
+    .pdf-preview {
+        padding-top: 50px;
+        flex-direction: column;
+    }
+
+    .pdf-preview__sidebar {
+        position: fixed;
+        top: 50px;
+        left: 0;
+        bottom: 0;
+        width: 160px;
+        min-width: 160px;
+        background-color: var(--white);
+        box-shadow: 2px 0 8px rgba(0, 0, 0, 0.15);
+        z-index: 20;
+    }
+
+    .pdf-preview__thumb-box {
+        width: 90px;
+    }
+
+    .pdf-preview__main {
+        width: 100%;
+    }
+
+    .pdf-preview__page-wrap {
+        padding: 10px 0;
+        min-height: unset;
+    }
+
+    .new-preview-pagination-pdf-page {
+        font-size: 11px;
+    }
+
+    .new-preview-pagination input {
+        max-width: 44px;
+        padding: 4px 22px 4px 4px !important;
+        font-size: 11px;
+    }
+
+    .image-preview-bar {
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 6px;
+    }
+
+    .new-preview-zoom-controls-sub {
+        gap: 4px;
+    }
+}
+
+@media (max-width: 320px) {
+    body {
+        min-width: 320px;
+    }
 }

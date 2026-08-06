@@ -2,15 +2,25 @@ import bcrypt from "bcryptjs"
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
+import { V3 } from "paseto"
+
 
 //  models - schema
 import User from "../models/userModel.js";
+import sessionModel from "#models/sessionModel";
 
 //  utils - helper
 import { logger } from "#utils/logger";
 import { generateToken } from "../utils/generateLoginToken.js";
 import { processProfileImage } from "#utils/imageProcessor";
 import { sendEmail } from "#utils/sendEmail";
+
+
+
+//  helper function here 
+const getKey = () => {
+    return crypto.createSecretKey(Buffer.from(process.env.PASETO_SECRET_KEY, "hex"))
+}
 
 //  User Register Controller
 export const registerUser = async (req, res) => {
@@ -87,7 +97,23 @@ export const userLogin = async (req, res) => {
         if (!user) {
             return res.status(400).json({
                 success: false,
-                message: "Email not found"
+                message: "Invalid Credential"
+            });
+        }
+
+        // check if user is deleted
+        if (user.is_deleted) {
+            return res.status(403).json({
+                success: false,
+                message: "Your account has been deleted"
+            });
+        }
+
+        // check if user is active
+        if (!user.is_active) {
+            return res.status(403).json({
+                success: false,
+                message: "Account inactivate. Please contact admin"
             });
         }
 
@@ -100,21 +126,54 @@ export const userLogin = async (req, res) => {
             });
         }
 
-        //  generate jwt token here 
-        const token = await generateToken(user._id, remember);
-        const maxAge = remember
+        // ------------------------------------------
+        // Access Token - always short lived (5 min)
+        // ------------------------------------------
+        const accessToken = await generateToken(user._id, 5 * 60 * 1000)
+
+
+        // ------------------------------------------
+        // Refresh Token - duration depends on "remember me"
+        // ------------------------------------------
+        const refreshTokenExpiry = remember
             ? 7 * 24 * 60 * 60 * 1000   // 7 days
-            : 24 * 60 * 60 * 1000;      // 1 day
+            : 24 * 60 * 60 * 1000;
+
+
+        const refreshToken = await generateToken(user._id, refreshTokenExpiry, true)
+
+
+        // ------------------------------------------
+        // Save session in DB so refresh token is trackable/revocable
+        // ------------------------------------------
+        await sessionModel.create({
+            user_id: user._id,
+            refresh_token: refreshToken,
+            device_label: req.headers["user-agent"] || null,
+            last_active_at: new Date()
+        })
+
+
 
         const isProduction = process.env.NODE_ENV === "production";
 
-        //  now saving this toke in cookie
-        res.cookie("auth_token", token, {
+        // access token cookie
+        res.cookie("auth_token", accessToken, {
             httpOnly: true,
-            secure: isProduction,      
-            sameSite: isProduction ? "none" : "lax",    
-            maxAge
-        });
+            secure: isProduction,
+            sameSite: isProduction ? "none" : "lax",
+            maxAge: 5 * 60 * 1000    // 5 min
+        })
+
+
+        //  refresh token cookie
+        res.cookie("refresh_token", refreshToken, {
+            httpOnly: true,
+            secure: isProduction,
+            sameSite: isProduction ? "none" : "lax",
+            maxAge: refreshTokenExpiry    // 1 day or 7 days
+        })
+
 
         res.status(200).json({
             success: true,
@@ -123,7 +182,8 @@ export const userLogin = async (req, res) => {
                 name: user.name,
                 email: user.email,
                 profilePic: user.profilePic
-            }
+            },
+            token: accessToken
         });
 
     } catch (error) {
@@ -139,8 +199,14 @@ export const userLogin = async (req, res) => {
 export const userLogout = async (req, res) => {
     try {
         const isProduction = process.env.NODE_ENV === "production";
+        const refreshToken = req.cookies.refresh_token
 
-        // clear cookies
+        //  delete the session from DB so refresh token can not be used agian here
+        if (refreshToken) {
+            await sessionModel.deleteOne({ refresh_token: refreshToken })
+        }
+
+
         res.clearCookie("auth_token", {
             httpOnly: true,
             secure: isProduction,
@@ -148,12 +214,92 @@ export const userLogout = async (req, res) => {
             maxAge: 0
         })
 
+        res.clearCookie("refreshToken", {
+            httpOnly: true,
+            secure: isProduction,
+            sameSite: isProduction ? "none" : "lax",
+            maxAge: 0
+        })
+
         res.status(200).json({ success: true, message: "Logged out success" })
+
+
     } catch (error) {
         logger.error(error);
         res.status(500).json({ success: false, message: error.message })
     }
 }
+
+
+
+
+//  refresh token for the new acces token generate here
+export const refreshAccessToken = async (req, res) => {
+    try {
+        const token = req.cookies.refresh_token
+        if (!token) {
+            return res.status(401).json({ success: false, message: "No refresh token, please login" });
+        }
+
+        //  first find thsi seeion db record if exist or not with this refresh token here
+        const session = await sessionModel.findOne({ refresh_token: token })
+        if (!session) {
+            return res.status(401).json({ success: false, message: "Invalid session, please login" });
+        }
+
+        //  if session found with refresh token so decrypt it here
+        let payload
+        try {
+            payload = await V3.decrypt(token, getKey())
+
+            //  now chek here the expire date from the payload here 
+            if (payload.exp && new Date(payload.exp) < new Date()) {
+                throw new Error("expired")
+            }
+
+            // make sure this is a refresh token not the access token here
+            if (payload.type !== "refresh") {
+                throw new Error("invalid type")
+            }
+
+        } catch (verifyError) {
+            // token expired/invalid/tampered — session is dead, clean it up
+            await sessionModel.deleteOne({ _id: session._id })
+            res.clearCookie("auth_token")
+            res.clearCookie("refresh_token")
+            return res.status(401).json({ success: false, message: "Session expired, please login again" });
+        }
+
+
+        // if refresh token is still valid so create new access token here
+        const newAccessToken = await generateToken(payload.id, 5 * 60 * 1000)
+
+        const isProduction = process.env.NODE_ENV === "production";
+
+        res.cookie("auth_token", newAccessToken, {
+            httpOnly: true,
+            secure: isProduction,
+            sameSite: isProduction ? "none" : "lax",
+            maxAge: 5 * 60 * 1000    // 5 min
+        })
+
+
+        //  update the last active time on this session
+        session.last_active_at = new Date()
+        await session.save()
+
+        res.status(200).json({ success: true });
+
+    } catch (error) {
+        logger.error(error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+}
+
+
+
+
+
 
 //  get current user here 
 export const currentUser = async (req, res) => {
@@ -264,12 +410,40 @@ export const updateProfile = async (req, res) => {
             userData.profilePic = newAvatar.original_url;
             userData.compressed_profile_pic = newAvatar.compressed_url;
             userData.thumbnail_profile_pic = newAvatar.thumbnail_url;
+        } else if (req.body.removeProfilePic === "true") {
+            // if user remove the profile picture here so delete the backend files here 
+            if (userData.profilePic) {
+                try {
+                    if (userData.profilePic) fs.unlinkSync(path.join(process.cwd(), userData.profilePic));
+                    if (userData.compressed_profile_pic) fs.unlinkSync(path.join(process.cwd(), userData.compressed_profile_pic));
+                    if (userData.thumbnail_profile_pic) fs.unlinkSync(path.join(process.cwd(), userData.thumbnail_profile_pic));
+                } catch (error) {
+                    logger.error("Avatar delete error:", error);
+                }
+            }
+
+            userData.profilePic = null;
+            userData.compressed_profile_pic = null;
+            userData.thumbnail_profile_pic = null;
         }
 
         await userData.save();
 
+        //  check here if passwro di supdated or not 
+        const isPasswordUpdate = !!(password || currentPassword)
+
+        req.io?.emit("global_user_profile_updated", {
+            _id: userData._id.toString(),
+            name: userData.name,
+            email: userData.email,
+            profilePic: userData.profilePic,
+            compressed_profile_pic: userData.compressed_profile_pic,
+            thumbnail_profile_pic: userData.thumbnail_profile_pic
+        });
+
+
         return res.status(200).json({
-            message: "Profile updated successfully",
+            message: isPasswordUpdate ? "Password updated successfully" : "Profile updated successfully",
             data: userData
         });
 
@@ -300,6 +474,10 @@ export const forgotPassword = async (req, res) => {
             return res.status(404).json({ success: false, message: "Invalid email" })
         }
 
+        // check if user is deactivated or deleted
+        if (!user.is_active || user.is_deleted) {
+            return res.status(403).json({ success: false, message: "Account is inactive. Please contact your administrator." })
+        }
 
         // generate random 32 char token
         const rawToken = crypto.randomBytes(32).toString("hex")
@@ -393,7 +571,7 @@ export const resetPassword = async (req, res) => {
         const { password, confirmPassword } = req.body;
 
         //  check if passwro dand confirm password bothe field exist here
-        if (!password || confirmPassword) {
+        if (!password || !confirmPassword) {
             return res.status(400).json({ success: false, message: "Password and Confirm Password are required." });
         }
 

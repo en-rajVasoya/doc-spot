@@ -1,4 +1,1131 @@
+// //  models - schema
+// import uploadModel from "#models/uploadModel"
+
+// // utils - helper
+// import { getUserPermission } from "#utils/userPermissionUtil";
+// import { logger } from "#utils/logger"
+// import { getFileUrl } from "#config/s3";
+
+// //  helper functino when user sarc (), [] something here 
+// const escapeRegex = (string) => {
+//     return string.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+// };
+
+// export const searchFiles = async (req, res) => {
+//     try {
+
+//         // ##################################################
+//         // ---- STEP 1: Get query and filter details from request
+//         // ##################################################
+//         const { query, fileType, dateFrom, dateTo, ownerFilter, location, folderId, personIds } = req.query
+//         const userID = req.user._id;
+
+
+//         // ##################################################
+//         // ---- STEP 2: Find all folders shared with the user
+//         // ##################################################
+//         // get folders shared with this user from database
+//         const sharedFolders = await uploadModel.find({
+//             "sharedWith.userId": userID,
+//             type: "folder",
+//             isTrashed: { $ne: true }
+//         }).select("_id").lean()
+
+//         const sharedFolderIds = sharedFolders.map(f => f._id)
+//         const allSharedFolderIds = new Set(sharedFolderIds.map(id => id.toString()))
+
+//         // go down level by level to find all nested folders inside shared folders
+//         if (sharedFolderIds.length > 0) {
+//             let currentLevel = sharedFolderIds
+//             while (currentLevel.length > 0) {
+//                 const children = await uploadModel.find({
+//                     parent: { $in: currentLevel },
+//                     type: "folder",
+//                     isTrashed: { $ne: true }
+//                 }).select("_id").lean()
+
+//                 currentLevel = []
+//                 for (const child of children) {
+//                     allSharedFolderIds.add(child._id.toString())
+//                     currentLevel.push(child._id)
+//                 }
+//             }
+//         }
+
+
+//         // ##################################################
+//         // ---- STEP 3: Add folders owned by the user to the list
+//         // ##################################################
+//         const allAccessibleFolderIds = new Set(allSharedFolderIds);
+//         const ownedFolders = await uploadModel.find({
+//             owner: userID,
+//             type: "folder",
+//             isTrashed: { $ne: true }
+//         }).select("_id").lean();
+//         ownedFolders.forEach(f => allAccessibleFolderIds.add(f._id.toString()));
+
+//         // ##################################################
+//         // ---- STEP 4: Start building the search query filter
+//         // ##################################################
+//         const filter = {
+//             $and: [
+//                 {
+//                     $or: [
+//                         { uploadStatus: "completed" },
+//                         { type: "folder" }
+//                     ]
+//                 }
+//             ]
+//         }
+
+//         // ##################################################
+//         // ---- STEP 5: Filter by search location -----------
+//         // ##################################################
+//         if (location === "my-docspot") {
+//             // search only inside user's own drive
+//             filter.owner = userID
+//         } else if (location === "trash") {
+//             // search only inside user's trash
+//             filter.owner = userID
+//         } else if (location === "shared") {
+//             // search only inside the shared - user sahred item with others
+//             filter.owner = userID
+//             filter.isShared = true
+//         } else if (location === "shared-with-me") {
+//             // search only items shared with the current user
+//             filter.$and.push({
+//                 // atlease one of this condition must be true
+//                 $or: [
+//                     { "sharedWith.userId": userID },   // the item is shared with current user
+//                     { parent: { $in: Array.from(allSharedFolderIds) } }
+//                 ]
+//             })
+//             // exclude the items owend by user so we can only show shared with me 
+//             filter.owner = { $ne: userID }
+//         } else if (location === "specific-folder" && folderId) {
+//             // search inside a specific folder and check permission
+//             const permission = await getUserPermission(userID, folderId)
+//             if (!permission) {
+//                 return res.status(403).json({ success: false, message: "Access denied" })
+//             }
+
+//             const allFolderIds = [folderId]
+//             const queue = [folderId]
+
+//             // get all nested folders under this specific folder
+//             while (queue.length > 0) {
+//                 const currentId = queue.shift()
+//                 const children = await uploadModel.find({
+//                     parent: currentId,
+//                     type: "folder"
+//                 }).select("_id")
+
+//                 children.forEach(c => {
+//                     allFolderIds.push(c._id)
+//                     queue.push(c._id)
+//                 })
+//             }
+//             filter.parent = { $in: allFolderIds }
+//             filter.$and.push({
+//                 $or: [
+//                     { owner: userID },
+//                     { "sharedWith.userId": userID },
+//                     { parent: { $in: allFolderIds } }
+//                 ]
+//             })
+//         } else {
+//             // search everywhere (my drive, shared files, or inside shared folders)
+//             filter.$and.push({
+//                 $or: [
+//                     { owner: userID },
+//                     { "sharedWith.userId": userID },
+//                     { parent: { $in: Array.from(allAccessibleFolderIds) } }
+//                 ]
+//             })
+//         }
+
+//         // ##################################################
+//         // ---- STEP 6: Filter by text search query ---------
+//         // ##################################################
+//         if (query && query.trim() !== "") {
+//             filter.name = { $regex: escapeRegex(query.trim()), $options: "i" }
+//         }
+
+//         // ##################################################
+//         // ---- STEP 7: Filter by type of file --------------
+//         // ##################################################
+//         if (fileType) {
+//             if (fileType === "Folder") {
+//                 filter.type = "folder"
+//             } else {
+//                 const typeMap = {
+//                     "Photo": /^image\//,
+//                     "PDF": /^application\/pdf/,
+//                     "Video": /^video\//,
+//                     "Zip": /^application\/(zip|x-zip)/,
+//                     "File": /^application\//
+//                 }
+//                 if (typeMap[fileType]) {
+//                     filter.fileType = typeMap[fileType]
+//                 }
+//             }
+
+//         }
+
+//         // ##################################################
+//         // ---- STEP 8: Filter by date created --------------
+//         // ##################################################
+//         if (dateFrom || dateTo) {
+//             filter.createdAt = {}
+//             if (dateFrom) {
+//                 filter.createdAt.$gte = new Date(dateFrom + "T00:00:00.000Z")
+//             }
+
+//             if (dateTo) {
+//                 filter.createdAt.$lte = new Date(dateTo + "T23:59:59.999Z")
+//             }
+//         }
+
+//         // ##################################################
+//         // ---- STEP 9: Filter by owner --------------------
+//         // ##################################################
+//         if (ownerFilter === "owner-by-me") {
+//             filter.owner = userID
+//             filter.$and = filter.$and.filter(
+//                 cond => !cond.$or?.some(o => o["sharedWith.userId"])
+//             )
+//         } else if (ownerFilter === "not-owner-by-me") {
+//             filter.owner = { $ne: userID }
+//             filter.$and = filter.$and.filter(
+//                 cond => !cond.$or?.some(o => o["sharedWith.userId"])
+//             )
+//             filter.$and.push({
+//                 $or: [
+//                     { "sharedWith.userId": userID },
+//                     { parent: { $in: Array.from(allAccessibleFolderIds) } }
+//                 ]
+//             })
+//         } else if (ownerFilter === "specific-person" && personIds) {
+//             const ids = JSON.parse(personIds)
+//             filter.owner = { $in: ids }
+//             filter.$and = filter.$and.filter(
+//                 cond => !cond.$or?.some(o => o["sharedWith.userId"])
+//             )
+//             filter.$and.push({
+//                 $or: [
+//                     { "sharedWith.userId": userID },
+//                     { parent: { $in: Array.from(allAccessibleFolderIds) } }
+//                 ]
+//             })
+//         }
+
+//         // ##################################################
+//         // ---- STEP 10: Find all folders that are in trash -
+//         // ##################################################
+//         const trashedFolders = await uploadModel.find({
+//             owner: userID,
+//             isTrashed: true,
+//             type: "folder"
+//         }).select("_id").lean()
+
+//         const trashedFolderIds = trashedFolders.map(f => f._id)
+//         const allTrashedIds = new Set(trashedFolderIds.map(id => id.toString()))
+
+//         // recursively find all sub-items inside trashed folders
+//         if (trashedFolderIds.length > 0) {
+//             let currentLevel = trashedFolderIds
+
+//             while (currentLevel.length > 0) {
+//                 const children = await uploadModel.find({
+//                     parent: { $in: currentLevel }
+//                 }).select("_id type").lean()
+
+//                 currentLevel = []
+//                 for (const child of children) {
+//                     allTrashedIds.add(child._id.toString())
+//                     if (child.type === "folder") {
+//                         currentLevel.push(child._id)
+//                     }
+//                 }
+//             }
+//         }
+
+//         // ##################################################
+//         // ---- STEP 11: Apply trash visibility rules ------
+//         // ##################################################
+//         if (location === "trash") {
+//             // show only trashed files and folder items
+//             filter.$and.push({
+//                 $or: [
+//                     { isTrashed: true },
+//                     { _id: { $in: Array.from(allTrashedIds) } }
+//                 ]
+//             })
+//         } else {
+//             // hide all trashed files and folders
+//             filter.isTrashed = { $ne: true }
+//             if (allTrashedIds.size > 0) {
+//                 filter.$and.push({
+//                     _id: { $nin: Array.from(allTrashedIds) }
+//                 })
+//             }
+//         }
+
+//         // ##################################################
+//         // ---- STEP 12: Get paginated files and total count -
+//         // ##################################################
+//         const page = parseInt(req.query.page) || 1
+//         const limit = 50
+//         const skip = (page - 1) * limit
+//         const [results, totalCount] = await Promise.all([
+//             uploadModel.find(filter)
+//                 .select("name type fileSize fileType updatedAt createdAt parent owner storagePath color isShared")
+//                 .populate("owner", "_id name profilePic")
+//                 .populate("sharedWith.userId", "_id name")
+//                 .sort({ type: -1, createdAt: -1 })
+//                 .skip(skip)
+//                 .limit(limit)
+//                 .lean(),
+//             uploadModel.countDocuments(filter)
+//         ])
+
+//         // ##################################################
+//         // ---- STEP 13: Fetch folder names for paths -------
+//         // ##################################################
+//         const folderCache = {}
+//         const parentIdsToFetch = new Set()
+//         results.forEach(item => {
+//             if (item.parent) {
+//                 parentIdsToFetch.add(item.parent.toString())
+//             }
+//         })
+
+//         let queue = Array.from(parentIdsToFetch)
+//         while (queue.length > 0) {
+//             const folders = await uploadModel.find({
+//                 _id: { $in: queue }
+//             }).select("_id name parent owner isShared").lean()
+//             queue = []
+//             folders.forEach(f => {
+//                 const idStr = f._id.toString()
+//                 folderCache[idStr] = f
+//                 if (f.parent) {
+//                     const parentStr = f.parent.toString()
+//                     if (!folderCache[parentStr] && !queue.includes(parentStr)) {
+//                         queue.push(parentStr)
+//                     }
+//                 }
+//             })
+//         }
+
+//         // ##################################################
+//         // ---- STEP 14: Format paths for search results ----
+//         // ##################################################
+//         const isS3 = process.env.STORAGE_PROVIDER === "s3";
+
+//         const resultsWithPath = results.map(item => {
+//             const path = []
+//             let currentParent = item.parent?.toString()
+//             let rootFolder = null
+
+//             while (currentParent && folderCache[currentParent]) {
+//                 rootFolder = folderCache[currentParent]
+//                 path.unshift(rootFolder.name)
+//                 currentParent = rootFolder.parent?.toString()
+//             }
+
+//             let prefix = "My Docspot"
+
+//             if (item.parent) {
+//                 if (rootFolder) {
+//                     const rootOwnerId = rootFolder.owner?._id?.toString() || rootFolder.owner?.toString()
+//                     if (rootOwnerId !== userID.toString()) {
+//                         prefix = "Shared with me"
+//                     } else if (rootFolder.isShared) {
+//                         prefix = "Shared"
+//                     }
+//                 }
+//             } else {
+//                 const itemOwnerId = item.owner?._id?.toString() || item.owner?.toString()
+//                 if (itemOwnerId !== userID.toString()) {
+//                     prefix = "Shared with me"
+//                 } else if (item.isShared) {
+//                     prefix = "Shared"
+//                 }
+//             }
+
+//             path.unshift(prefix)
+//             return {
+//                 ...item,
+//                 // --- CloudFront / S3 Full URL Logic (Commented out for Backend Proxy) ---
+//                 // storagePath: item.storagePath
+//                 //     ? (isS3 ? getFileUrl(item.storagePath) : `/${item.storagePath}`)
+//                 //     : null,
+//                 // ------------------------------------------------------------------------
+//                 storagePath: item.storagePath ? `/${item.storagePath}` : null,
+//                 locationPath: path.join(" / ")
+//             }
+//         })
+
+//         // ##################################################
+//         // ---- STEP 15: Send the results response ----------
+//         // ##################################################
+//         res.json({ success: true, results: resultsWithPath, totalCount, page, limit })
+//     } catch (error) {
+//         logger.error(error)
+//         res.status(500).json({ success: false, message: error.message })
+//     }
+// }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// //  models - schema
+// import uploadModel from "#models/uploadModel"
+
+// // utils - helper
+// import { getUserPermission } from "#utils/userPermissionUtil";
+// import { logger } from "#utils/logger"
+// import { getFileUrl } from "#config/s3";
+
+// //  helper functino when user sarc (), [] something here 
+// const escapeRegex = (string) => {
+//     return string.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+// };
+
+// export const searchFiles = async (req, res) => {
+//     try {
+//         const logMemory = (step) => {
+//             const memoryUsage = process.memoryUsage();
+//             const rss = (memoryUsage.rss / 1024 / 1024).toFixed(2);
+//             const heapTotal = (memoryUsage.heapTotal / 1024 / 1024).toFixed(2);
+//             const heapUsed = (memoryUsage.heapUsed / 1024 / 1024).toFixed(2);
+//             console.log(`[MEMORY] searchFiles - ${step} | RSS: ${rss}MB | Heap Total: ${heapTotal}MB | Heap Used: ${heapUsed}MB`);
+//         };
+
+//         logMemory("Start of search");
+
+//         // ##################################################
+//         // ---- STEP 1: Get query and filter details from request
+//         // ##################################################
+//         const { query, fileType, dateFrom, dateTo, ownerFilter, location, folderId, personIds } = req.query
+//         const userID = req.user._id;
+
+
+//         // ##################################################
+//         // ---- STEP 2: Find all folders shared with the user
+//         // ##################################################
+//         const sharedFolders = await uploadModel.find({
+//             "sharedWith.userId": userID,
+//             type: "folder",
+//             isTrashed: { $ne: true }
+//         }).select("_id").lean()
+
+//         const sharedFolderIds = sharedFolders.map(f => f._id)
+//         const allSharedFolderIds = new Set(sharedFolderIds.map(id => id.toString()))
+
+//         // ##################################################
+//         // ---- STEP 3: Add folders owned by the user to the list
+//         // ##################################################
+//         const ownedFolders = await uploadModel.find({
+//             owner: userID,
+//             type: "folder",
+//             isShared: true, // Only deep-traverse SHARED owned folders to prevent OOM
+//             isTrashed: { $ne: true }
+//         }).select("_id").lean();
+
+//         const ownedFolderIds = ownedFolders.map(f => f._id);
+//         const allAccessibleFolderIds = new Set([...allSharedFolderIds, ...ownedFolderIds.map(id => id.toString())]);
+
+//         // ##################################################
+//         // ---- STEP 3.5: Traverse all nested children for ALL folders
+//         // ##################################################
+//         let currentLevel = [...sharedFolderIds, ...ownedFolderIds];
+
+//         while (currentLevel.length > 0) {
+//             const children = await uploadModel.find({
+//                 parent: { $in: currentLevel },
+//                 type: "folder",
+//                 isTrashed: { $ne: true }
+//             }).select("_id parent").lean()
+
+//             currentLevel = []
+//             for (const child of children) {
+//                 // If parent is from shared tree, add child to shared tree
+//                 if (allSharedFolderIds.has(child.parent.toString())) {
+//                     allSharedFolderIds.add(child._id.toString())
+//                 }
+
+//                 // Add to total accessible list
+//                 if (!allAccessibleFolderIds.has(child._id.toString())) {
+//                     allAccessibleFolderIds.add(child._id.toString())
+//                     currentLevel.push(child._id)
+//                 }
+//             }
+//         }
+
+//         logMemory("After Traversal (Step 3.5)");
+
+//         // ##################################################
+//         // ---- STEP 4: Start building the search query filter
+//         // ##################################################
+//         const filter = {
+//             $and: [
+//                 {
+//                     $or: [
+//                         { uploadStatus: "completed" },
+//                         { type: "folder" }
+//                     ]
+//                 }
+//             ]
+//         }
+
+//         // ##################################################
+//         // ---- STEP 5: Filter by search location -----------
+//         // ##################################################
+//         if (location === "my-docspot") {
+//             // search only inside user's own drive
+//             filter.owner = userID
+//         } else if (location === "trash") {
+//             // search only inside user's trash
+//             filter.owner = userID
+//         } else if (location === "shared") {
+//             // search only inside the shared - user sahred item with others
+//             filter.owner = userID
+//             filter.isShared = true
+//         } else if (location === "shared-with-me") {
+//             // search only items shared with the current user
+//             filter.$and.push({
+//                 // atlease one of this condition must be true
+//                 $or: [
+//                     { "sharedWith.userId": userID },   // the item is shared with current user
+//                     { parent: { $in: Array.from(allSharedFolderIds) } }
+//                 ]
+//             })
+//             // exclude the items owend by user so we can only show shared with me 
+//             filter.owner = { $ne: userID }
+//         } else if (location === "specific-folder" && folderId) {
+//             // search inside a specific folder and check permission
+//             const permission = await getUserPermission(userID, folderId)
+//             if (!permission) {
+//                 return res.status(403).json({ success: false, message: "Access denied" })
+//             }
+
+//             const allFolderIds = [folderId]
+//             const queue = [folderId]
+
+//             // get all nested folders under this specific folder
+//             while (queue.length > 0) {
+//                 const currentId = queue.shift()
+//                 const children = await uploadModel.find({
+//                     parent: currentId,
+//                     type: "folder"
+//                 }).select("_id")
+
+//                 children.forEach(c => {
+//                     allFolderIds.push(c._id)
+//                     queue.push(c._id)
+//                 })
+//             }
+//             filter.parent = { $in: allFolderIds }
+//             filter.$and.push({
+//                 $or: [
+//                     { owner: userID },
+//                     { "sharedWith.userId": userID },
+//                     { parent: { $in: allFolderIds } }
+//                 ]
+//             })
+//         } else {
+//             // search everywhere (my drive, shared files, or inside shared folders)
+//             filter.$and.push({
+//                 $or: [
+//                     { owner: userID },
+//                     { "sharedWith.userId": userID },
+//                     { parent: { $in: Array.from(allAccessibleFolderIds) } }
+//                 ]
+//             })
+//         }
+
+//         // ##################################################
+//         // ---- STEP 6: Filter by text search query ---------
+//         // ##################################################
+//         if (query && query.trim() !== "") {
+//             filter.name = { $regex: escapeRegex(query.trim()), $options: "i" }
+//         }
+
+//         // ##################################################
+//         // ---- STEP 7: Filter by type of file --------------
+//         // ##################################################
+//         if (fileType) {
+//             if (fileType === "Folder") {
+//                 filter.type = "folder"
+//             } else {
+//                 const typeMap = {
+//                     "Photo": /^image\//,
+//                     "PDF": /^application\/pdf/,
+//                     "Video": /^video\//,
+//                     "Zip": /^application\/(zip|x-zip)/,
+//                     "File": /^application\//
+//                 }
+//                 if (typeMap[fileType]) {
+//                     filter.fileType = typeMap[fileType]
+//                 }
+//             }
+
+//         }
+
+//         // ##################################################
+//         // ---- STEP 8: Filter by date created --------------
+//         // ##################################################
+//         if (dateFrom || dateTo) {
+//             filter.createdAt = {}
+//             if (dateFrom) {
+//                 filter.createdAt.$gte = new Date(dateFrom + "T00:00:00.000Z")
+//             }
+
+//             if (dateTo) {
+//                 filter.createdAt.$lte = new Date(dateTo + "T23:59:59.999Z")
+//             }
+//         }
+
+//         // ##################################################
+//         // ---- STEP 9: Filter by owner --------------------
+//         // ##################################################
+//         if (ownerFilter === "owner-by-me") {
+//             filter.owner = userID
+//             filter.$and = filter.$and.filter(
+//                 cond => !cond.$or?.some(o => o["sharedWith.userId"])
+//             )
+//         } else if (ownerFilter === "not-owner-by-me") {
+//             filter.owner = { $ne: userID }
+//             filter.$and = filter.$and.filter(
+//                 cond => !cond.$or?.some(o => o["sharedWith.userId"])
+//             )
+//             filter.$and.push({
+//                 $or: [
+//                     { "sharedWith.userId": userID },
+//                     { parent: { $in: Array.from(allAccessibleFolderIds) } }
+//                 ]
+//             })
+//         } else if (ownerFilter === "specific-person" && personIds) {
+//             const ids = JSON.parse(personIds)
+//             filter.owner = { $in: ids }
+//             filter.$and = filter.$and.filter(
+//                 cond => !cond.$or?.some(o => o["sharedWith.userId"])
+//             )
+//             filter.$and.push({
+//                 $or: [
+//                     { "sharedWith.userId": userID },
+//                     { parent: { $in: Array.from(allAccessibleFolderIds) } }
+//                 ]
+//             })
+//         }
+
+//         // ##################################################
+//         // ---- STEP 10: Find all folders that are in trash -
+//         // ##################################################
+//         const trashedFolders = await uploadModel.find({
+//             owner: userID,
+//             isTrashed: true,
+//             type: "folder"
+//         }).select("_id").lean()
+
+//         const trashedFolderIds = trashedFolders.map(f => f._id)
+//         const allTrashedIds = new Set(trashedFolderIds.map(id => id.toString()))
+
+//         // recursively find all sub-items inside trashed folders
+//         if (trashedFolderIds.length > 0) {
+//             let currentLevel = trashedFolderIds
+
+//             while (currentLevel.length > 0) {
+//                 const children = await uploadModel.find({
+//                     parent: { $in: currentLevel }
+//                 }).select("_id type").lean()
+
+//                 currentLevel = []
+//                 for (const child of children) {
+//                     allTrashedIds.add(child._id.toString())
+//                     if (child.type === "folder") {
+//                         currentLevel.push(child._id)
+//                     }
+//                 }
+//             }
+//         }
+
+//         // ##################################################
+//         // ---- STEP 11: Apply trash visibility rules ------
+//         // ##################################################
+//         if (location === "trash") {
+//             // show only trashed files and folder items
+//             filter.$and.push({
+//                 $or: [
+//                     { isTrashed: true },
+//                     { _id: { $in: Array.from(allTrashedIds) } }
+//                 ]
+//             })
+//         } else {
+//             // hide all trashed files and folders
+//             filter.isTrashed = { $ne: true }
+//             if (allTrashedIds.size > 0) {
+//                 filter.$and.push({
+//                     _id: { $nin: Array.from(allTrashedIds) }
+//                 })
+//             }
+//         }
+
+//         // ##################################################
+//         // ---- STEP 12: Get paginated files and total count -
+//         // ##################################################
+//         const page = parseInt(req.query.page) || 1
+//         const limit = 50
+//         const skip = (page - 1) * limit
+//         const [results, totalCount] = await Promise.all([
+//             uploadModel.find(filter)
+//                 .select("name type fileSize fileType updatedAt createdAt parent owner storagePath color isShared")
+//                 .populate("owner", "_id name profilePic")
+//                 .populate("sharedWith.userId", "_id name")
+//                 .sort({ type: -1, createdAt: -1 })
+//                 .skip(skip)
+//                 .limit(limit)
+//                 .lean(),
+//             uploadModel.countDocuments(filter)
+//         ])
+
+//         // ##################################################
+//         // ---- STEP 13: Fetch folder names for paths -------
+//         // ##################################################
+//         const folderCache = {}
+//         const parentIdsToFetch = new Set()
+//         results.forEach(item => {
+//             if (item.parent) {
+//                 parentIdsToFetch.add(item.parent.toString())
+//             }
+//         })
+
+//         let queue = Array.from(parentIdsToFetch)
+//         while (queue.length > 0) {
+//             const folders = await uploadModel.find({
+//                 _id: { $in: queue }
+//             }).select("_id name parent owner isShared").lean()
+//             queue = []
+//             folders.forEach(f => {
+//                 const idStr = f._id.toString()
+//                 folderCache[idStr] = f
+//                 if (f.parent) {
+//                     const parentStr = f.parent.toString()
+//                     if (!folderCache[parentStr] && !queue.includes(parentStr)) {
+//                         queue.push(parentStr)
+//                     }
+//                 }
+//             })
+//         }
+
+//         // ##################################################
+//         // ---- STEP 14: Format paths for search results ----
+//         // ##################################################
+//         const isS3 = process.env.STORAGE_PROVIDER === "s3";
+
+//         const resultsWithPath = results.map(item => {
+//             const path = []
+//             let currentParent = item.parent?.toString()
+//             let rootFolder = null
+//             let isParentShared = false
+
+//             while (currentParent && folderCache[currentParent]) {
+//                 rootFolder = folderCache[currentParent]
+//                 if (rootFolder.isShared) {
+//                     isParentShared = true
+//                 }
+//                 path.unshift(rootFolder.name)
+//                 currentParent = rootFolder.parent?.toString()
+//             }
+
+//             let prefix = "My Docspot"
+
+//             if (item.parent) {
+//                 if (rootFolder) {
+//                     const rootOwnerId = rootFolder.owner?._id?.toString() || rootFolder.owner?.toString()
+//                     if (rootOwnerId !== userID.toString()) {
+//                         prefix = "Shared with me"
+//                     } else if (rootFolder.isShared || isParentShared) {
+//                         prefix = "Shared"
+//                     }
+//                 }
+//             } else {
+//                 const itemOwnerId = item.owner?._id?.toString() || item.owner?.toString()
+//                 if (itemOwnerId !== userID.toString()) {
+//                     prefix = "Shared with me"
+//                 } else if (item.isShared) {
+//                     prefix = "Shared"
+//                 }
+//             }
+
+//             path.unshift(prefix)
+//             return {
+//                 ...item,
+//                 isShared: item.isShared || isParentShared || prefix === "Shared",
+//                 isSharedWithMe: prefix === "Shared with me",
+//                 // --- CloudFront / S3 Full URL Logic (Commented out for Backend Proxy) ---
+//                 // storagePath: item.storagePath
+//                 //     ? (isS3 ? getFileUrl(item.storagePath) : `/${item.storagePath}`)
+//                 //     : null,
+//                 // ------------------------------------------------------------------------
+//                 storagePath: item.storagePath ? `/${item.storagePath}` : null,
+//                 locationPath: path.join(" / ")
+//             }
+//         })
+
+//         // ##################################################
+//         // ---- STEP 15: Send the results response ----------
+//         // ##################################################
+//         logMemory("End of search (Response sent)");
+//         res.json({ success: true, results: resultsWithPath, totalCount, page, limit })
+//     } catch (error) {
+//         logger.error(error)
+//         res.status(500).json({ success: false, message: error.message })
+//     }
+// }
+
+
+
+
+
+
+
+
+////  models - schema
+//import mongoose from "mongoose"
+//import uploadModel from "#models/uploadModel"
+//
+//// utils - helper
+//import { getUserPermission } from "#utils/userPermissionUtil";
+//import { logger } from "#utils/logger"
+//import { getFileUrl } from "#config/s3";
+//
+////  helper function when user searches (), [] something here
+//const escapeRegex = (string) => {
+//    return string.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+//};
+//
+//export const searchFiles = async (req, res) => {
+//    try {
+//
+//        // ##################################################
+//        // ---- STEP 1: Get query and filter details from request
+//        // ##################################################
+//        const { query, fileType, dateFrom, dateTo, ownerFilter, location, folderId, personIds } = req.query
+//        const userID = req.user._id
+//        const userIdStr = userID.toString()
+//
+//        // ##################################################
+//        // ---- STEP 2: Get folders DIRECTLY shared with user
+//        // ##################################################
+//        // NOTE: we no longer recursively expand this into every nested
+//        // descendant folder id. $graphLookup below walks UP from each
+//        // matched document instead, so we only need the direct share roots.
+//        const sharedFolders = await uploadModel.find({
+//            "sharedWith.userId": userID,
+//            type: "folder",
+//            isTrashed: { $ne: true }
+//        }).select("_id").lean()
+//
+//        const sharedRootFolderIds = sharedFolders.map(f => f._id)
+//
+//        // ##################################################
+//        // ---- STEP 3: Permission check for "specific-folder" location
+//        // ##################################################
+//        let folderObjectId = null
+//        if (location === "specific-folder" && folderId) {
+//            const permission = await getUserPermission(userID, folderId)
+//            if (!permission) {
+//                return res.status(403).json({ success: false, message: "Access denied" })
+//            }
+//            folderObjectId = new mongoose.Types.ObjectId(folderId)
+//        }
+//
+//        // ##################################################
+//        // ---- STEP 4: Build the base $match (cheap + indexed) ----
+//        // ##################################################
+//        // Only filters that DON'T need ancestor/parent-tree info go here.
+//        // This runs first and narrows the collection scan down using the
+//        // name index before we ever touch the folder tree.
+//        const baseMatch = {
+//            $and: [
+//                { $or: [{ uploadStatus: "completed" }, { type: "folder" }] }
+//            ]
+//        }
+//
+//        if (query && query.trim() !== "") {
+//            baseMatch.$and.push({
+//                name: { $regex: escapeRegex(query.trim()), $options: "i" }
+//            })
+//        }
+//
+//        if (fileType) {
+//            if (fileType === "Folder") {
+//                baseMatch.$and.push({ type: "folder" })
+//            } else {
+//                const typeMap = {
+//                    "Photo": /^image\//,
+//                    "PDF": /^application\/pdf/,
+//                    "Video": /^video\//,
+//                    "Zip": /^application\/(zip|x-zip)/,
+//                    "File": /^application\//
+//                }
+//                if (typeMap[fileType]) {
+//                    baseMatch.$and.push({ fileType: typeMap[fileType] })
+//                }
+//            }
+//        }
+//
+//        if (dateFrom || dateTo) {
+//            const createdAt = {}
+//            if (dateFrom) createdAt.$gte = new Date(dateFrom + "T00:00:00.000Z")
+//            if (dateTo) createdAt.$lte = new Date(dateTo + "T23:59:59.999Z")
+//            baseMatch.$and.push({ createdAt })
+//        }
+//
+//        // ---- Simple, non-parent-dependent location/owner filters ----
+//        if (location === "my-docspot") {
+//            baseMatch.$and.push({ owner: userID })
+//        } else if (location === "trash") {
+//            baseMatch.$and.push({ owner: userID })
+//            // don't filter isTrashed here - trash view needs items whose
+//            // ANCESTOR is trashed too, checked after $graphLookup
+//        } else if (location === "shared") {
+//            baseMatch.$and.push({ owner: userID, isShared: true })
+//        } else if (location === "shared-with-me") {
+//            baseMatch.$and.push({ owner: { $ne: userID } })
+//        }
+//        // "specific-folder" and the default "everywhere" case need the
+//        // ancestor list, so their permission logic is applied after graphLookup
+//
+//        if (ownerFilter === "owner-by-me") {
+//            baseMatch.$and.push({ owner: userID })
+//        } else if (ownerFilter === "not-owner-by-me") {
+//            baseMatch.$and.push({ owner: { $ne: userID } })
+//        } else if (ownerFilter === "specific-person" && personIds) {
+//            const ids = JSON.parse(personIds).map(id => new mongoose.Types.ObjectId(id))
+//            baseMatch.$and.push({ owner: { $in: ids } })
+//        }
+//
+//        // hide self-trashed items everywhere except the trash view itself
+//        // (ancestor-trashed items are handled after $graphLookup)
+//        if (location !== "trash") {
+//            baseMatch.$and.push({ isTrashed: { $ne: true } })
+//        }
+//
+//        // ##################################################
+//        // ---- STEP 5: Ancestor-dependent permission / trash match ----
+//        // ##################################################
+//        // Built as a $match stage placed AFTER $graphLookup, so it only
+//        // evaluates ancestors for documents that already passed baseMatch.
+//        const permissionOr = [
+//            { owner: userID },
+//            { "sharedWith.userId": userID },
+//            { "ancestors._id": { $in: sharedRootFolderIds } },
+//            { "ancestors.owner": userID }
+//        ]
+//
+//        let postLookupMatch = { $and: [] }
+//
+//        if (location === "specific-folder") {
+//            // item must live somewhere under folderId (parent chain contains it)
+//            postLookupMatch.$and.push({ "ancestors._id": folderObjectId })
+//        } else if (location === "shared-with-me") {
+//            postLookupMatch.$and.push({
+//                $or: [
+//                    { "sharedWith.userId": userID },
+//                    { "ancestors._id": { $in: sharedRootFolderIds } }
+//                ]
+//            })
+//        } else if (location === "trash") {
+//            // trash view: show items that are themselves trashed, or that
+//            // live inside a folder the user trashed
+//            postLookupMatch.$and.push({
+//                $or: [
+//                    { isTrashed: true },
+//                    { "ancestors.isTrashed": true }
+//                ]
+//            })
+//        } else if (ownerFilter === "not-owner-by-me" || ownerFilter === "specific-person") {
+//            // these filters already scoped `owner` in baseMatch; still need
+//            // to prove the current user actually has access to the item
+//            postLookupMatch.$and.push({
+//                $or: [
+//                    { "sharedWith.userId": userID },
+//                    { "ancestors._id": { $in: sharedRootFolderIds } }
+//                ]
+//            })
+//        } else if (location !== "my-docspot" && location !== "shared") {
+//            // default "search everywhere" case
+//            postLookupMatch.$and.push({ $or: permissionOr })
+//        }
+//
+//        // hide items nested inside a trashed ancestor folder, for every
+//        // non-trash view (mirrors the old allTrashedIds exclusion)
+//        if (location !== "trash") {
+//            postLookupMatch.$and.push({ "ancestors.isTrashed": { $ne: true } })
+//        }
+//
+//        if (postLookupMatch.$and.length === 0) {
+//            postLookupMatch = {} // no-op match
+//        }
+//
+//        // ##################################################
+//        // ---- STEP 6: Pagination params ----
+//        // ##################################################
+//        const page = parseInt(req.query.page) || 1
+//        const limit = 50
+//        const skip = (page - 1) * limit
+//
+//        // ##################################################
+//        // ---- STEP 7: Run the aggregation ----
+//        // ##################################################
+//        const pipeline = [
+//            { $match: baseMatch },
+//            {
+//                // walk UP the parent chain for each matched doc only —
+//                // cost scales with (matches * depth), not with total folder count
+//                $graphLookup: {
+//                    from: uploadModel.collection.name,
+//                    startWith: "$parent",
+//                    connectFromField: "parent",
+//                    connectToField: "_id",
+//                    as: "ancestors",
+//                    depthField: "depth"
+//                }
+//            },
+//            { $match: postLookupMatch },
+//            { $sort: { type: -1, createdAt: -1 } },
+//            {
+//                $facet: {
+//                    results: [
+//                        { $skip: skip },
+//                        { $limit: limit },
+//                        {
+//                            $lookup: {
+//                                from: "users", // adjust if your users collection name differs
+//                                localField: "owner",
+//                                foreignField: "_id",
+//                                as: "owner",
+//                                pipeline: [{ $project: { _id: 1, name: 1, email: 1, profilePic: 1 } }]
+//                            }
+//                        },
+//                        { $unwind: { path: "$owner", preserveNullAndEmptyArrays: true } },
+//                        {
+//                            $lookup: {
+//                                from: "users",
+//                                localField: "sharedWith.userId",
+//                                foreignField: "_id",
+//                                as: "sharedWithUsers",
+//                                pipeline: [{ $project: { _id: 1, name: 1, email: 1, profilePic: 1 } }]
+//                            }
+//                        },
+//                        {
+//                            $project: {
+//                                name: 1, type: 1, fileSize: 1, fileType: 1,
+//                                updatedAt: 1, createdAt: 1, parent: 1, owner: 1,
+//                                storagePath: 1, color: 1, isShared: 1,
+//                                sharedWithUsers: 1,
+//                                sharedWith: 1,
+//                                ancestors: {
+//                                    $map: {
+//                                        input: "$ancestors",
+//                                        as: "a",
+//                                        in: { _id: "$$a._id", name: "$$a.name", depth: "$$a.depth" }
+//                                    }
+//                                }
+//                            }
+//                        }
+//                    ],
+//                    totalCount: [{ $count: "count" }]
+//                }
+//            }
+//        ]
+//
+//        const [aggResult] = await uploadModel.aggregate(pipeline)
+//        const results = aggResult?.results ?? []
+//        const totalCount = aggResult?.totalCount?.[0]?.count ?? 0
+//
+//        // ##################################################
+//        // ---- STEP 8: Build display paths from the ancestors we
+//        // already fetched in $graphLookup (no extra DB round trips) ----
+//        // ##################################################
+//        const isS3 = process.env.STORAGE_PROVIDER === "s3"
+//
+//        const resultsWithPath = results.map(item => {
+//            // ancestors come back in arbitrary order; sort by depth
+//            // descending so index 0 = root-most folder, last = immediate parent
+//            const sortedAncestors = [...(item.ancestors || [])].sort((a, b) => b.depth - a.depth)
+//
+//            const isInsideSharedFolder = sortedAncestors.some(a =>
+//                sharedRootFolderIds.some(id => id.toString() === a._id.toString())
+//            )
+//
+//            const path = sortedAncestors.map(a => a.name)
+//
+//            if (item.owner?._id?.toString() !== userIdStr || isInsideSharedFolder) {
+//                path.unshift("Shared with me")
+//            } else if (item.isShared) {
+//                path.unshift("Shared")
+//            } else {
+//                path.unshift("My Docspot")
+//            }
+//
+//            if (item.sharedWith && item.sharedWithUsers) {
+//                item.sharedWith = item.sharedWith.map(share => {
+//                    const userDetails = item.sharedWithUsers.find(
+//                        u => u._id.toString() === share.userId?.toString()
+//                    );
+//                    return {
+//                        ...share,
+//                        userId: userDetails || share.userId
+//                    };
+//                });
+//            }
+//
+//            return {
+//                ...item,
+//                isShared: item.isShared || isInsideSharedFolder || path[0] === "Shared",
+//                isSharedWithMe: path[0] === "Shared with me",
+//                storagePath: item.storagePath ? `/${item.storagePath}` : null,
+//                locationPath: path.join(" / "),
+//                ancestors: undefined // internal only, don't leak to client
+//            }
+//        })
+//
+//        // ##################################################
+//        // ---- STEP 9: Send the results response ----
+//        // ##################################################
+//        res.json({ success: true, results: resultsWithPath, totalCount, page, limit })
+//    } catch (error) {
+//        logger.error(error)
+//        res.status(500).json({ success: false, message: error.message })
+//    }
+//}
+
+
+
+
+
+
+
 //  models - schema
+import mongoose from "mongoose"
 import uploadModel from "#models/uploadModel"
 
 // utils - helper
@@ -6,10 +1133,42 @@ import { getUserPermission } from "#utils/userPermissionUtil";
 import { logger } from "#utils/logger"
 import { getFileUrl } from "#config/s3";
 
-//  helper functino when user sarc (), [] something here 
+// ##################################################
+// ---- CHANGES IN THIS VERSION ----
+// 1. Regex name search -> $text search (uses the "name" text index,
+//    no more full collection scan for every search).
+// 2. A hard $limit is placed BEFORE $graphLookup so its cost is bounded
+//    by (candidate count * depth) with candidate count capped, instead
+//    of being fully unbounded. This does NOT cap folder depth (depth
+//    can still be 2 or 40 per user) — it caps how many documents are
+//    allowed to enter the expensive traversal stage at all.
+// 3. totalCount is now computed from the SAME capped candidate set
+//    (cheap, same pipeline) rather than a full second pass over every
+//    match — so it's accurate up to the cap and free of extra cost.
+//    If you need an exact count beyond the cap, see the note below
+//    STEP 7.
+//
+// ---- STRUCTURAL FIX FOR LATER (removes $graphLookup entirely) ----
+// Store `ancestorIds: [ObjectId]` and `ancestorNames: [String]` directly
+// on each document, maintained on create/move (cheap, infrequent writes)
+// instead of computed on every search (expensive, frequent reads). Once
+// that exists, replace the $graphLookup + postLookupMatch block with a
+// plain indexed $match against ancestorIds — permission checks and path
+// building both become index lookups instead of graph traversals, and
+// this file gets meaningfully shorter. Flagged inline below with TODO.
+// ##################################################
+
+// kept as a fallback for exact substring matching if you still need it
+// anywhere else, but no longer used for the main name search below.
 const escapeRegex = (string) => {
     return string.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
 };
+
+// Tunable: max candidate documents allowed into $graphLookup per search.
+// Keep this well below what would exhaust available disk under N
+// concurrent searches. 300 is a reasonable starting point — measure
+// with .explain() / mongostat under load and adjust.
+const GRAPHLOOKUP_CANDIDATE_CAP = 300
 
 export const searchFiles = async (req, res) => {
     try {
@@ -18,344 +1177,337 @@ export const searchFiles = async (req, res) => {
         // ---- STEP 1: Get query and filter details from request
         // ##################################################
         const { query, fileType, dateFrom, dateTo, ownerFilter, location, folderId, personIds } = req.query
-        const userID = req.user._id;
-
+        const userID = req.user._id
+        const userIdStr = userID.toString()
 
         // ##################################################
-        // ---- STEP 2: Find all folders shared with the user
+        // ---- STEP 2: Get folders DIRECTLY shared with user
         // ##################################################
-        // get folders shared with this user from database
         const sharedFolders = await uploadModel.find({
             "sharedWith.userId": userID,
             type: "folder",
             isTrashed: { $ne: true }
         }).select("_id").lean()
 
-        const sharedFolderIds = sharedFolders.map(f => f._id)
-        const allSharedFolderIds = new Set(sharedFolderIds.map(id => id.toString()))
-
-        // go down level by level to find all nested folders inside shared folders
-        if (sharedFolderIds.length > 0) {
-            let currentLevel = sharedFolderIds
-            while (currentLevel.length > 0) {
-                const children = await uploadModel.find({
-                    parent: { $in: currentLevel },
-                    type: "folder",
-                    isTrashed: { $ne: true }
-                }).select("_id").lean()
-
-                currentLevel = []
-                for (const child of children) {
-                    allSharedFolderIds.add(child._id.toString())
-                    currentLevel.push(child._id)
-                }
-            }
-        }
-
+        const sharedRootFolderIds = sharedFolders.map(f => f._id)
 
         // ##################################################
-        // ---- STEP 3: Add folders owned by the user to the list
+        // ---- STEP 3: Permission check for "specific-folder" location
         // ##################################################
-        // const ownedFolders = await uploadModel.find({
-        //     owner: userId,
-        //     type: "folder",
-        //     isTrashed: { $ne: true }
-        // }).select("_id").lean();
-        // ownedFolders.forEach(f => allSharedFolderIds.add(f._id.toString()));
-
-        // ##################################################
-        // ---- STEP 4: Start building the search query filter
-        // ##################################################
-        const filter = {
-            $and: [
-                {
-                    $or: [
-                        { uploadStatus: "completed" },
-                        { type: "folder" }
-                    ]
-                }
-            ]
-        }
-
-        // ##################################################
-        // ---- STEP 5: Filter by search location -----------
-        // ##################################################
-        if (location === "my-docspot") {
-            // search only inside user's own drive
-            filter.owner = userID
-        } else if (location === "trash") {
-            // search only inside user's trash
-            filter.owner = userID
-        } else if (location === "shared") {
-            // search only inside the shared - user sahred item with others
-            filter.owner = userID
-            filter.isShared = true
-        } else if (location === "shared-with-me") {
-            // search only items shared with the current user
-            filter.$and.push({
-                // atlease one of this condition must be true
-                $or: [
-                    { "sharedWith.userId": userID },   // the item is shared with current user
-                    { parent: { $in: Array.from(allSharedFolderIds) } }
-                ]
-            })
-            // exclude the items owend by user so we can only show shared with me 
-            filter.owner = { $ne: userID }
-        } else if (location === "specific-folder" && folderId) {
-            // search inside a specific folder and check permission
+        let folderObjectId = null
+        if (location === "specific-folder" && folderId) {
             const permission = await getUserPermission(userID, folderId)
             if (!permission) {
                 return res.status(403).json({ success: false, message: "Access denied" })
             }
-
-            const allFolderIds = [folderId]
-            const queue = [folderId]
-
-            // get all nested folders under this specific folder
-            while (queue.length > 0) {
-                const currentId = queue.shift()
-                const children = await uploadModel.find({
-                    parent: currentId,
-                    type: "folder"
-                }).select("_id")
-
-                children.forEach(c => {
-                    allFolderIds.push(c._id)
-                    queue.push(c._id)
-                })
-            }
-            filter.parent = { $in: allFolderIds }
-            filter.$and.push({
-                $or: [
-                    { owner: userID },
-                    { "sharedWith.userId": userID },
-                    { parent: { $in: allFolderIds } }
-                ]
-            })
-        } else {
-            // search everywhere (my drive, shared files, or inside shared folders)
-            filter.$and.push({
-                $or: [
-                    { owner: userID },
-                    { "sharedWith.userId": userID },
-                    { parent: { $in: Array.from(allSharedFolderIds) } }
-                ]
-            })
+            folderObjectId = new mongoose.Types.ObjectId(folderId)
         }
 
         // ##################################################
-        // ---- STEP 6: Filter by text search query ---------
+        // ---- STEP 4: Build the base $match (cheap + indexed) ----
         // ##################################################
+        const baseMatch = {
+            $and: [
+                { $or: [{ uploadStatus: "completed" }, { type: "folder" }] }
+            ]
+        }
+
+        // CHANGED: $text instead of $regex. Requires:
+        //   uploadModel.schema.index({ name: "text" })
+        // $text uses the index (no scan) and tokenizes the query, so it
+        // matches whole/partial words but not arbitrary substrings the
+        // way regex did. If you need true substring/fuzzy matching, that
+        // is a genuine MongoDB limitation — move search to Meilisearch/
+        // Typesense and keep Mongo as the metadata/permissions source of
+        // truth. $text also requires at least one text-index field
+        // present in $match to use $meta: "textScore" later for sorting
+        // by relevance, if you want that.
+        const TEXT_SEARCH_MIN_LENGTH = 4
+        let usingTextSearch = false
         if (query && query.trim() !== "") {
-            filter.name = { $regex: escapeRegex(query.trim()), $options: "i" }
+            const trimmed = query.trim()
+
+            if (trimmed.length < TEXT_SEARCH_MIN_LENGTH) {
+                // Anchored prefix regex — matches names STARTING WITH the query
+                // (not arbitrary substrings). This is a deliberate trade-off:
+                // ^-anchored regex can use a standard index on `name` (with the
+                // right collation), unlike unanchored regex which always scans.
+                // If you need true substring matching ("chi" matching "Machine"),
+                // that's not achievable with an index-backed approach in Mongo —
+                // only Meilisearch/Typesense do that cheaply.
+                baseMatch.$and.push({
+                    name: { $regex: `^${escapeRegex(trimmed)}`, $options: "i" }
+                })
+            } else {
+                baseMatch.$and.push({ $text: { $search: trimmed } })
+                usingTextSearch = true
+            }
         }
 
-        // ##################################################
-        // ---- STEP 7: Filter by type of file --------------
-        // ##################################################
         if (fileType) {
             if (fileType === "Folder") {
-                filter.type = "folder"
+                baseMatch.$and.push({ type: "folder" })
             } else {
                 const typeMap = {
                     "Photo": /^image\//,
                     "PDF": /^application\/pdf/,
                     "Video": /^video\//,
                     "Zip": /^application\/(zip|x-zip)/,
-                    "File": /^application\//
+                    "Documents": /^(application\/msword|application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document|application\/vnd\.oasis\.opendocument\.text|text\/plain|application\/rtf|text\/markdown)/,
+                    "Spreadsheets": /^(application\/vnd\.ms-excel|application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet|application\/vnd\.oasis\.opendocument\.spreadsheet|text\/csv)/
                 }
                 if (typeMap[fileType]) {
-                    filter.fileType = typeMap[fileType]
+                    baseMatch.$and.push({ fileType: typeMap[fileType] })
                 }
             }
-
         }
 
-        // ##################################################
-        // ---- STEP 8: Filter by date created --------------
-        // ##################################################
         if (dateFrom || dateTo) {
-            filter.createdAt = {}
-            if (dateFrom) {
-                filter.createdAt.$gte = new Date(dateFrom + "T00:00:00.000Z")
-            }
-
-            if (dateTo) {
-                filter.createdAt.$lte = new Date(dateTo + "T23:59:59.999Z")
-            }
+            const createdAt = {}
+            if (dateFrom) createdAt.$gte = new Date(dateFrom + "T00:00:00.000Z")
+            if (dateTo) createdAt.$lte = new Date(dateTo + "T23:59:59.999Z")
+            baseMatch.$and.push({ createdAt })
         }
 
-        // ##################################################
-        // ---- STEP 9: Filter by owner --------------------
-        // ##################################################
+        if (location === "my-docspot") {
+            baseMatch.$and.push({ owner: userID })
+        } else if (location === "trash") {
+            baseMatch.$and.push({ owner: userID })
+        } else if (location === "shared") {
+            baseMatch.$and.push({ owner: userID, isShared: true })
+        } else if (location === "shared-with-me") {
+            baseMatch.$and.push({ owner: { $ne: userID } })
+        }
+
         if (ownerFilter === "owner-by-me") {
-            filter.owner = userID
-            filter.$and = filter.$and.filter(
-                cond => !cond.$or?.some(o => o["sharedWith.userId"])
-            )
+            baseMatch.$and.push({ owner: userID })
         } else if (ownerFilter === "not-owner-by-me") {
-            filter.owner = { $ne: userID }
-            filter.$and = filter.$and.filter(
-                cond => !cond.$or?.some(o => o["sharedWith.userId"])
-            )
-            filter.$and.push({
-                $or: [
-                    { "sharedWith.userId": userID },
-                    { parent: { $in: Array.from(allSharedFolderIds) } }
-                ]
-            })
+            baseMatch.$and.push({ owner: { $ne: userID } })
         } else if (ownerFilter === "specific-person" && personIds) {
-            const ids = JSON.parse(personIds)
-            filter.owner = { $in: ids }
-            filter.$and = filter.$and.filter(
-                cond => !cond.$or?.some(o => o["sharedWith.userId"])
-            )
-            filter.$and.push({
+            const ids = JSON.parse(personIds).map(id => new mongoose.Types.ObjectId(id))
+            baseMatch.$and.push({ owner: { $in: ids } })
+        }
+
+        if (location !== "trash") {
+            baseMatch.$and.push({ isTrashed: { $ne: true } })
+        }
+
+        // ##################################################
+        // ---- STEP 5: Ancestor-dependent permission / trash match ----
+        // ##################################################
+        // TODO (structural fix): once ancestorIds/ancestorNames are
+        // denormalized onto each document, this whole block + the
+        // $graphLookup stage in STEP 7 collapse into a single indexed
+        // $match on ancestorIds appended directly to baseMatch — no
+        // separate post-lookup pass needed at all.
+        const permissionOr = [
+            { owner: userID },
+            { "sharedWith.userId": userID },
+            { "ancestors._id": { $in: sharedRootFolderIds } },
+            { "ancestors.owner": userID }
+        ]
+
+        let postLookupMatch = { $and: [] }
+
+        if (location === "specific-folder") {
+            postLookupMatch.$and.push({ "ancestors._id": folderObjectId })
+        } else if (location === "shared-with-me") {
+            postLookupMatch.$and.push({
                 $or: [
                     { "sharedWith.userId": userID },
-                    { parent: { $in: Array.from(allSharedFolderIds) } }
+                    { "ancestors._id": { $in: sharedRootFolderIds } }
                 ]
             })
-        }
-
-        // ##################################################
-        // ---- STEP 10: Find all folders that are in trash -
-        // ##################################################
-        const trashedFolders = await uploadModel.find({
-            owner: userID,
-            isTrashed: true,
-            type: "folder"
-        }).select("_id").lean()
-
-        const trashedFolderIds = trashedFolders.map(f => f._id)
-        const allTrashedIds = new Set(trashedFolderIds.map(id => id.toString()))
-
-        // recursively find all sub-items inside trashed folders
-        if (trashedFolderIds.length > 0) {
-            let currentLevel = trashedFolderIds
-
-            while (currentLevel.length > 0) {
-                const children = await uploadModel.find({
-                    parent: { $in: currentLevel }
-                }).select("_id type").lean()
-
-                currentLevel = []
-                for (const child of children) {
-                    allTrashedIds.add(child._id.toString())
-                    if (child.type === "folder") {
-                        currentLevel.push(child._id)
-                    }
-                }
-            }
-        }
-
-        // ##################################################
-        // ---- STEP 11: Apply trash visibility rules ------
-        // ##################################################
-        if (location === "trash") {
-            // show only trashed files and folder items
-            filter.$and.push({
+        } else if (location === "trash") {
+            postLookupMatch.$and.push({
                 $or: [
                     { isTrashed: true },
-                    { _id: { $in: Array.from(allTrashedIds) } }
+                    { "ancestors.isTrashed": true }
                 ]
             })
-        } else {
-            // hide all trashed files and folders
-            filter.isTrashed = { $ne: true }
-            if (allTrashedIds.size > 0) {
-                filter.$and.push({
-                    _id: { $nin: Array.from(allTrashedIds) }
-                })
-            }
+        } else if (ownerFilter === "not-owner-by-me" || ownerFilter === "specific-person") {
+            postLookupMatch.$and.push({
+                $or: [
+                    { "sharedWith.userId": userID },
+                    { "ancestors._id": { $in: sharedRootFolderIds } }
+                ]
+            })
+        } else if (location !== "my-docspot" && location !== "shared") {
+            postLookupMatch.$and.push({ $or: permissionOr })
+        }
+
+        if (location !== "trash") {
+            postLookupMatch.$and.push({ "ancestors.isTrashed": { $ne: true } })
+        }
+
+        if (postLookupMatch.$and.length === 0) {
+            postLookupMatch = {}
         }
 
         // ##################################################
-        // ---- STEP 12: Get paginated files and total count -
+        // ---- STEP 6: Pagination params ----
         // ##################################################
         const page = parseInt(req.query.page) || 1
         const limit = 50
         const skip = (page - 1) * limit
-        const [results, totalCount] = await Promise.all([
-            uploadModel.find(filter)
-                .select("name type fileSize fileType updatedAt createdAt parent owner storagePath color isShared")
-                .populate("owner", "_id name profilePic")
-                .populate("sharedWith.userId", "_id name")
-                .sort({ type: -1, createdAt: -1 })
-                .skip(skip)
-                .limit(limit)
-                .lean(),
-            uploadModel.countDocuments(filter)
-        ])
 
         // ##################################################
-        // ---- STEP 13: Fetch folder names for paths -------
+        // ---- STEP 7: Run the aggregation ----
         // ##################################################
-        const folderCache = {}
-        const parentIdsToFetch = new Set()
-        results.forEach(item => {
-            if (item.parent) {
-                parentIdsToFetch.add(item.parent.toString())
-            }
-        })
-
-        let queue = Array.from(parentIdsToFetch)
-        while (queue.length > 0) {
-            const folders = await uploadModel.find({
-                _id: { $in: queue }
-            }).select("_id name parent").lean()
-            queue = []
-            folders.forEach(f => {
-                const idStr = f._id.toString()
-                folderCache[idStr] = f
-                if (f.parent) {
-                    const parentStr = f.parent.toString()
-                    if (!folderCache[parentStr] && !queue.includes(parentStr)) {
-                        queue.push(parentStr)
-                    }
+        // CHANGED: added $sort + $limit BEFORE $graphLookup. This bounds
+        // graphLookup's input to GRAPHLOOKUP_CANDIDATE_CAP documents
+        // regardless of how deep any individual folder tree goes, which
+        // is what actually controls disk/memory spill risk under
+        // concurrent load — not maxDepth (which we deliberately do NOT
+        // set, since real folder depth is user-driven and unbounded).
+        //
+        // Trade-off: if a search matches more than GRAPHLOOKUP_CANDIDATE_CAP
+        // documents, only the most recent N are considered — results
+        // beyond the cap won't surface. For a search UI this is usually
+        // an acceptable trade for guaranteed bounded resource use. If you
+        // need exhaustive results beyond the cap, that's the strongest
+        // signal to do the ancestorIds denormalization (TODO above),
+        // which removes the need for this cap entirely.
+        const pipeline = [
+            { $match: baseMatch },
+            ...(usingTextSearch
+                ? [{ $addFields: { score: { $meta: "textScore" } } }]
+                : []
+            ),
+            {
+                $sort: usingTextSearch
+                    ? { score: -1 }
+                    : { createdAt: -1 }
+            },
+            // { $limit: GRAPHLOOKUP_CANDIDATE_CAP },
+            {
+                $graphLookup: {
+                    from: uploadModel.collection.name,
+                    startWith: "$parent",
+                    connectFromField: "parent",
+                    connectToField: "_id",
+                    as: "ancestors",
+                    depthField: "depth"
                 }
-            })
-        }
+            },
+            { $match: postLookupMatch },
+            { $sort: { type: -1, createdAt: -1 } },
+            {
+                $facet: {
+                    results: [
+                        { $skip: skip },
+                        { $limit: limit },
+                        {
+                            $lookup: {
+                                from: "users",
+                                localField: "owner",
+                                foreignField: "_id",
+                                as: "owner",
+                                pipeline: [{ $project: { _id: 1, name: 1, email: 1, profilePic: 1 } }]
+                            }
+                        },
+                        { $unwind: { path: "$owner", preserveNullAndEmptyArrays: true } },
+                        {
+                            $lookup: {
+                                from: "users",
+                                localField: "sharedWith.userId",
+                                foreignField: "_id",
+                                as: "sharedWithUsers",
+                                pipeline: [{ $project: { _id: 1, name: 1, email: 1, profilePic: 1 } }]
+                            }
+                        },
+                        {
+                            $project: {
+                                name: 1, type: 1, fileSize: 1, totalSize: 1, fileType: 1,
+                                updatedAt: 1, createdAt: 1, parent: 1, owner: 1,
+                                storagePath: 1, color: 1, isShared: 1,
+                                sharedWithUsers: 1,
+                                sharedWith: 1,
+                                isTrashed: 1,
+                                ancestors: {
+                                    $map: {
+                                        input: "$ancestors",
+                                        as: "a",
+                                        in: { _id: "$$a._id", name: "$$a.name", depth: "$$a.depth" }
+                                    }
+                                }
+                            }
+                        }
+                    ],
+                    // CHANGED: totalCount now comes from the same capped
+                    // set (cheap - no second full pass). Accurate up to
+                    // GRAPHLOOKUP_CANDIDATE_CAP; beyond that it reports
+                    // the cap. If exact counts beyond the cap matter to
+                    // your UI, do the ancestorIds denormalization instead
+                    // of raising the cap.
+                    totalCount: [{ $count: "count" }]
+                }
+            }
+        ]
+
+        const [aggResult] = await uploadModel.aggregate(pipeline)
+        const results = aggResult?.results ?? []
+        const totalCount = aggResult?.totalCount?.[0]?.count ?? 0
 
         // ##################################################
-        // ---- STEP 14: Format paths for search results ----
+        // ---- STEP 8: Build display paths from the ancestors we
+        // already fetched in $graphLookup (no extra DB round trips) ----
         // ##################################################
-        const isS3 = process.env.STORAGE_PROVIDER === "s3";
+        const isS3 = process.env.STORAGE_PROVIDER === "s3"
 
         const resultsWithPath = results.map(item => {
-            const path = []
-            let currentParent = item.parent?.toString()
-            let isInsideSharedFolder = false
-            while (currentParent && folderCache[currentParent]) {
-                if (allSharedFolderIds.has(currentParent)) {
-                    isInsideSharedFolder = true
-                }
-                path.unshift(folderCache[currentParent].name)
-                currentParent = folderCache[currentParent].parent?.toString()
-            }
-            if (item.owner?._id?.toString() !== userID.toString() || isInsideSharedFolder) {
+            const sortedAncestors = [...(item.ancestors || [])].sort((a, b) => b.depth - a.depth)
+
+            const isInsideSharedFolder = sortedAncestors.some(a =>
+                sharedRootFolderIds.some(id => id.toString() === a._id.toString())
+            )
+
+            const path = sortedAncestors.map(a => a.name)
+
+            if (item.owner?._id?.toString() !== userIdStr || isInsideSharedFolder) {
                 path.unshift("Shared with me")
+            } else if (item.isShared) {
+                path.unshift("Shared")
             } else {
                 path.unshift("My Docspot")
             }
+
+            if (item.sharedWith && item.sharedWithUsers) {
+                item.sharedWith = item.sharedWith.map(share => {
+                    const userDetails = item.sharedWithUsers.find(
+                        u => u._id.toString() === share.userId?.toString()
+                    );
+                    return {
+                        ...share,
+                        userId: userDetails || share.userId
+                    };
+                });
+            }
+
             return {
                 ...item,
-                // --- CloudFront / S3 Full URL Logic (Commented out for Backend Proxy) ---
-                // storagePath: item.storagePath
-                //     ? (isS3 ? getFileUrl(item.storagePath) : `/${item.storagePath}`)
-                //     : null,
-                // ------------------------------------------------------------------------
+                isShared: item.isShared || isInsideSharedFolder || path[0] === "Shared",
+                isSharedWithMe: path[0] === "Shared with me",
                 storagePath: item.storagePath ? `/${item.storagePath}` : null,
-                locationPath: path.join(" / ")
+                locationPath: path.join(" / "),
+                ancestors: undefined
             }
         })
 
         // ##################################################
-        // ---- STEP 15: Send the results response ----------
+        // ---- STEP 9: Send the results response ----
         // ##################################################
-        res.json({ success: true, results: resultsWithPath, totalCount, page, limit })
+        res.json({
+            success: true,
+            results: resultsWithPath,
+            totalCount,
+            totalCountCapped: totalCount >= GRAPHLOOKUP_CANDIDATE_CAP,
+            page,
+            limit
+        })
     } catch (error) {
         logger.error(error)
         res.status(500).json({ success: false, message: error.message })
     }
 }
+

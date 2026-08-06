@@ -1,10 +1,12 @@
 //  models - schema
 import uploadModel from "#models/uploadModel";
 import userModel from "#models/userModel";
+import notificationModel from "#models/notification"
 
 //  utils
 import { logger } from "#utils/logger";
 import { getUserPermission } from "#utils/userPermissionUtil";
+import { sharedItemReperent } from "#utils/sharedItemReparent";
 
 // ------------------------- SHARE FILE AND FOLDER CONTROLLER -------------------------------------
 
@@ -13,8 +15,8 @@ import { getUserPermission } from "#utils/userPermissionUtil";
 
 // 2)  remove user from share 
 //  here if owner remove user from shared then all nested files and folder permission will be revoke here
-const removeUserFromSubtree = async (parentId, owner, userId) => {
-    const children = await uploadModel.find({ parent: parentId, owner })
+const removeUserFromSubtree = async (parentId, userId) => {
+    const children = await uploadModel.find({ parent: parentId })
 
     //  getting all childrean here of folder
     for (const child of children) {
@@ -33,7 +35,7 @@ const removeUserFromSubtree = async (parentId, owner, userId) => {
 
         //  in childrean if there is a folder then call this function recursively
         if (child.type === "folder") {
-            await removeUserFromSubtree(child._id, owner, userId)
+            await removeUserFromSubtree(child._id, userId)
         }
     }
 }
@@ -74,19 +76,28 @@ export const shareItem = async (req, res) => {
         //  ------- STEP - 3 - Verify item ownership and verify targeted usr
         //  ##########################################
 
-        //  only share item that current user actually  owns it
-        const authorizedItems = await uploadModel.find({
-            _id: { $in: itemIdList },   // getting all itmes document
-            owner: currentUserId
-        }).select("_id")
+        //  so now here owner and editor can both share items here 
+        const itemsToShare = await uploadModel.find({
+            _id: { $in: itemIdList }
+        }).select("_id name type mimeType parent sharedWith owner")
 
-        //  from array of documents convert array of ids
+        //  check permission here for that items owner and editor can share
+        const authorizedItems = []
+        for (const item of itemsToShare) {
+            const permission = await getUserPermission(currentUserId, item._id)
+            if (["owner", "editor"].includes(permission)) {
+                authorizedItems.push(item)
+            }
+        }
+
+        //  convert authorized items to the array
         const authorizedItemIds = authorizedItems.map(i => i._id)
 
-        // if there is no items found then return 
+        //  return if user is not the owner or editor 
         if (authorizedItemIds.length === 0) {
-            return res.status(404).json({ success: false, message: "No valid items found or you are not the owner" })
+            return res.status(403).json({ success: false, message: "No valid items found or you don't have permission to share" })
         }
+
 
         //  exclude current user form sharing 
         const targetUsers = await userModel.find({
@@ -130,6 +141,67 @@ export const shareItem = async (req, res) => {
         )
 
         //  #####################################################################
+        //  --- STEP - 4.5 - send notification BEll
+        // ######################################################################
+
+        const notificationDocs = [];
+
+        targetUserIds.forEach(uid => {
+            authorizedItems.forEach(item => {
+                // Check if user already had access to this item
+                const alreadyShared = item.sharedWith?.some(
+                    s => s.userId.toString() === uid.toString()
+                )
+
+                // only send notification if new user previus user will not recive here 
+                if (!alreadyShared) {
+                    const itemTypeName = item.type === "folder" ? "folder" : "file"
+                    notificationDocs.push({
+                        recipient: uid,
+                        actor: currentUserId,
+                        type: "file_shared",
+                        message: `${req.user.name} shared ${itemTypeName} <b>"${item.name}"</b> with you`,
+                        metadata: {
+                            itemId: item._id,
+                            itemName: item.name,
+                            itemType: item.type,
+                            parentId: item.parent || null,
+                            profilePic: req.user.thumbnail_profile_pic || req.user.profilePic || null
+                        }
+                    })
+                }
+
+            })
+        })
+
+        if (notificationDocs.length > 0) {
+            // 1. Save all notifications to database
+            const savedNotifications = await notificationModel.insertMany(notificationDocs)
+
+            // 2. Prepare actor info for real-time socket payload
+            const populatedActor = {
+                _id: req.user._id,
+                name: req.user.name,
+                profilePic: req.user.profilePic
+            }
+
+            // 3 socket evet to notfication to other users
+            savedNotifications.forEach(notify => {
+                req.emitToUser(notify.recipient.toString(), "new_notification", {
+                    _id: notify._id,
+                    type: notify.type,
+                    message: notify.message,
+                    metadata: notify.metadata,
+                    actor: populatedActor,
+                    isRead: false,
+                    createdAt: notify.createdAt
+                })
+            })
+        }
+
+
+
+        //  #####################################################################
         //  --- STEP - 5 - send scoket event
         // ######################################################################
 
@@ -140,6 +212,27 @@ export const shareItem = async (req, res) => {
                 message: `${authorizedItemIds.length} item(s) shared with you`,
             })
         })
+
+
+        // notify all users that share or un share added here
+        authorizedItems.forEach(item => {
+            const allCollaboratorIds = new Set();
+            if (item.owner) allCollaboratorIds.add(item.owner.toString());
+            if (Array.isArray(item.sharedWith)) {
+                item.sharedWith.forEach(s => {
+                    const uid = typeof s === 'object' ? (s.userId?._id || s.userId || s._id) : s;
+                    if (uid) allCollaboratorIds.add(uid.toString());
+                });
+            }
+            targetUserIds.forEach(uid => allCollaboratorIds.add(uid.toString()));
+            allCollaboratorIds.add(currentUserId.toString());
+            allCollaboratorIds.forEach(uid => {
+                req.emitToUser(uid, "share_added", {
+                    itemIds: [item._id],
+                    message: `${authorizedItems.length} item(s) shared`,
+                });
+            });
+        });
 
         // ── STEP 6: Response ────────────────────────────────────
         res.json({ success: true, message: "Shared successfully" })
@@ -176,115 +269,119 @@ export const unshareItem = async (req, res) => {
         // ── STEP 3: Verify ownership ────────────────────────────
         // ########################################################
 
-        // only allow unsharing items that current user actually owns
-        const ownedItems = await uploadModel.find({
-            _id: { $in: normalizedItemIds },
-            owner: currentUserId
-        })
-        //  if there is no item found or no owner is there so return
-        if (ownedItems.length === 0) {
-            return res.status(404).json({ success: false, message: "No items found or you are not the owner" });
+        //  here owner and editor both can un share items here
+        const targetItems = await uploadModel.find({
+            _id: { $in: normalizedItemIds }
+        }).select("_id owner parent sharedWith type name")
+
+
+        //  editor and owner only  permiison
+        const authorizedItems = []
+        for (const item of targetItems) {
+            const permission = await getUserPermission(currentUserId, item._id)
+            if (["owner", "editor"].includes(permission)) {
+                authorizedItems.push(item)
+            }
         }
 
-        //  conver document object into the array 
-        const ownedItemIds = ownedItems.map(i => i._id)
+        if (authorizedItems.length === 0) {
+            return res.status(403).json({ success: false, message: "No items found or you don't have permission to unshare" })
+        }
+
+        const authorizedItemIds = authorizedItems.map(i => i._id)
+
+
+        //  prevent the editor to unshare owner or themselves
+        const safeUserIdsToUnshare = normalizedUserIds.filter(targetUid => {
+            const targetStr = targetUid.toString()
+            const requesterStr = currentUserId.toString()
+
+            for (const item of authorizedItems) {
+                const itemOwnerStr = item.owner ? item.owner.toString() : null
+
+                //  if un shareing user is the editor
+                if (requesterStr !== itemOwnerStr) {
+                    // prevent removing the owner
+                    if (targetStr === itemOwnerStr) return false
+                    //  prevent removing themselves
+                    if (targetStr === requesterStr) return false
+
+                }
+            }
+            return true
+        })
+
+        if (safeUserIdsToUnshare.length === 0) {
+            return res.status(400).json({ success: false, message: "You cannot unshare to this user" })
+        }
+
+
 
         // ########################################################
         // ── STEP 4: Business logic ──────────────────────────
         // #######################################################
 
-        // BFS walk through folders to find editor uploaded items
-        // editor uploaded items must be moved to root before access is removed
-        const editorItemsBulkOps = []
-        const editorItemsMap = new Map()
-
-        for (const item of ownedItems) {
-            if (item.type !== "folder") continue
-
-            let currentLevelIds = [item._id]
-
-            while (currentLevelIds.length > 0) {
-                const children = await uploadModel.find({
-                    parent: { $in: currentLevelIds }
-                }).populate("owner", "_id name profilePic").lean()
-
-                // separate children uploaded by editor vs owner
-                const editorUploadedChildren = children.filter(c => {
-                    const childOwnerId = c.owner._id ? c.owner._id.toString() : c.owner.toString()
-                    return normalizedUserIds.includes(childOwnerId)
-                })
-
-                //  userId - owner children
-                const ownerUploadedChildren = children.filter(c => {
-                    const childOwnerId = c.owner._id ? c.owner._id.toString() : c.owner.toString()
-                    return !normalizedUserIds.includes(childOwnerId)
-                })
-
-                // move editor uploaded items to root so they dont get deleted with folder
-                editorUploadedChildren.forEach(child => {
-                    editorItemsBulkOps.push({
-                        updateOne: {
-                            filter: { _id: child._id },
-                            update: { $set: { parent: null, isTrashed: false, trashedAt: null } }
-                        }
-                    })
-
-                    // group moved items by editor for later socket updates
-                    const editorId = child.owner._id ? child.owner._id.toString() : child.owner.toString()
-                    if (!editorItemsMap.has(editorId)) editorItemsMap.set(editorId, [])
-                    editorItemsMap.get(editorId).push({
-                        itemId: child._id,
-                        oldParent: child.parent,
-                        movedItem: {
-                            ...child,
-                            parent: null,
-                            isTrashed: false,
-                            owner: {
-                                _id: child.owner._id,
-                                name: child.owner.name,
-                                profilePic: child.owner.profilePic
-                            },
-                            storagePath: child.storagePath ? `/${child.storagePath}` : null
-                        }
-                    })
-                })
-
-                // only continue BFS through owner uploaded folders
-                currentLevelIds = ownerUploadedChildren
-                    .filter(c => c.type === "folder")
-                    .map(c => c._id)
-            }
-        }
-
-        // apply bulk move for editor items if any found
-        if (editorItemsBulkOps.length > 0) {
-            await uploadModel.bulkWrite(editorItemsBulkOps)
-        }
+        // Reparent editor uploaded items to root using sharedItemReperent utility before access is removed
+        const editorItemsMap = await sharedItemReperent(
+            authorizedItemIds,
+            (ownerId) => safeUserIdsToUnshare.includes(ownerId)
+        );
 
         // remove target users from sharedWith on all owned items
         await uploadModel.updateMany(
-            { _id: { $in: ownedItemIds } },
+            { _id: { $in: authorizedItemIds } },
             {
                 $pull: {
-                    sharedWith: { userId: { $in: normalizedUserIds } }
+                    sharedWith: { userId: { $in: safeUserIdsToUnshare } }
                 }
             }
         )
 
         // reset isShared flag on items that now have no shared users
         await uploadModel.updateMany(
-            { _id: { $in: ownedItemIds }, sharedWith: { $size: 0 } },
+            { _id: { $in: authorizedItemIds }, sharedWith: { $size: 0 } },
             { $set: { isShared: false } }
         )
 
         // remove inherited permissions from all nested children in folder subtree
-        for (const item of ownedItems) {
+        for (const item of authorizedItems) {
             if (item.type === "folder") {
-                for (const userId of normalizedUserIds) {
-                    await removeUserFromSubtree(item._id, currentUserId, userId)
+                for (const userId of safeUserIdsToUnshare) {
+                    await removeUserFromSubtree(item._id, userId)
                 }
             }
         }
+
+
+        // ##########################################################
+        // ── STEP 4.5 - remove the notification from the other users ────────────────────────
+        // ######################################################### 
+        const notificationToDelete = await notificationModel.find({
+            recipient: { $in: safeUserIdsToUnshare },
+            "metadata.itemId": { $in: authorizedItemIds },
+            type: "file_shared"
+        }).select("_id recipient")
+
+        if (notificationToDelete.length > 0) {
+            const idsToDelete = notificationToDelete.map(n => n._id)
+            await notificationModel.deleteMany({ _id: { $in: idsToDelete } })
+
+            //  for live update to all share dusers id
+            const notificationByRecipent = new Map()
+            notificationToDelete.forEach(n => {
+                const recipientId = n.recipient.toString()
+                if (!notificationByRecipent.has(recipientId)) {
+                    notificationByRecipent.set(recipientId, [])
+                }
+                notificationByRecipent.get(recipientId).push(n._id)
+            })
+
+            //  socket evet live notification to users
+            notificationByRecipent.forEach((ids, recipientId) => {
+                req.emitToUser(recipientId, "notifications_removed", { ids })
+            })
+        }
+
 
         // ##########################################################
         // ── STEP 5: Send each editor socket event ────────────────────────
@@ -302,13 +399,30 @@ export const unshareItem = async (req, res) => {
             })
         })
 
-        // notify target users that their access has been removed
-        normalizedUserIds.forEach(uid => {
-            req.emitToUser(uid.toString(), "share_removed", { itemIds: ownedItemIds })
-        })
+        // notify all collaborators (Owner, Editors, Viewers, and unshared users) with accurate accessRevoked flags
+        authorizedItems.forEach(item => {
+            const allCollaboratorIds = new Set();
+            if (item.owner) allCollaboratorIds.add(item.owner.toString());
+            if (Array.isArray(item.sharedWith)) {
+                item.sharedWith.forEach(s => {
+                    const uid = typeof s === 'object' ? (s.userId?._id || s.userId || s._id) : s;
+                    if (uid) allCollaboratorIds.add(uid.toString());
+                });
+            }
+            safeUserIdsToUnshare.forEach(uid => allCollaboratorIds.add(uid.toString()));
+            allCollaboratorIds.add(currentUserId.toString());
 
-        // notify the owner so their folder icon updates in real-time
-        req.emitToUser(currentUserId.toString(), "share_removed", { itemIds: ownedItemIds })
+            const unsharedSet = new Set(safeUserIdsToUnshare.map(id => id.toString()))
+
+            allCollaboratorIds.forEach(uid => {
+                const revoked = unsharedSet.has(uid.toString())
+                console.log(`[Backend shareController] Emitting share_removed to uid=${uid} | accessRevoked=${revoked} | itemId=${item._id}`)
+                req.emitToUser(uid, "share_removed", {
+                    itemIds: [item._id],
+                    accessRevoked: revoked
+                });
+            });
+        });
 
         // ── STEP 6: Response ────────────────────────────────────
         res.json({ success: true, message: "Access removed" });
@@ -321,8 +435,8 @@ export const unshareItem = async (req, res) => {
 
 
 
-//  5) owner can see all user with file and folder access in modal
-//  5) owner can see all user with file and folder access in modal (including inherited)
+
+//  5) owner and editor can see all user with file and folder access in modal (including inherited)
 export const getSharedUsers = async (req, res) => {
     try {
         // Extract the target file/folder ID from the request URL parameters
@@ -361,7 +475,7 @@ export const getSharedUsers = async (req, res) => {
         const allSharedUsersMap = new Map();
 
         // We only reveal the full list of shared users if the person requesting it is the actual "owner"
-        if (permission === "owner") {
+        if (permission === "owner" || permission === "editor") {
             // Start checking from the specific item the user clicked on
             let currentId = itemId;
 

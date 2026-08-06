@@ -30,6 +30,9 @@ import editUserIcon from "@images/icon/edit-user-icon.svg"
 import { useBellNotification } from '../../../context/BellNotificationContext.jsx';
 import { useSearch } from '../../../context/SearchContext.jsx';
 import userManagementIcon from "@images/icon/user-management-icon.svg";
+import useResponsive from "../../../hooks/useResponsive.js";
+import backIcon from "@images/icon/arrow-left-outline-icon.svg";
+
 
 
 
@@ -37,12 +40,13 @@ import userManagementIcon from "@images/icon/user-management-icon.svg";
 const BASE_URL = import.meta.env.VITE_API_URL?.replace(/\/api\/?$/, "") || "";
 
 function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobileSidebarNavclick, isAdmin }) {
-
+    const { isMobile } = useResponsive();
 
     const { logout, user } = useAuth()
     const navigate = useNavigate()
     const { selectedIds, triggerHighlight } = useFileExplorer()
     const { clearSearch } = useSearch();
+
 
     const { notifications, unreadCount, markAllRead, deleteNotifications } = useBellNotification();
     const [isNotificationOpen, setIsNotificationOpen] = useState(false);
@@ -84,6 +88,27 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
         }
     }
 
+
+    //  this is for the bell notification when user click this so go to that page here
+    const handleNotificationClick = (notification) => {
+        const metadata = notification.metadata || {};
+        const isTrash = notification.type === "file_deleted" || notification.type === "folder_deleted";
+        const isShare = notification.type === "file_shared";
+
+        if (isTrash) {
+            navigate("/trash-dashboard", { state: { highlightId: metadata.itemId } });
+        } else {
+            const targetRoute = metadata.parentId
+                ? `/dashboard/folder/${metadata.parentId}`
+                : (isShare ? "/shared-with-me" : "/dashboard");
+
+            navigate(targetRoute);
+            if (metadata.itemId) triggerHighlight(metadata.itemId);
+        }
+
+        setIsNotificationOpen(false);
+    };
+
     const handleClearAll = () => {
         if (notifications.length === 0) return;
         const allIds = notifications.map(n => n._id);
@@ -95,26 +120,32 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
         deleteNotifications([notificationId]);
     };
 
+
+
+    //  this fucntion is used for the notification timer show
+    const formatNotificationTime = (dateString) => {
+        const date = new Date(dateString);
+        return date.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) + " • " + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    };
+
     const profileImage = user?.profilePic
         ? `${BASE_URL}${user.profilePic}`
         : user1Image;
 
 
     return (
-        <div className="master-header">
+        <div className={`master-header ${isMobile ? "master-header-mobile" : ""}`}>
             <div className="d-flex align-items-center justify-content-between">
                 {/* Logo */}
 
                 <div className="logo-section">
-                    {!isAdmin && (
-                        <button className="sidebar2-Mobile-toggle-btn btn-only-icon" onClick={onMobileSidebarNavclick}>
-                            <InteractiveIcon
-                                defaultIcon={menuIcon}
-                                alt=""
-                                width={24}
-                            />
-                        </button>
-                    )}
+                    <button className="sidebar2-Mobile-toggle-btn btn-only-icon" onClick={onMobileSidebarNavclick}>
+                        <InteractiveIcon
+                            defaultIcon={menuIcon}
+                            alt=""
+                            width={24}
+                        />
+                    </button>
 
                     <a className="logo" onClick={() => {
                         clearSearch();               // Clears the search state
@@ -123,10 +154,18 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                         }
                         navigate("/dashboard");      // Goes to dashboard
                     }}>
-                        <InteractiveIcon
-                            defaultIcon={logoIcon}
-                            alt=""
-                        />
+                        {isMobile ? (
+                            <InteractiveIcon
+                                defaultIcon={BrandSmallIcon}
+                                alt=""
+                            />
+                        ) : (
+                            <InteractiveIcon
+                                defaultIcon={logoIcon}
+                                alt=""
+                            />
+                        )}
+
                     </a>
                 </div>
 
@@ -236,136 +275,143 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                                 </Dropdown>
                             </Tooltip>
                         </li> */}
+                        {isMobile && !searchBarOpen && (
+                            <>
 
-                        <li className='d-flex'>
-                            <div className="notification-wrapper" ref={notificationRef}>
+                                <li className="d-flex align-items-center justify-content-center ">
+                                    <button className="btn-only-icon border-0 " onClick={() => setSearchBarOpen(prev => !prev)}>
+                                        <InteractiveIcon defaultIcon={searchIcon} width={24} alt="Search" />
+                                    </button>
+                                </li>
+                                {!isAdmin && (
+                                    <li><div className="divider"></div></li>
+                                )}
 
-                                {/* Bell Icon */}
-                                <div className="notification-bell " onClick={() => {
-                                    const next = !isNotificationOpen;
-                                    setIsNotificationOpen(next);
-                                    if (next) markAllRead();
-                                }}>
-
-                                    <Tooltip text="Notification" offset={8}>
-
-                                        <span className='btn-only-icon'>
-                                            <InteractiveIcon
-                                                defaultIcon={notificationIcon}
-                                                alt=""
-                                                width={20}
-                                            />
-                                        </span>
-                                    </Tooltip>
+                            </>
+                        )}
 
 
-                                    {unreadCount > 0 && (
-                                        <div className="notification-badge">
-                                            <span>{unreadCount > 9 ? "9+" : unreadCount}</span>
-                                        </div>
-                                    )}
-                                </div>
+                        {!isAdmin && (
+                            <>
 
-                                {/* Notification Panel */}
-                                {isNotificationOpen && (
-                                    <div className={`notification-panel ${isNotificationOpen ? "show" : ""}`}>
+                                <li className='d-flex'>
+                                    <div className="notification-wrapper" ref={notificationRef}>
+
+                                        {/* Bell Icon */}
+                                        <div className="notification-bell " onClick={() => {
+                                            const next = !isNotificationOpen;
+                                            setIsNotificationOpen(next);
+                                            if (next) markAllRead();
+                                        }}>
+
+                                            <Tooltip text="Notification" offset={8}>
+
+                                                <span className='btn-only-icon'>
+                                                    <InteractiveIcon
+                                                        defaultIcon={notificationIcon}
+                                                        alt=""
+                                                        width={20}
+                                                    />
+                                                </span>
+                                            </Tooltip>
 
 
-
-                                        <div className="notification-header">
-                                            <h6 className="notification-title">Notifications</h6>
-                                            {notifications.length > 0 && (
-                                                <button className='clear-btn' onClick={handleClearAll}>Clear all</button>
-
+                                            {unreadCount > 0 && (
+                                                <div className="notification-badge">
+                                                    <span>{unreadCount > 9 ? "9+" : unreadCount}</span>
+                                                </div>
                                             )}
                                         </div>
 
-                                        <div className="notification-divider" />
+                                        {/* Notification Panel */}
+                                        {isNotificationOpen && (
+                                            <div className={`notification-panel ${isNotificationOpen ? "show" : ""}`}>
+                                                <div className="notification-header">
+                                                    <h6 className="notification-title">
+                                                        {isMobile && (
+                                                            <span className="btn-only-icon">
+                                                                <InteractiveIcon
+                                                                    defaultIcon={backIcon}
+                                                                    width={24}
+                                                                    onClick={() => setIsNotificationOpen(false)}
+                                                                />
+                                                            </span>
+                                                        )}
 
-                                        <div className='notification-panel-custom-scroll-wrapper'>
-                                            <CustomScroll className="notification-panel-custom-scroll" showBottomBlur={false} showTopBlur={true}>
-                                                {notifications.length === 0 ? (
+                                                        Notifications
+                                                    </h6>
+                                                    {notifications.length > 0 && (
+                                                        <button className='clear-btn' onClick={handleClearAll}>Clear all</button>
 
-                                                    <div className="notification-empty">
-                                                        No notifications
-                                                    </div>
+                                                    )}
+                                                </div>
 
-                                                ) : (
+                                                <div className="notification-divider" />
 
-                                                    notifications.slice(0, 5).map(notification => (
+                                                <div className='notification-panel-custom-scroll-wrapper'>
+                                                    <CustomScroll className="notification-panel-custom-scroll" showBottomBlur={false} showTopBlur={true}>
+                                                        {notifications.length === 0 ? (
 
-                                                        <div
-                                                            key={notification._id}
-                                                            onClick={() => {
-                                                                const metadata = notification.metadata || {};
-                                                                const isTrashNotification = notification.type === "file_deleted" || notification.type === "folder_deleted";
-
-                                                                if (isTrashNotification) {
-                                                                    navigate("/trash-dashboard", { state: { highlightId: metadata.itemId } });
-                                                                } else {
-                                                                    // Navigate to specific folder or root
-                                                                    if (metadata.parentId) {
-                                                                        navigate(`/dashboard/folder/${metadata.parentId}`);
-                                                                    } else {
-                                                                        navigate("/dashboard");
-                                                                    }
-
-                                                                    // Trigger the pulse class highlight on the specific item!
-                                                                    if (metadata.itemId) {
-                                                                        triggerHighlight(metadata.itemId);
-                                                                    }
-                                                                }
-                                                                setIsNotificationOpen(false); // Close dropdown
-                                                            }}
-                                                            className={`notification-message ${!notification.isRead ? "notification-message-unread" : ""}`}
-                                                        >
-                                                            <div className="notification-message-user">
-                                                                <UserAvatar user={notification.metadata} />
-                                                                <div className='notification-message-content-wrapper'>
-                                                                    <div className='notification-message-name-date'>
-                                                                        <strong className="notification-message-name">
-                                                                            {notification.actor?.name}
-                                                                        </strong>
-                                                                        <button className='btn-only-icon'
-                                                                            onClick={(e) => handleDeleteSingle(e, notification._id)}
-                                                                        >
-                                                                            <InteractiveIcon
-                                                                                defaultIcon={closeIcon}
-                                                                                alt=""
-                                                                                width={16}
-                                                                            />
-                                                                        </button>
-
-                                                                    </div>
-
-                                                                    <div className='notification-message-text' dangerouslySetInnerHTML={{ __html: notification.message }} />
-
-
-                                                                    <small className="notification-message-time">
-
-                                                                        {new Date(notification.createdAt).toLocaleString()}
-                                                                    </small>
-                                                                </div>
+                                                            <div className="notification-empty">
+                                                                No notifications
                                                             </div>
 
+                                                        ) : (
 
-                                                        </div>
+                                                            notifications.slice(0, 5).map(notification => (
 
-                                                    ))
+                                                                <div
+                                                                    key={notification._id}
+                                                                    onClick={() => handleNotificationClick(notification)}
+                                                                    className={`notification-message ${!notification.isRead ? "notification-message-unread" : ""}`}
+                                                                >
+                                                                    <div className="notification-message-user">
+                                                                        <UserAvatar user={notification.actor} />
+                                                                        <div className='notification-message-content-wrapper'>
+                                                                            <div className='notification-message-name-date'>
+                                                                                <strong className="notification-message-name">
+                                                                                    {notification.actor?.name}
+                                                                                </strong>
+                                                                                <button className='btn-only-icon'
+                                                                                    onClick={(e) => handleDeleteSingle(e, notification._id)}
+                                                                                >
+                                                                                    <InteractiveIcon
+                                                                                        defaultIcon={closeIcon}
+                                                                                        alt=""
+                                                                                        width={16}
+                                                                                    />
+                                                                                </button>
 
-                                                )}
-                                            </CustomScroll>
+                                                                            </div>
 
-                                            {/* see all notification button here */}
-                                            {notifications.length > 0 && (
-                                                <div className="notification-panel-footer " >
-                                                    <button className='notification-panel-all-btn w-100 justify-content-center'
-                                                        onClick={() => {
-                                                            setIsNotificationOpen(false)
-                                                            navigate("/notifications")
-                                                        }}>
-                                                        See all notifications
-                                                        {/* <span>
+                                                                            <div className='notification-message-text' dangerouslySetInnerHTML={{ __html: notification.message }} />
+
+
+                                                                            <small className="notification-message-time">
+
+                                                                                {formatNotificationTime(notification.createdAt)}
+                                                                            </small>
+                                                                        </div>
+                                                                    </div>
+
+
+                                                                </div>
+
+                                                            ))
+
+                                                        )}
+                                                    </CustomScroll>
+
+                                                    {/* see all notification button here */}
+                                                    {notifications.length > 0 && (
+                                                        <div className="notification-panel-footer " >
+                                                            <button className='notification-panel-all-btn w-100 justify-content-center'
+                                                                onClick={() => {
+                                                                    setIsNotificationOpen(false)
+                                                                    navigate("/notifications")
+                                                                }}>
+                                                                See all notifications
+                                                                {/* <span>
                                                             <InteractiveIcon
                                                                 defaultIcon={enterIcon}
                                                                 alt=""
@@ -373,148 +419,137 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                                                                 height={20}
                                                             />
                                                         </span> */}
-                                                    </button>
+                                                            </button>
+                                                        </div>
+                                                    )}
                                                 </div>
-                                            )}
-                                        </div>
 
-                                    </div>
-                                )}
-
-                            </div>
-                        </li>
-                        <li>
-                            <div className="divider" />
-                        </li>
-
-
-
-                        <li>
-                            <Dropdown className='profile-dropdown'>
-                                <Dropdown.Toggle className='no-border-btn'>
-                                    <div className="profile-dd">
-                                        <div className='profile-single-box'>
-                                            {/* {user.thumbnail_profile_pic || user.compressed_profile_pic ? (
-                                            <img
-                                                src={`${import.meta.env.VITE_BACKEND_URL}/${user.thumbnail_profile_pic || user.compressed_profile_pic}`}
-                                                alt=""
-                                                className="user-avatar"
-                                            />
-                                        ) : (
-                                            <div className="user-avatar-initials">
-                                                {user.name?.trim().charAt(0).toUpperCase() || "?"}
                                             </div>
-                                        )} */}
-                                            <UserAvatar user={user} />
-                                        </div>
-                                        <div className="dd_arrow btn-only-icon">
-                                            <img src={arrowDownIcon} alt="" width={18} />
-                                        </div>
-                                    </div>
-                                </Dropdown.Toggle>
+                                        )}
 
-                                <Dropdown.Menu align="end" className='dropdown-menu-lg'>
-                                    <div className='profile-header'>
-                                        <InteractiveIcon
-                                            defaultIcon={BrandSmallIcon}
-                                            width={36}
-                                            height={36}
-                                            alt=""
-                                        />
-                                        <div className='profile-logo-box'>
-                                            <h4 className='logo-text fwn-d-extrabold'>DOCSPOT <span className='version-status fwn-d-medium'>v1</span></h4>
-                                        </div>
                                     </div>
-                                    <div className="profile-img-box d-flex justify-content-center">
-                                        <div className="position-relative">
-                                            <span className="user-profile me-0">
-                                                {/* <InteractiveIcon
-                                                    defaultIcon={profileImage}
-                                                    width={100}
-                                                    height={100}
+                                </li>
+                            </>
+                        )}
+
+                        {isMobile ? (
+                            <></>
+                        ) : (
+                            <>
+                                {!isAdmin && (
+                                    <li>
+                                        <div className="divider" />
+                                    </li>
+                                )}
+                                <li>
+                                    <Dropdown className='profile-dropdown'>
+                                        <Dropdown.Toggle className='no-border-btn'>
+                                            <div className="profile-dd">
+                                                <div className='profile-single-box'>
+                                                    <UserAvatar user={user} />
+                                                </div>
+                                                <div className="dd_arrow btn-only-icon">
+                                                    <img src={arrowDownIcon} alt="" width={18} />
+                                                </div>
+                                            </div>
+                                        </Dropdown.Toggle>
+
+                                        <Dropdown.Menu align="end" className='dropdown-menu-lg'>
+                                            <div className='profile-header'>
+                                                <InteractiveIcon
+                                                    defaultIcon={BrandSmallIcon}
+                                                    width={36}
+                                                    height={36}
                                                     alt=""
-                                                /> */}
+                                                />
+                                                <div className='profile-logo-box'>
+                                                    <h4 className='logo-text fwn-d-extrabold'>DOCSPOT <span className='version-status fwn-d-medium'>v1</span></h4>
+                                                </div>
+                                            </div>
+                                            <div className="profile-img-box d-flex justify-content-center">
+                                                <div className="position-relative">
+                                                    <span className="user-profile me-0">
+                                                        <UserAvatar user={user} />
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <h4 className="profile-name text-center mb-3 text-capitalize">{user.name}</h4>
 
-                                                <UserAvatar user={user} />
-                                            </span>
-                                        </div>
-                                    </div>
-                                    <h4 className="profile-name text-center mb-3 text-capitalize">{user.name}</h4>
-
-                                    {/* if the user is in the admin page then show diffrent menu  */}
-                                    {isAdmin ? (
-                                        <>
-                                            <Dropdown.Item className="dropdown-item d-flex align-items-center" onClick={() => navigate("/dashboard")}>
-                                                <InteractiveIcon
-                                                    defaultIcon={userManagementIcon}
-                                                    width={24}
-                                                    height={24}
-                                                    alt="My Docspot"
-                                                />
-                                                <span className='item-name'>Redirect to My Docspot</span>
-                                            </Dropdown.Item>
-                                            <Dropdown.Divider className='dot' />
-                                            <Dropdown.Item className="dropdown-item d-flex align-items-center"
-                                                onClick={() => navigate("/profile")}
-                                            >
-                                                <InteractiveIcon
-                                                    defaultIcon={editUserIcon}
-                                                    width={24}
-                                                    height={24}
-                                                    alt="Edit Profile"
-                                                />
-                                                <span className='item-name'>Edit Profile</span>
-                                            </Dropdown.Item>
-                                            <Dropdown.Item className="dropdown-item d-flex align-items-center" onClick={handleLogout}>
-                                                <InteractiveIcon
-                                                    defaultIcon={logOutIcon}
-                                                    width={24}
-                                                    height={24}
-                                                    alt="Logout"
-                                                />
-                                                <span className='item-name'>Logout</span>
-                                            </Dropdown.Item>
-                                        </>
-                                    ) : (
-                                        <>
-                                            {user.role === "admin" && (
-                                                <Dropdown.Item className="dropdown-item d-flex align-items-center" onClick={() => navigate("/admin-dashboard")}>
-                                                    <InteractiveIcon
-                                                        defaultIcon={userManagementIcon}
-                                                        width={22}
-                                                        height={22}
-                                                        alt="Manage Users"
-                                                    />
-                                                    <span className='item-name'>Manage Users</span>
-                                                </Dropdown.Item>
+                                            {isAdmin ? (
+                                                <>
+                                                    <Dropdown.Item className="dropdown-item d-flex align-items-center" onClick={() => navigate("/dashboard")}>
+                                                        <InteractiveIcon
+                                                            defaultIcon={userManagementIcon}
+                                                            width={24}
+                                                            height={24}
+                                                            alt="My Docspot"
+                                                        />
+                                                        <span className='item-name'>Redirect to My Docspot</span>
+                                                    </Dropdown.Item>
+                                                    <Dropdown.Divider className='dot' />
+                                                    <Dropdown.Item className="dropdown-item d-flex align-items-center"
+                                                        onClick={() => navigate("/profile")}
+                                                    >
+                                                        <InteractiveIcon
+                                                            defaultIcon={editUserIcon}
+                                                            width={24}
+                                                            height={24}
+                                                            alt="Edit Profile"
+                                                        />
+                                                        <span className='item-name'>Edit Profile</span>
+                                                    </Dropdown.Item>
+                                                    <Dropdown.Item className="dropdown-item d-flex align-items-center" onClick={handleLogout}>
+                                                        <InteractiveIcon
+                                                            defaultIcon={logOutIcon}
+                                                            width={24}
+                                                            height={24}
+                                                            alt="Logout"
+                                                        />
+                                                        <span className='item-name'>Logout</span>
+                                                    </Dropdown.Item>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    {user.role === "admin" && (
+                                                        <Dropdown.Item className="dropdown-item d-flex align-items-center" onClick={() => navigate("/admin-dashboard")}>
+                                                            <InteractiveIcon
+                                                                defaultIcon={userManagementIcon}
+                                                                width={22}
+                                                                height={22}
+                                                                alt="Manage Users"
+                                                            />
+                                                            <span className='item-name'>Manage Users</span>
+                                                        </Dropdown.Item>
+                                                    )}
+                                                    <Dropdown.Divider className='dot' />
+                                                    <Dropdown.Item className="dropdown-item d-flex align-items-center"
+                                                        onClick={() => navigate("/profile")}
+                                                    >
+                                                        <InteractiveIcon
+                                                            defaultIcon={editUserIcon}
+                                                            width={24}
+                                                            height={24}
+                                                            alt="Edit Profile"
+                                                        />
+                                                        <span className='item-name'>Edit Profile</span>
+                                                    </Dropdown.Item>
+                                                    <Dropdown.Item className="dropdown-item d-flex align-items-center" onClick={handleLogout}>
+                                                        <InteractiveIcon
+                                                            defaultIcon={logOutIcon}
+                                                            width={24}
+                                                            height={24}
+                                                            alt="Logout"
+                                                        />
+                                                        <span className='item-name'>Logout</span>
+                                                    </Dropdown.Item>
+                                                </>
                                             )}
-                                            <Dropdown.Divider className='dot' />
-                                            <Dropdown.Item className="dropdown-item d-flex align-items-center"
-                                                onClick={() => navigate("/profile")}
-                                            >
-                                                <InteractiveIcon
-                                                    defaultIcon={editUserIcon}
-                                                    width={24}
-                                                    height={24}
-                                                    alt="Edit Profile"
-                                                />
-                                                <span className='item-name'>Edit Profile</span>
-                                            </Dropdown.Item>
-                                            <Dropdown.Item className="dropdown-item d-flex align-items-center" onClick={handleLogout}>
-                                                <InteractiveIcon
-                                                    defaultIcon={logOutIcon}
-                                                    width={24}
-                                                    height={24}
-                                                    alt="Logout"
-                                                />
-                                                <span className='item-name'>Logout</span>
-                                            </Dropdown.Item>
-                                        </>
-                                    )}
+                                        </Dropdown.Menu>
+                                    </Dropdown>
+                                </li>
+                            </>
+                        )}
 
-                                </Dropdown.Menu>
-                            </Dropdown>
-                        </li>
                     </ul>
                 </div>
             </div>

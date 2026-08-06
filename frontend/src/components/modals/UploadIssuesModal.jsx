@@ -3,6 +3,7 @@ import { useRef, useState } from "react";
 import InteractiveIcon from "../layout/InteractiveIcon";
 import getFileIcon from "../../utils/getFileIcon";
 import colorIcon from "@images/icon/color.svg";
+import useResponsive from "../../hooks/useResponsive.js";
 
 
 function UploadIssuesModal({ data, onClose }) {
@@ -10,10 +11,17 @@ function UploadIssuesModal({ data, onClose }) {
     const [shake, setShake] = useState(false);
     const modalRef = useRef(null);
 
+    const {isMobile} = useResponsive()
+
     const handleOutsideClick = (e) => {
         if (modalRef.current && !modalRef.current.contains(e.target)) {
-            setShake(true);
-            setTimeout(() => setShake(false), 400);
+            if (isMobile) {
+                onClose()
+            } else {
+                setShake(true);
+                setTimeout(() => setShake(false), 400);
+            }
+
         }
     };
 

@@ -1,3 +1,8 @@
+
+
+
+
+
 import fs from "fs";
 
 //  models - schema
@@ -17,6 +22,7 @@ import { notifySharedUsers } from "#utils/userNotification";
 import { updateParentFolderTimestamps } from "#utils/parentFolderTimestamp";
 import { getAbsolutePath } from "#utils/pathHelper";
 import { getFolderSizeRecursive } from "#utils/index";
+import { updateFolderSizeTree } from "#utils/getFolderSizeHelper";
 
 //  helper function for socket notify all user that some change made
 
@@ -367,7 +373,7 @@ export const getUserFiles = async (req, res) => {
           { type: "file", uploadStatus: "completed" }
         ]
       })
-        .select("name type fileSize fileType createdAt updatedAt parent color isShared owner storagePath sharedWith")
+        .select("name type fileSize totalSize fileType createdAt updatedAt parent color isShared owner storagePath sharedWith isTrashed")
         .populate("owner", "_id name profilePic")
         .sort(sortArray)
         .collation({ locale: "en", strength: 2 })   /// this is for sorting the case insensitive
@@ -438,7 +444,7 @@ export const getUserFiles = async (req, res) => {
         }
       ]
     })
-      .select("name type fileSize fileType createdAt updatedAt parent color isShared owner storagePath sharedWith")
+      .select("name type fileSize totalSize fileType createdAt updatedAt parent color isShared owner storagePath sharedWith isTrashed")
       .populate("owner", "_id name profilePic")
       .populate("sharedWith.userId", "_id name")
       .sort(sortArray)
@@ -592,13 +598,18 @@ export const renameItem = async (req, res) => {
     // --- STEP - 4 - prevent duplicate names in same folder
     // -----------------------------------------
     //  prevent same name inside current folder
-    const exists = await uploadModel.findOne({
+    const conflictQuery = {
       name: newName.trim(),
       parent: itemData.parent,
-      owner: userID,
       _id: { $ne: id },
       isTrashed: { $ne: true }
-    })
+    };
+
+    if (!itemData.parent) {
+      conflictQuery.owner = userID;
+    }
+
+    const exists = await uploadModel.findOne(conflictQuery);
 
     if (exists) {
       return res.status(400).json({ message: "Name already exists in this folder" });
@@ -679,7 +690,7 @@ export const changeItemColor = async (req, res) => {
       await notifySharedUsers(id, "item_color_changed", { itemId: id, color }, req.emitToUser)
     }
 
-    return res.status(200).json({ success: true, message: "Color Changed" })
+    return res.status(200).json({ success: true, message: "Folder Color Changed" })
 
   } catch (error) {
     logger.error(error);
@@ -779,14 +790,23 @@ export const moveItem = async (req, res) => {
         ? req.user._id
         : itemData.owner
 
-    // name conflict check (scoped to target owner)
-    const conflict = await uploadModel.findOne({
+    // name conflict check
+    const conflictQuery = {
       name: itemData.name,
       parent: destinationID || null,
-      owner: targetOwnerId,
       _id: { $ne: itemID },
       isTrashed: { $ne: true }
-    })
+    };
+
+    if (!destinationID) {
+      conflictQuery.owner = targetOwnerId;
+    }
+
+
+    console.log("CONFLICT QUERY:", conflictQuery);
+
+    const conflict = await uploadModel.findOne(conflictQuery);
+    console.log("CONFLICT FOUND:", conflict);
     if (conflict) {
       return res.status(400).json({
         message: `A ${conflict.type} named "${itemData.name}" already exists in the destination`
@@ -820,8 +840,30 @@ export const moveItem = async (req, res) => {
 
     await itemData.save()
 
+    // find out how much size that item was
+    const sizeToMove = itemData.type === "folder" ? itemData.totalSize : itemData.fileSize
+
+    if (sizeToMove) {
+      // subtract from whereever it used to be
+      if (oldParent) {
+        await updateFolderSizeTree(oldParent, -sizeToMove)
+      }
+
+      // add to whereever it'sgoing now
+      if (destinationID) {
+        await updateFolderSizeTree(destinationID, sizeToMove)
+      }
+    }
+
+    // Step A: Check if the destination folder is inside a shared folder tree
+    const isDestShared = destinationID ? await checkIsSharedTree(destinationID) : false
+
+    // Step B: Build item object with updated shared status so frontend shows shared icon in real-time
     const movedItem = {
       ...itemData.toObject(),
+      // Set true if destination is shared OR item itself is shared
+      isShared: isDestShared || Boolean(itemData.isShared) || (itemData.sharedWith?.length > 0),
+      isSharedWithMe: isDestShared || Boolean(itemData.isShared) || (itemData.sharedWith?.length > 0),
       storagePath: itemData.storagePath ? `/${itemData.storagePath}` : null,
       owner: {
         _id: req.user._id,
@@ -904,24 +946,57 @@ export const copyItem = async (req, res) => {
     }
 
     // ------------------------------------------
+    // --- Prevent copying folder into itself or its subfolder (Infinite Loop Fix)
+    // -----------------------------------------
+    if (itemData.type === "folder" && destinationId) {
+      let currentId = destinationId;
+      while (currentId) {
+        if (currentId.toString() === itemData._id.toString()) {
+          return res.status(400).json({
+            success: false,
+            message: "Cannot copy a folder into itself or its own subfolder"
+          });
+        }
+        const parentDoc = await uploadModel.findOne({ _id: currentId }).select("parent");
+        if (!parentDoc) break;
+        currentId = parentDoc.parent;
+      }
+    }
+
+    // ------------------------------------------
     // --- STEP - 5 - handle name conflicts
     // -----------------------------------------
-    // ── 3. Name conflict check ──────────────────────────────────────
+
+    // First, check if the EXACT original name already exists in the current location
     let copyName = itemData.name;
     const conflict = await uploadModel.findOne({
       name: copyName,
       parent: destinationId || null,
       isTrashed: { $ne: true }
     });
+
+
     if (conflict) {
-      // append - Copy to name
-      const ext = copyName.includes(".")
-        ? "." + copyName.split(".").pop()
-        : "";
-      const base = copyName.includes(".")
-        ? copyName.substring(0, copyName.lastIndexOf("."))
-        : copyName;
-      copyName = ext ? `${base} - Copy${ext}` : `${base} - Copy`;
+      // Split the name and extension (e.g., "report.pdf" -> base: "report", ext: ".pdf")
+      const ext = copyName.includes(".") ? "." + copyName.split(".").pop() : "";
+      const base = copyName.includes(".") ? copyName.substring(0, copyName.lastIndexOf(".")) : copyName;
+
+      let counter = 1;
+      let newName = `${base} - Copy${ext}`; // Start by trying "report - Copy.pdf"
+
+      // keep looping the database here as long as new name is already takne 
+      while (await uploadModel.findOne({
+        name: newName,
+        parent: destinationId || null,
+        isTrashed: { $ne: true }
+      })) {
+        // If it's taken, increase the counter and try again!
+        counter++;
+        newName = `${base} - Copy (${counter})${ext}`; // E.g., "report - Copy (2).pdf"
+      }
+
+      // Once the while loop breaks, we found a name that is completely free
+      copyName = newName;
     }
 
     // ------------------------------------------
@@ -929,6 +1004,19 @@ export const copyItem = async (req, res) => {
     // -----------------------------------------
     // ── 4. Recursive copy function ──────────────────────────────────
     const copyRecursive = async (sourceItem, newParentId, newName) => {
+      let currentRefCount = 1
+
+      //  if it is a file so increase a ref count on the file here
+      if(sourceItem.type === "file" && sourceItem.storagePath){
+        await uploadModel.updateMany(
+          { storagePath: sourceItem.storagePath },
+          { $inc: { refCount: 1 } }
+        )
+
+        const updatedSource = await uploadModel.findOne({ _id: sourceItem._id }).select("refCount")
+        currentRefCount = updatedSource?.refCount || 1
+      }
+
       const newDoc = await uploadModel.create({
         name: newName || sourceItem.name,
         type: sourceItem.type,
@@ -942,7 +1030,7 @@ export const copyItem = async (req, res) => {
         color: sourceItem.color,
         uploadId: null,
         totalChunks: sourceItem.totalChunks,
-        refCount: 1,
+        refCount: sourceItem.type === "file" ? currentRefCount : 1,
         lastActivity: null,
       });
 
@@ -967,8 +1055,21 @@ export const copyItem = async (req, res) => {
     // ── 5. Do the copy ──────────────────────────────────────────────
     const newItem = await copyRecursive(itemData, destinationId || null, copyName);
 
+    const sizeToAdd = newItem.type === "folder" ? newItem.totalSize : newItem.fileSize
+
+    if (sizeToAdd && destinationId) {
+      await updateFolderSizeTree(destinationId, sizeToAdd)
+    }
+
+    // Step A: Check if the destination folder is inside a shared folder tree
+    const isDestShared = destinationId ? await checkIsSharedTree(destinationId) : false
+
+    // Step B: Build item object with updated shared status so frontend shows shared icon in real-time
     const fixedItem = {
       ...newItem.toObject(),
+      // Set true if destination is shared OR item itself is shared
+      isShared: isDestShared || Boolean(newItem.isShared) || (newItem.sharedWith?.length > 0),
+      isSharedWithMe: isDestShared || Boolean(newItem.isShared) || (newItem.sharedWith?.length > 0),
       storagePath: newItem.storagePath ? `/${newItem.storagePath}` : null,
       owner: {
         _id: userID,
@@ -978,10 +1079,18 @@ export const copyItem = async (req, res) => {
     }
 
     // tell other users about the copied item so it shows on their screen
-    await notifySharedUsers(destinationId || null, "item_copied", {
-      parentId: destinationId || null,
-      newItem: fixedItem
-    }, req.emitToUser)
+    if (destinationId) {
+      await notifySharedUsers(destinationId, "item_copied", {
+        parentId: destinationId,
+        newItem: fixedItem
+      }, req.emitToUser);
+    } else {
+      //  if root folder notifyShareduser will not work here so use default socket
+      req.emitToUser(userID.toString(), "item_copied", {
+        parentId: null,
+        newItem: fixedItem
+      })
+    }
 
     res.json({ success: true, item: fixedItem });
 
@@ -1049,7 +1158,7 @@ export const createFolder = async (req, res) => {
     })
 
     if (exists) {
-      return res.status(400).json({ message: "Folder already exists" })
+      return res.status(400).json({ message: "Folder name already exists" })
     }
 
 
@@ -1124,8 +1233,8 @@ export const getFolderSize = async (req, res) => {
     }
 
 
-    // 3. with the helper function calculate the size of fodler - graphlookup 
-    const size = await getFolderSizeRecursive(id)
+    // 3. Return latest stored totalSize directly from DB (O(1) fast lookup)
+    const size = folder.totalSize || 0;
 
     return res.status(200).json({ success: true, size });
 
@@ -1134,3 +1243,7 @@ export const getFolderSize = async (req, res) => {
     return res.status(500).json({ success: false, message: error.message });
   }
 }
+
+
+
+

@@ -24,13 +24,14 @@ import zipFile from "@images/svgs/media/zip-icon-18.svg";
 import musicFile from "@images/svgs/media/music-icon-18.svg";
 import navFolderIcon from "@images/svgs/media/search-file-icon.svg";
 import fileIcon from "@images/svgs/media/file-icon-18.svg";
+import txtFile from "@images/svgs/media/txt-file-icon-18.svg";
+import useResponsive from "../../../hooks/useResponsive.js";
+import backIcon from "@images/icon/arrow-left-outline-icon.svg";
 
 
 function SearchBar({ searchBarOpen, setSearchBarOpen }) {
     const { searchApi, clearSearch, searchLoading, searchResults, isSearchMode, searchFilters } = useSearch();
-    const { searchUsersApi, openFolder, getSuggestedUsersApi } = useFileExplorer();
-
-
+    const { searchUsersApi, openFolder, getSuggestedUsersApi, suggestedUsers  } = useFileExplorer();
     const [filePreview, setFilePreview] = useState(null);
     const [fileType, setFileType] = useState(null);
     const [owner, setOwner] = useState(null);
@@ -50,16 +51,29 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
     const [suggestionLoading, setSuggestionLoading] = useState(false);
 
     const searchRef = useRef(null);
+    const inputRef = useRef(null);
     const debounceRef = useRef(null);
+    const suggestionAbortRef = useRef(null);
+    const suggestionCacheRef = useRef({});
+    const { isMobile, isTablet, isDesktop } = useResponsive();
 
+    // Auto-focus input when searchBarOpen changes to true
+    useEffect(() => {
+        if (searchBarOpen) {
+            const timer = setTimeout(() => {
+                inputRef.current?.focus();
+            }, 50);
+            return () => clearTimeout(timer);
+        }
+    }, [searchBarOpen]);
 
     // ##################################################
     // ---- Fetch Suggested Users for Specific Person ---
     // ##################################################
-    useEffect(() => {
+   useEffect(() => {
         if (showSelectPerson) {
-            getSuggestedUsersApi().then((users) => {
-                const options = users.map((u) => ({
+            const updateOptions = (usersList) => {
+                const options = usersList.map((u) => ({
                     value: u._id,
                     label: u.name,
                     email: u.email,
@@ -68,9 +82,15 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
                     compressed_profile_pic: u.compressed_profile_pic
                 }));
                 setUserOptions(options);
-            });
+            };
+            // Read directly from the context
+            if (suggestedUsers && suggestedUsers.length > 0) {
+                updateOptions(suggestedUsers);
+            } else {
+                getSuggestedUsersApi().then((users) => updateOptions(users || []));
+            }
         }
-    }, [showSelectPerson, getSuggestedUsersApi]);
+    }, [showSelectPerson, suggestedUsers, getSuggestedUsersApi]);
 
 
     // ##################################################
@@ -121,9 +141,7 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
             if (!isInsideSearch) {
                 setIsOpen(false);
                 setShowSuggestions(false);
-                if (!isSearchMode) {
-                    setSearchBarOpen(false)
-                }
+                setSearchBarOpen(false);
             }
         };
 
@@ -135,7 +153,10 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
     // ---- STEP 4: Debounce quick search requests ------
     // ##################################################
     useEffect(() => {
-        if (!searchText.trim()) {
+        if (!searchBarOpen || !searchText.trim()) {
+            if (suggestionAbortRef.current) {
+                suggestionAbortRef.current.abort();
+            }
             setShowSuggestions(false);
             setSuggestionResults([]);
             return;
@@ -143,26 +164,52 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
 
         setShowSuggestions(true);
 
+
+        //  check cache first here if already searched in this session no api call for the suggestion result
+        if (suggestionCacheRef.current[searchText]) {
+            setSuggestionResults(suggestionCacheRef.current[searchText])
+            setSuggestionLoading(false)
+            return
+        }
+
         if (debounceRef.current) clearTimeout(debounceRef.current);
 
         debounceRef.current = setTimeout(async () => {
+            if (suggestionAbortRef.current) {
+                suggestionAbortRef.current.abort();
+            }
+
+            const controller = new AbortController();
+            suggestionAbortRef.current = controller;
+
             try {
                 setSuggestionLoading(true);
                 const { data } = await axiosApi.get("/search/filter", {
                     params: { query: searchText },
+                    signal: controller.signal
                 });
-                setSuggestionResults(data.results || []);
-            } catch {
+
+                const results = data.results || []
+                //  save to cache
+                suggestionCacheRef.current[searchText] = results
+                setSuggestionResults(results);
+            } catch (error) {
+                if (error.name === "CanceledError" || error.code === "ERR_CANCELED") return;
                 setSuggestionResults([]);
             } finally {
-                setSuggestionLoading(false);
+                if (!controller.signal.aborted) {
+                    setSuggestionLoading(false);
+                }
             }
         }, 500);
 
         return () => {
             if (debounceRef.current) clearTimeout(debounceRef.current);
+            if (suggestionAbortRef.current) {
+                suggestionAbortRef.current.abort();
+            }
         };
-    }, [searchText, clearSearch]);
+    }, [searchText, searchBarOpen, clearSearch]);
 
 
     //  when user will cick on remove the filter  in content view so remove also here that in search bar
@@ -206,9 +253,23 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
             if (opt) setLocation(opt);
         }
         // 5. Sync Dates
-        if (!searchFilters.dateFrom && !searchFilters.dateTo) {
+        if (!searchFilters.date) {
             setDate(null);
             setSelectedDate([]);
+            setShowRangePicker(false);
+        } else {
+            const opt = dateOptions.find(o => o.value === searchFilters.date);
+            if (opt) setDate(opt);
+
+            if (searchFilters.date === "CustomDate" && searchFilters.dateFrom) {
+                // Reconstruct local dates
+                const dFrom = new Date(searchFilters.dateFrom + 'T00:00:00');
+                const dTo = searchFilters.dateTo ? new Date(searchFilters.dateTo + 'T00:00:00') : dFrom;
+                setSelectedDate(searchFilters.dateTo ? [dFrom, dTo] : [dFrom]);
+                setShowRangePicker(true);
+            } else {
+                setShowRangePicker(false);
+            }
         }
     }, [searchFilters]);
 
@@ -274,6 +335,10 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
         setSuggestionResults([]);
         setShowSuggestions(false);
 
+        // CANCEL ANY PENDING AUTO-SUGGEST API CALLS!
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+        if (suggestionAbortRef.current) suggestionAbortRef.current.abort();
+
         let dateFrom = null;
         let dateTo = null;
 
@@ -306,24 +371,6 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
         const selectedFileType = (fileType?.value?.toLowerCase() === "any") ? null : (fileType?.value || null)
 
 
-        searchApi({
-            query: searchText || null,
-            fileType: selectedFileType,
-            ownerFilter: owner?.value || null,
-            location: location?.value || null,
-            folderId: null,
-            personIds:
-                selectedPersons.length > 0 ? selectedPersons.map((p) => p.value) : null,
-            personNames:
-                selectedPersons.length > 0 ? selectedPersons.map((p) => p.label) : null,
-            personProfilePics:
-                selectedPersons.length > 0 ? selectedPersons.map((p) => p.profilePic) : null,
-            personEmails:
-                selectedPersons.length > 0 ? selectedPersons.map((p) => p.email) : null,
-            dateFrom,
-            dateTo,
-        });
-
         const params = new URLSearchParams();
         if (searchText.trim()) params.set("search", searchText.trim());
         if (selectedFileType) params.set("fileType", selectedFileType);
@@ -339,7 +386,13 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
         setSearchBarOpen(false);
 
         // Always navigate with params (replaces the old if-block entirely)
-        navigate(`/dashboard?${params.toString()}`);
+        navigate(`/dashboard?${params.toString()}`, {
+            state: {
+                personNames: selectedPersons.length > 0 ? selectedPersons.map((p) => p.label) : null,
+                personProfilePics: selectedPersons.length > 0 ? selectedPersons.map((p) => p.profilePic) : null,
+                personEmails: selectedPersons.length > 0 ? selectedPersons.map((p) => p.email) : null,
+            }
+        });
     };
 
     // ##################################################
@@ -357,6 +410,13 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
         setLocation(null);
         setSearchText("");
         setShowSuggestions(false);
+
+        if (searchLoading) {
+            clearSearch();
+            setIsOpen(false);
+            setSearchBarOpen(false);
+            navigate("/dashboard");
+        }
     };
 
     // ##################################################
@@ -404,7 +464,8 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
         { value: "PDF", label: "PDF", icon: pdfFile },
         { value: "Video", label: "Video", icon: videoFile },
         { value: "Zip", label: "Zip", icon: zipFile },
-        { value: "File", label: "File", icon: fileIcon },
+        { value: "Documents", label: "Documents", icon: txtFile },
+        { value: "Spreadsheets", label: "Spreadsheets", icon: fileIcon },
         { value: "Folder", label: "Folder", icon: navFolderIcon },
     ];
 
@@ -441,26 +502,40 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
             )}
             {searchBarOpen && (
                 <div className="top-search-single-box toolbar" ref={searchRef}>
+
                     <div className={`search-container ${showSuggestions || isOpen ? "show" : ""}`}>
+
                         <div className="search-area-box">
+
                             <Form.Group controlId="formName">
                                 <div className="form-control-single-icon">
-                                    <InteractiveIcon
-                                        defaultIcon={searchIcon}
-                                        className="form-left-icon"
-                                        width={24}
-                                    />
+                                    <span className={`form-left-icon ${isMobile ? "btn-only-icon" : ""}`}>
+                                        <InteractiveIcon
+                                            defaultIcon={isMobile ? backIcon : searchIcon}
+
+                                            width={24}
+                                            onClick={isMobile ? handleCloseSearchBar : undefined}
+                                        />
+                                    </span>
 
                                     {/* 2. Main Search Input Field */}
                                     <Form.Control
+                                        ref={inputRef}
+                                        autoFocus
                                         name="name"
                                         type="text"
                                         autoComplete="off"
                                         placeholder="Search"
                                         className="custom-form-control h-44"
                                         value={searchText}
-                                        onFocus={() => setIsOpen(false)}
-                                        onClick={() => setIsOpen(false)}
+                                        onFocus={() => {
+                                            setIsOpen(false);
+                                            if (searchText.trim()) setShowSuggestions(true);
+                                        }}
+                                        onClick={() => {
+                                            setIsOpen(false);
+                                            if (searchText.trim()) setShowSuggestions(true);
+                                        }}
                                         onChange={(e) => setSearchText(e.target.value)}
                                         onKeyDown={(e) => {
                                             if (e.key === "Enter") {
@@ -505,6 +580,7 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
                                                 />
                                             </button>
                                         </Tooltip>
+
                                     </div>
                                 </div>
                             </Form.Group>

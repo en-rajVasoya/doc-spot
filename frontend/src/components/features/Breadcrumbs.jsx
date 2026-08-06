@@ -19,6 +19,7 @@ import deleteIcon from "@images/icon/trash.svg"
 import colorIcon from "@images/icon/color.svg";
 import fileInfoIcon from "@images/icon/file-info.svg";
 import getFolderIcon from "../../utils/getFolderIconColor.js";
+import useResponsive from "../../hooks/useResponsive.js";
 
 
 const Breadcrumbs = memo(function Breadcrumbs({
@@ -42,7 +43,8 @@ const Breadcrumbs = memo(function Breadcrumbs({
     onDeleteForever,
     changeColor,
     isViewerOnly,
-    currentFolderMeta
+    currentFolderMeta,
+    hideRoot = false
 }) {
 
     // ##################################################
@@ -50,6 +52,7 @@ const Breadcrumbs = memo(function Breadcrumbs({
     // ##################################################
     const [showActionDropdown, setShowActionDropdown] = useState(false)
     const [showColorDropdown, setShowColorDropdown] = useState(false)
+    const { isMobile } = useResponsive()
     const dropdownRef = useRef(null)
     const fileInputRef = useRef(null)
     const folderInputRef = useRef(null)
@@ -282,12 +285,44 @@ const Breadcrumbs = memo(function Breadcrumbs({
                     </button>
 
                     {showColorDropdown && (
-                        <div className="show position-absolute" style={{ zIndex: 10000, left: "100%", top: 0, minWidth: "226px", maxWidth: "226px", padding: "20px", background: "var(--white)", border: "1px solid var(--secondary)", borderRadius: "8px", boxShadow: "0px 4px 24px 0px rgba(0, 0, 0, 0.10)" }}>
-                            <p className="mb-3" style={{ fontSize: "14px", color: "var(--dark-50)" }}>Folder Color</p>
-                            <div className="d-flex align-items-center flex-wrap" style={{ margin: "-8px", marginTop: "-8px" }}>
+                        <div
+                            className="show position-absolute"
+                            style={{
+                                zIndex: 10000,
+                                left: "100%",
+                                top: 0,
+                                minWidth: "95px",
+                                maxWidth: "105px",
+                                padding: "10px",
+                                background: "var(--white)",
+                                border: "1px solid var(--secondary)",
+                                borderRadius: "8px",
+                                boxShadow: "0px 4px 24px 0px rgba(0, 0, 0, 0.10)"
+                            }}
+                        >
+                            <p className="mb-2 text-nowrap" style={{ fontSize: "12px", color: "var(--dark-50)", textAlign: "center" }}>Folder Color</p>
+                            <div
+                                style={{
+                                    display: "grid",
+                                    gridTemplateColumns: "repeat(2, 1fr)",
+                                    gap: "8px",
+                                    justifyItems: "center"
+                                }}
+                            >
                                 {["red", "orange", "yellow", "green", "green-dark", "blue", "violet", "pink", "gray"].map(color => (
                                     <button key={color} className="border-0"
-                                        style={{ position: "relative", display: "block", width: "24px", height: "24px", borderRadius: "50%", margin: "8px", outline: "1px solid var(--dark-20)", outlineOffset: "-1px", padding: 0, cursor: "pointer", backgroundColor: `var(--${color})` }}
+                                        style={{
+                                            position: "relative",
+                                            display: "block",
+                                            width: "24px",
+                                            height: "24px",
+                                            borderRadius: "50%",
+                                            outline: "1px solid var(--dark-20)",
+                                            outlineOffset: "-1px",
+                                            padding: 0,
+                                            cursor: "pointer",
+                                            backgroundColor: `var(--${color})`
+                                        }}
                                         onClick={(e) => {
                                             e.stopPropagation()
                                             changeColor?.(targetIds, color)
@@ -303,7 +338,10 @@ const Breadcrumbs = memo(function Breadcrumbs({
 
             {/* copy */}
             {actions.includes("copy") && (
-                <Dropdown.Item as="button" onClick={handleCopy}>
+                <Dropdown.Item as="button"
+                    disabled={isViewerOnly}
+                    style={{ opacity: isViewerOnly ? 0.6 : 1, cursor: isViewerOnly ? "not-allowed" : "pointer" }}
+                    onClick={!isViewerOnly ? handleCopy : undefined}>
                     <InteractiveIcon defaultIcon={copyIcon} className="me-2" width={20} /> Copy
                 </Dropdown.Item>
             )}
@@ -366,9 +404,111 @@ const Breadcrumbs = memo(function Breadcrumbs({
     // Renders the visible path (e.g., Home > Folder 1 > Folder 2).
     // If the path exceeds maxVisible, it collapses the middle items.
     // ##################################################
+    // return (
+    //     <>
+    //         {/* Hidden file inputs used for triggering system upload dialogs via handleAddFiles / handleUploadFolder */}
+    //         {actions.includes("uploadFolder") || actions.includes("addFiles") ? (
+    //             <>
+    //                 <input type="file" ref={fileInputRef} hidden multiple onChange={handleFileChange} />
+    //                 <input type="file" ref={folderInputRef} hidden webkitdirectory="true" multiple onChange={handleFileChange} />
+    //             </>
+    //         ) : null}
+
+    //         <ul className="gap-1 breadcrumb mb-0">
+
+    //             {/* 1. ROOT ITEM (e.g., "My Docspot") */}
+    //             <li className="position-relative" ref={trail.length === 0 ? dropdownRef : null}>
+    //                 <a
+    //                     className={`cursor-pointer ${trail.length === 0 ? "highlight" : ""}`}
+    //                     onClick={() => {
+    //                         if (trail.length === 0 && actions.length > 0) {
+    //                             setShowActionDropdown(prev => !prev)
+    //                         } else {
+    //                             onHomeClick?.();
+    //                             setShowActionDropdown(false)
+    //                         }
+    //                     }}>
+    //                     <span>{rootLabel}</span>
+    //                 </a>
+    //                 {trail.length === 0 && actions.length > 0 && showActionDropdown && (
+    //                     <Dropdown show>{menuItems}</Dropdown>
+    //                 )}
+    //             </li>
+
+
+    //             {/* COLLAPSED  */}
+    //             {shouldCollapse && (
+    //                 <>
+    //                     <li className="d-flex align-items-center breadcrumb-indicator">
+    //                         <InteractiveIcon defaultIcon={arrowRight} width={16} height={16} />
+    //                     </li>
+    //                     <li className="d-flex align-items-center">
+    //                         <a className="over-breadcrumb-links-folder p-0">
+    //                             <Dropdown>
+    //                                 <Dropdown.Toggle className="no-border-btn">
+    //                                     <InteractiveIcon defaultIcon={menuDotsOutlineIcon} width={24} />
+    //                                 </Dropdown.Toggle>
+
+    //                                 {/*  drop down show like all folder name here */}
+    //                                 <Dropdown.Menu>
+    //                                     {collapsedItems.map((folder, index) => (
+    //                                         <Dropdown.Item as="button" key={`${folder.id}-${index}`}
+    //                                             onClick={() => {
+    //                                                 onNavigate?.(trail.indexOf(folder) + 1)
+    //                                                 setShowActionDropdown(false)
+    //                                             }}>
+    //                                             <InteractiveIcon defaultIcon={getFolderIcon(folder.color, "list", folder.isSharedWithMe || folder.isShared)} width={20} className="me-2" />
+    //                                             {folder.name}
+    //                                         </Dropdown.Item>
+    //                                     ))}
+    //                                 </Dropdown.Menu>
+    //                             </Dropdown>
+    //                         </a>
+    //                     </li>
+    //                 </>
+    //             )}
+
+
+    //             {/* here viible trail like > foldername > foldername */}
+    //             {visibleTrail.map((folder, index) => {
+    //                 const isLast = index === visibleTrail.length - 1;
+    //                 const actualIndex = shouldCollapse ? collapsedItems.length + index : index
+
+    //                 return (
+    //                     <React.Fragment key={`${folder.id}-${index}`}>
+    //                         {/*  back arrow icon */}
+    //                         <li className="d-flex align-items-center breadcrumb-indicator">
+    //                             <InteractiveIcon defaultIcon={arrowRight} width={16} height={16} />
+    //                         </li>
+
+    //                         <li className="position-relative" ref={isLast ? dropdownRef : null} >
+    //                             <a className={`cursor-pointer ${isLast ? "highlight" : ""}`}
+    //                                 onClick={() => {
+    //                                     if (isLast && actions.length > 0) {
+    //                                         setShowActionDropdown(prev => !prev)
+    //                                     } else {
+    //                                         onNavigate?.(actualIndex + 1)
+    //                                         setShowActionDropdown(false)
+    //                                     }
+    //                                 }}>
+    //                                 <span>{folder.name}</span>
+    //                             </a>
+    //                             {isLast && actions.length > 0 && showActionDropdown && (
+    //                                 <Dropdown show>{menuItems}</Dropdown>
+    //                             )}
+    //                         </li>
+
+    //                     </React.Fragment>
+    //                 )
+    //             })}
+
+    //         </ul>
+
+    //     </>
+    // )
+
     return (
         <>
-            {/* Hidden file inputs used for triggering system upload dialogs via handleAddFiles / handleUploadFolder */}
             {actions.includes("uploadFolder") || actions.includes("addFiles") ? (
                 <>
                     <input type="file" ref={fileInputRef} hidden multiple onChange={handleFileChange} />
@@ -378,27 +518,25 @@ const Breadcrumbs = memo(function Breadcrumbs({
 
             <ul className="gap-1 breadcrumb mb-0">
 
-                {/* 1. ROOT ITEM (e.g., "My Docspot") */}
-                <li className="position-relative" ref={trail.length === 0 ? dropdownRef : null}>
-                    <a
-                        className={`cursor-pointer ${trail.length === 0 ? "highlight" : ""}`}
-                        onClick={() => {
-                            if (trail.length === 0 && actions.length > 0) {
-                                setShowActionDropdown(prev => !prev)
-                            } else {
-                                onHomeClick?.();
-                                setShowActionDropdown(false)
-                            }
-                        }}>
-                        <span>{rootLabel}</span>
-                    </a>
-                    {trail.length === 0 && actions.length > 0 && showActionDropdown && (
-                        <Dropdown show>{menuItems}</Dropdown>
-                    )}
-                </li>
+                {!hideRoot && (
+                    <li className="position-relative" ref={trail.length === 0 ? dropdownRef : null}>
+                        <a className={`cursor-pointer ${trail.length === 0 ? "highlight" : ""}`}
+                            onClick={() => {
+                                if (trail.length === 0 && actions.length > 0) {
+                                    setShowActionDropdown(prev => !prev)
+                                } else {
+                                    onHomeClick?.();
+                                    setShowActionDropdown(false)
+                                }
+                            }}>
+                            <span>{rootLabel}</span>
+                        </a>
+                        {trail.length === 0 && actions.length > 0 && showActionDropdown && (
+                            <Dropdown show>{menuItems}</Dropdown>
+                        )}
+                    </li>
+                )}
 
-
-                {/* COLLAPSED  */}
                 {shouldCollapse && (
                     <>
                         <li className="d-flex align-items-center breadcrumb-indicator">
@@ -411,7 +549,6 @@ const Breadcrumbs = memo(function Breadcrumbs({
                                         <InteractiveIcon defaultIcon={menuDotsOutlineIcon} width={24} />
                                     </Dropdown.Toggle>
 
-                                    {/*  drop down show like all folder name here */}
                                     <Dropdown.Menu>
                                         {collapsedItems.map((folder, index) => (
                                             <Dropdown.Item as="button" key={`${folder.id}-${index}`}
@@ -430,15 +567,12 @@ const Breadcrumbs = memo(function Breadcrumbs({
                     </>
                 )}
 
-
-                {/* here viible trail like > foldername > foldername */}
                 {visibleTrail.map((folder, index) => {
                     const isLast = index === visibleTrail.length - 1;
                     const actualIndex = shouldCollapse ? collapsedItems.length + index : index
 
                     return (
                         <React.Fragment key={`${folder.id}-${index}`}>
-                            {/*  back arrow icon */}
                             <li className="d-flex align-items-center breadcrumb-indicator">
                                 <InteractiveIcon defaultIcon={arrowRight} width={16} height={16} />
                             </li>

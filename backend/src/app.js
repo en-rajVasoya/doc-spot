@@ -10,7 +10,7 @@ import connectDB from "./config/db.js"
 import userRouter from "./routes/userRoute.js"
 import uploadRouter from "./routes/uploadRoute.js"
 import shareRouter from "./routes/shareRoute.js"
-import { initSocket, emitToUser } from "./socket.js"
+import { initSocket, emitToUser, getIO } from "./socket.js"
 import downloadRouter from "./routes/downloadRoute.js"
 import searchRouter from "./routes/searchRoute.js"
 import trashRouter from "./routes/trashRoute.js"
@@ -50,7 +50,7 @@ app.use(cors({
         "https://192.168.1.112:5177",
         "https://192.168.1.213:5177",
         "http://docspot-frontend-web.s3-website.ap-south-1.amazonaws.com",
-        "https://d2u61zpmg3hahd.cloudfront.net",
+        // "https://d2u61zpmg3hahd.cloudfront.net",
     ],
     credentials: true,
     exposedHeaders: ["Accept-Ranges", "Content-Range", "Content-Length"]
@@ -66,6 +66,7 @@ export const initializeSocket = (httpServer) => {
 // Middleware to attach emitToUser function to each request
 app.use((req, res, next) => {
     req.emitToUser = emitToUser
+    req.io = getIO()
     next()
 })
 

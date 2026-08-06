@@ -16,30 +16,20 @@ import { useDownload } from "../../../context/DownloadContext.jsx";
 import { useNotification } from "../../../context/NotificationContext.jsx";
 import { useLocation } from "react-router-dom";
 import { useDragSelect } from "../../../hooks/useDragSelect";
+import useResponsive from "../../../hooks/useResponsive";
 
 
 function TrashContentView({ view, setModal, onItemRefsReady, dragRootRef }) {
     const location = useLocation()
+    const { isMobile } = useResponsive()
     const [highlightedId, setHighlightedId] = useState(null)
-    
+
     useEffect(() => {
         if (location.state?.highlightId) {
             setHighlightedId(location.state.highlightId);
-            setTimeout(() => setHighlightedId(null), 2000);
             window.history.replaceState({}, document.title);
         }
     }, [location.state]);
-
-    // Auto-scroll to highlighted item
-    useEffect(() => {
-        if (highlightedId && itemRefs.current[highlightedId]) {
-            itemRefs.current[highlightedId].scrollIntoView({
-                behavior: "smooth",
-                block: "center"
-            });
-        }
-    }, [highlightedId]);
-
     const [filePreview, setFilePreview] = useState(null)
     const { downloadFile, downloadFolder, downloadMultiple } = useDownload()
     const { showNotification } = useNotification()
@@ -80,6 +70,27 @@ function TrashContentView({ view, setModal, onItemRefsReady, dragRootRef }) {
     // ---- STEP 6: Drag and select state ---------------
     // ##################################################
     const itemRefs = useRef({})
+
+    // Auto-scroll to highlighted item
+    useEffect(() => {
+        if (highlightedId && itemRefs.current[highlightedId]) {
+            // Small delay to ensure the DOM layout is fully settled before scrolling
+            const timer = setTimeout(() => {
+                if (itemRefs.current[highlightedId]) {
+                    itemRefs.current[highlightedId].scrollIntoView({
+                        behavior: "smooth",
+                        block: "center"
+                    });
+
+                    // Clear the highlight 2.5 seconds AFTER the scroll begins
+                    setTimeout(() => setHighlightedId(null), 2500);
+                }
+            }, 150);
+
+            return () => clearTimeout(timer);
+        }
+    }, [highlightedId, items]);
+
     const { dragRect, handleMouseDown, gridContainerRef } = useDragSelect({
         dragRootRef,
         displayItems: items,
@@ -106,7 +117,7 @@ function TrashContentView({ view, setModal, onItemRefsReady, dragRootRef }) {
 
 
     //  for sorting in the list view here same sorting so icon flip here 
-     const handleColumnSort = (column) => {
+    const handleColumnSort = (column) => {
         if (sortBy === column) {
             setSortOrder(prev => prev === "asc" ? "desc" : "asc")
         } else {
@@ -212,8 +223,8 @@ function TrashContentView({ view, setModal, onItemRefsReady, dragRootRef }) {
 
     if (loading) return (
         <div className="loader-wrapper-box">
-            <div class="cma-messages-are-loader-wrapper">
-                <span class="loader"></span>
+            <div className="cma-messages-are-loader-wrapper">
+                <span className="loader"></span>
             </div>
         </div>
     )
@@ -241,8 +252,8 @@ function TrashContentView({ view, setModal, onItemRefsReady, dragRootRef }) {
                             left: dragRect.x,
                             top: Math.max(dragRect.y, dragRect.containerTop || 0),
                             width: dragRect.width,
-                            height: dragRect.y < (dragRect.containerTop || 0) 
-                                ? Math.max(0, dragRect.height - ((dragRect.containerTop || 0) - dragRect.y)) 
+                            height: dragRect.y < (dragRect.containerTop || 0)
+                                ? Math.max(0, dragRect.height - ((dragRect.containerTop || 0) - dragRect.y))
                                 : dragRect.height,
                         }}
                     />
@@ -319,7 +330,9 @@ function TrashContentView({ view, setModal, onItemRefsReady, dragRootRef }) {
                                     if (!selectedIds.has(item._id)) {
                                         setSelectedIds(new Set([item._id]))
                                     }
-                                    setItemContextMenu({ visible: true, x: e.clientX, y: e.clientY })
+                                    if (!isMobile) {
+                                        setItemContextMenu({ visible: true, x: e.clientX, y: e.clientY })
+                                    }
                                 }}
                             >
                                 <div
@@ -403,9 +416,9 @@ function TrashContentView({ view, setModal, onItemRefsReady, dragRootRef }) {
 
             {/*  here this is context menu when user right click on item  */}
             {itemContextMenu.visible && (
-                <div 
+                <div
                     ref={contextMenuRef}
-                    className="custom-context-menu" 
+                    className="custom-context-menu"
                     style={{ position: "fixed", top: itemContextMenu.y, left: itemContextMenu.x, opacity: 0, pointerEvents: "none" }}
                     onClick={() => setItemContextMenu({ visible: false })}>
 

@@ -48,6 +48,9 @@ function ResetPassword() {
     const [tokenLoading, setTokenLoading] = useState(true)
     const [tokenError, setTokenError] = useState(false)
 
+    // state for successful reset
+    const [isSuccess, setIsSuccess] = useState(false);
+
     // Live password complexity checks (matches EditAdminModal.jsx requirements)
     const checks = useMemo(() => [
         /[A-Z]/.test(password),           // 0: At least one uppercase letter
@@ -92,10 +95,10 @@ function ResetPassword() {
         }
         setLoading(true)
         try {
-            const res = await axiosApi.post(`/auth/reset_password/${token}`, { password, confirmPassword  })
+            const res = await axiosApi.post(`/auth/reset_password/${token}`, { password, confirmPassword })
             if (res.data.success) {
-                showNotification("Password reset successfully! Please login.", "success", "bottom-center")
-                navigate("/") // Redirect back to login page
+                showNotification("Password reset successfully!", "success", "bottom-center")
+                setIsSuccess(true)
             } else {
                 showNotification(res.data.message || "Failed to reset password.", "error", "bottom-center")
             }
@@ -143,6 +146,13 @@ function ResetPassword() {
                                     Go to Login
                                 </button>
                             </div>
+                        </div>
+                    ) : isSuccess ? (
+                        <div className="text-center mt-4">
+                            <h3 className="login-name text-success">Password Reset Successful</h3>
+                            <p className="form-label my-3 text-center">
+                                You can now log in with your new password.
+                            </p>
                         </div>
                     ) : (
                         <>

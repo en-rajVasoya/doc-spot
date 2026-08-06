@@ -26,6 +26,7 @@ import ModifiedContent from "../../layout/header/ModifiedContent.jsx"
 import noFilesFound from "@images/icon/no-files-found.svg";
 import { useDownload } from "../../../context/DownloadContext.jsx"
 import closeIcon from "@images/icon/close.svg"
+import useResponsive from "../../../hooks/useResponsive";
 
 // Available colors for folders
 const FOLDER_COLORS = ["red", "orange", "yellow", "green", "green-dark", "blue", "violet", "pink", "gray"]
@@ -109,8 +110,8 @@ function ColorPicker({ onSelect }) {
 
 // The main FolderViewer component that displays files and folders
 function FolderViewer({ folder, contents = [], isPublic = false, view: viewProp = "grid", setModal }) {
-    // Get download functions from context
     const { downloadFile, downloadFolder, downloadMultiple } = useDownload()
+    const { isMobile } = useResponsive()
 
     // Grab the security token from the URL if this is a public shared link
     const [searchParams] = useSearchParams()
@@ -144,7 +145,7 @@ function FolderViewer({ folder, contents = [], isPublic = false, view: viewProp 
     const lastClick = useRef({})
     // Ref to physically measure the right-click menu so it doesn't go off-screen
     const contextMenuRef = useRef(null)
-    
+
     // --- Refs for Drag and Select ---
     const isDragSelectingRef = useRef(false)
     const itemRefs = useRef({}) // Stores the physical HTML element of every file on screen
@@ -172,8 +173,8 @@ function FolderViewer({ folder, contents = [], isPublic = false, view: viewProp 
                 valA = a.name.toLowerCase()
                 valB = b.name.toLowerCase()
             } else if (sortBy === "size") {
-                valA = a.fileSize || 0;
-                valB = b.fileSize || 0;
+                valA = a.type === "folder" ? (a.totalSize || 0) : (a.fileSize || 0);
+                valB = b.type === "folder" ? (b.totalSize || 0) : (b.fileSize || 0);
             } else {
                 valA = new Date(a.updatedAt || a.createdAt).getTime()
                 valB = new Date(b.updatedAt || b.createdAt).getTime()
@@ -226,7 +227,6 @@ function FolderViewer({ folder, contents = [], isPublic = false, view: viewProp 
     // 3. Clicking anywhere outside a file closes the right-click menu
     useEffect(() => {
         const close = (e) => {
-            if (e.target.closest(".table-row")) return // Don't close if they clicked a file
             setItemContextMenu({ visible: false })
             setShowColorMenu(false)
         }
@@ -379,11 +379,11 @@ function FolderViewer({ folder, contents = [], isPublic = false, view: viewProp 
         scrollFrameRef.current = requestAnimationFrame(autoScroll);
 
         const onScroll = () => updateSelection();
-        
+
         window.addEventListener("mousemove", handleMouseMove)
         window.addEventListener("mouseup", handleMouseUp)
         container.addEventListener("scroll", onScroll)
-        
+
         return () => {
             if (scrollFrameRef.current) cancelAnimationFrame(scrollFrameRef.current);
             window.removeEventListener("mousemove", handleMouseMove)
@@ -401,9 +401,9 @@ function FolderViewer({ folder, contents = [], isPublic = false, view: viewProp 
         // Check if the time between clicks was fast enough to be a double click
         const isDoubleClick = lastClick.current[item._id] && now - lastClick.current[item._id] < DOUBLE_CLICK_MS
         lastClick.current[item._id] = now
-        
+
         if (!isDoubleClick) return
-        
+
         if (item.type === "folder") openFolder(item._id) // Open folder
         else if (item.type === "file") setFilePreview(item) // Preview file
     }
@@ -424,7 +424,7 @@ function FolderViewer({ folder, contents = [], isPublic = false, view: viewProp 
         setShowColorMenu(false)
         const strId = itemId.toString()
         const idx = displayItems.findIndex(i => i._id === itemId)
-        
+
         setSelectedIds(prev => {
             const next = new Set(prev)
             if (next.has(strId)) {
@@ -451,7 +451,7 @@ function FolderViewer({ folder, contents = [], isPublic = false, view: viewProp 
         setShowColorMenu(false)
         const strId = itemId.toString()
         const idx = displayItems.findIndex(i => i._id === itemId)
-        
+
         if (e.shiftKey && anchorIndex.current !== null) {
             // Shift click: Select everything between last click and this click
             const start = Math.min(anchorIndex.current, idx)
@@ -494,7 +494,7 @@ function FolderViewer({ folder, contents = [], isPublic = false, view: viewProp 
     const downloadSelected = () => {
         // Find the actual item objects based on the selected IDs
         const items = Array.from(selectedIds).map(id => displayItems.find(i => i._id === id)).filter(Boolean)
-        
+
         if (items.length === 1) {
             // Download single file or single folder
             items[0].type === "file" ? downloadFile(items[0]) : downloadFolder(items[0])
@@ -526,7 +526,7 @@ function FolderViewer({ folder, contents = [], isPublic = false, view: viewProp 
                                 <InteractiveIcon defaultIcon={logoIcon} alt="" />
                             </a>
                         </div>
-                        
+
                         {/* Right side tools (Selection count & Download button) */}
                         <div className="d-flex align-items-center">
                             {/* Shows "X selected" and an X button to clear selection */}
@@ -541,15 +541,16 @@ function FolderViewer({ folder, contents = [], isPublic = false, view: viewProp 
                             {/* The Download Button */}
                             <ul className="mb-0 tools d-flex" style={{ listStyle: "none", padding: 0 }}>
                                 <li className="d-flex align-items-center justify-content-center">
-                                    <button 
-                                        className="preview-btn preview-btn-text m-0 d-flex align-items-center justify-content-center" 
+                                    <button
+                                        className="preview-btn preview-btn-text m-0 d-flex align-items-center justify-content-center"
                                         onClick={() => downloadFolder(folder, token)}
-                                        style={{ height: "40px", padding: "0 16px" }}
+                                        disabled={contents.length === 0}
+                                        style={{ height: "40px", padding: "0 16px", opacity: contents.length === 0 ? 0.6 : 1 }}
                                     >
                                         <InteractiveIcon
                                             defaultIcon={downloadIcon}
                                             alt="Download"
-                                            className="me-2"
+                                            className="me-2 disabled-icon"
                                             width={20}
                                         />
                                         Download All
@@ -559,7 +560,7 @@ function FolderViewer({ folder, contents = [], isPublic = false, view: viewProp 
                         </div>
                     </div>
                 </div>
-                
+
                 {/* Secondary Header (Breadcrumbs and View Toggle) */}
                 <header className="header">
                     <div className="header-view d-flex align-items-center justify-content-between">
@@ -568,7 +569,7 @@ function FolderViewer({ folder, contents = [], isPublic = false, view: viewProp 
                             trail={trail}
                             onNavigate={navigateTo}
                             onHomeClick={goHome}
-                            maxVisible={2}
+                            maxVisible={isMobile ? 1 : 2}
                             rootLabel={folder?.name || "Shared Folder"}
                             setModal={setModal}
                             selectedIds={selectedIds}
@@ -640,15 +641,15 @@ function FolderViewer({ folder, contents = [], isPublic = false, view: viewProp 
                                     top: Math.max(dragRect.y, dragRect.containerTop || 0),
                                     width: dragRect.width,
                                     // Math to hide the box if it scrolls under the header
-                                    height: dragRect.y < (dragRect.containerTop || 0) 
-                                        ? Math.max(0, dragRect.height - ((dragRect.containerTop || 0) - dragRect.y)) 
+                                    height: dragRect.y < (dragRect.containerTop || 0)
+                                        ? Math.max(0, dragRect.height - ((dragRect.containerTop || 0) - dragRect.y))
                                         : dragRect.height,
                                     pointerEvents: "none",
                                 }}
                             />
                         )}
-                        
-                        <section className="content-wrapper">
+
+                        <section className={`content-wrapper ${isMobile && selectedIds.size > 0 ? "has-selection" : ""}`}>
                             <div className="table row">
                                 {/* ── Table Columns Header ── */}
                                 <div className="table-header">
@@ -702,6 +703,7 @@ function FolderViewer({ folder, contents = [], isPublic = false, view: viewProp 
                                             onContextMenu={(e) => {
                                                 // Handle right clicks to open the context menu
                                                 e.preventDefault()
+                                                e.stopPropagation() // Stop click from reaching window listener
                                                 if (!selectedIds.has(item._id)) setSelectedIds(new Set([item._id]))
                                                 setItemContextMenu({ visible: true, x: e.clientX, y: e.clientY })
                                             }}
@@ -760,7 +762,9 @@ function FolderViewer({ folder, contents = [], isPublic = false, view: viewProp 
                                                 </div>
                                                 {/* Size Cell */}
                                                 <div className="table-cell">
-                                                    {item.type === "file" ? formatFileSize(item.fileSize) : "—"}
+                                                    {item.type === "folder"
+                                                        ? formatFileSize(item.totalSize)
+                                                        : formatFileSize(item.fileSize)}
                                                 </div>
                                                 {/* Date Cell */}
                                                 <div className="table-cell">

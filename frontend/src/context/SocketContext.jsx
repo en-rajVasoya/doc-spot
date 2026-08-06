@@ -40,9 +40,9 @@ export function SocketProvider({ children }) {
             setUser(prev => ({ ...prev, ...updatedUserData }));
         });
 
-        socketInstance.on("force_logout", () => {
+        socketInstance.on("force_logout", (data) => {
             logout(); // Kick them out instantly!
-            showNotification("Your account has been deactivated by an Admin.", "error", "bottom-center");
+            showNotification(data?.message || "Your account access has been changed by an Admin.", "error", "bottom-center");
         });
 
         return () => {
@@ -50,7 +50,7 @@ export function SocketProvider({ children }) {
             socketInstance.off("force_logout");    // CLEANUP
             socketInstance.disconnect()
             socketRef.current = null
-            setSocket(null)
+            setSocket(null)   
         }
     }, [user?._id])
 

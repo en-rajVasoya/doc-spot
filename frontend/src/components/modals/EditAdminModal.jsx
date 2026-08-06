@@ -14,7 +14,10 @@ import { useAdmin } from "../../context/AdminContext";
 import UserAvatar from "../layout/UserAvatar";
 import CustomScroll from "../layout/CustomScroll";
 import singleUserIcon from "@images/icon/single-user-icon.svg";
+import uploadIcon from "@images/icon/upload-icon.svg"
+import deleteIcon from "@images/icon/trash.svg";
 import { useAuth } from "../../context/AuthContext";
+import useResponsive from "../../hooks/useResponsive";
 
 
 function EditAdminModal({ onClose, setModal, data }) {
@@ -31,13 +34,13 @@ function EditAdminModal({ onClose, setModal, data }) {
     const [email, setEmail] = useState(data?.email || "");
     const [password, setPassword] = useState("••••••••");
     const [statusActive, setStatusActive] = useState(data?.is_active ?? true);
-    const [role, setRole] = useState(data?.role || "user");
     const [avatarUrl, setAvatarUrl] = useState(data?.thumbnail_profile_pic || data?.compressed_profile_pic || data?.profilePic || null);
 
     //  when modal first appear so password field is disabled here
     const [isPasswordLocked, setIsPasswordLocked] = useState(true);
     const [showPwd, setShowPwd] = useState(false);
     const [pwdTouched, setPwdTouched] = useState(false);
+    const { isMobile, isTablet, isDesktop, isSmallMobile } = useResponsive();
 
 
     // live password requirement checks - recalculates whenever `password` changes
@@ -58,8 +61,13 @@ function EditAdminModal({ onClose, setModal, data }) {
 
     const handleOutsideClick = (e) => {
         if (modalRef.current && !modalRef.current.contains(e.target)) {
-            setShake(true);
-            setTimeout(() => setShake(false), 400);
+            if (isMobile) {
+                onClose()
+            } else {
+                setShake(true);
+                setTimeout(() => setShake(false), 400);
+            }
+
         }
     };
 
@@ -126,8 +134,6 @@ function EditAdminModal({ onClose, setModal, data }) {
             //  build the form data to send to backend here
             const formData = new FormData()
             formData.append("name", displayName)
-            formData.append("user_id", username)
-            formData.append("email", email)
             formData.append("is_active", statusActive)
 
             //  only send password here if they have unlock the password field from reset password
@@ -135,13 +141,11 @@ function EditAdminModal({ onClose, setModal, data }) {
                 formData.append("password", password)
             }
 
-            if (role !== data?.role) {
-                formData.append("role", role)
-            }
-
             // attach new profile pic if upladoed here
             if (avatarFile) {
                 formData.append("profilePic", avatarFile)
+            } else if (avatarUrl === null){
+                formData.append("removeProfilePic", true)
             }
 
             // call the update user api here
@@ -192,28 +196,50 @@ function EditAdminModal({ onClose, setModal, data }) {
                                         accept="image/*"
                                         onChange={handleImageUpload}
                                     />
-                                    <button
-                                        className="btn-black btn-lg m-0"
-                                        onClick={() => fileInputRef.current?.click()}
-                                    >
-                                        Upload Profile
-                                    </button>
-                                    {avatarUrl && (
-                                        <button className="btn-secondary btn-lg m-0" onClick={handleRemoveImage}>
-                                            Remove
+                                    {isSmallMobile ? (
+                                        <button
+                                            className="btn-black btn-lg m-0"
+                                            onClick={() => fileInputRef.current?.click()}
+                                        >
+                                           <InteractiveIcon defaultIcon={uploadIcon} alt="" width={20} />
                                         </button>
+                                    ) : (
+                                        <button
+                                            className="btn-black btn-lg m-0"
+                                            onClick={() => fileInputRef.current?.click()}
+                                        >
+                                            Upload Profile
+                                        </button>
+                                    )}
+
+                                    {avatarUrl && (
+                                        isSmallMobile ? (
+                                            <button
+                                                className="btn-secondary btn-lg  "
+                                                onClick={handleRemoveImage}
+                                            >
+                                                <InteractiveIcon defaultIcon={deleteIcon} alt="" width={20} />
+                                            </button>
+                                        ) : (
+                                            <button
+                                                className="btn-secondary btn-lg m-0"
+                                                onClick={handleRemoveImage}
+                                            >
+                                                Remove
+                                            </button>
+                                        )
                                     )}
                                 </div>
                             </div>
 
                             {/* Username */}
                             <Form.Group className="mb-3" controlId="addUserUsername">
-                                <Form.Label className="required-star">Username / ID</Form.Label>
+                                <Form.Label>Username / ID</Form.Label>
                                 <div className={`form-control-single-icon${errors.username ? " has-error" : ""}`}>
                                     <InteractiveIcon
                                         defaultIcon={singleUserIcon}
                                         alt=""
-                                        className="form-left-icon"
+                                        className="form-left-icon disabled-icon"
                                         width={20}
                                     />
                                     <Form.Control
@@ -223,6 +249,7 @@ function EditAdminModal({ onClose, setModal, data }) {
                                         className={`custom-form-control h-34${errors.username ? " is-invalid" : ""}`}
                                         value={username}
                                         onChange={(e) => { setUsername(e.target.value); clearErr("username"); }}
+                                        disabled
                                     />
                                 </div>
                                 {errors.username && (
@@ -255,12 +282,12 @@ function EditAdminModal({ onClose, setModal, data }) {
 
                             {/* Email */}
                             <Form.Group className="mb-3" controlId="addUserEmail">
-                                <Form.Label className="required-star">Email</Form.Label>
+                                <Form.Label >Email</Form.Label>
                                 <div className={`form-control-single-icon${errors.email ? " has-error" : ""}`}>
                                     <InteractiveIcon
                                         defaultIcon={emailIcon}
                                         alt=""
-                                        className="form-left-icon"
+                                        className="form-left-icon disabled-icon"
                                         width={20}
                                     />
                                     <Form.Control
@@ -270,6 +297,7 @@ function EditAdminModal({ onClose, setModal, data }) {
                                         className={`custom-form-control h-34${errors.email ? " is-invalid" : ""}`}
                                         value={email}
                                         onChange={(e) => { setEmail(e.target.value); clearErr("email"); }}
+                                        disabled
                                     />
                                 </div>
                                 {errors.email && (
@@ -281,7 +309,7 @@ function EditAdminModal({ onClose, setModal, data }) {
                             <Form.Group className="mb-3" controlId="addUserPassword">
 
                                 <Form.Label className=" form-label d-flex align-items-center justify-content-between">
-                                    <span className="required-star">Password</span>
+                                    <span >Password</span>
                                     {isPasswordLocked && (
                                         <span
                                             className="clear-btn"
@@ -396,51 +424,6 @@ function EditAdminModal({ onClose, setModal, data }) {
                                             <div className="subtitle m-0">Inactive</div>
                                         </div>
                                     </label>
-                                </div>
-                            </div>
-                            {/* User Role radio card */}
-                            <div className="mb-3">
-                                <Form.Label className="required-star d-block">User Role</Form.Label>
-                                <div className="custom-radio-card-wrapper only-radio-btn">
-                                    <label className={`custom-radio-card ${role === "user" ? "active" : ""}`}
-                                        style={{
-                                            opacity: isSelf ? 0.6 : 1,
-                                            pointerEvents: isSelf ? "none" : "auto",
-                                            cursor: isSelf ? "not-allowed" : "pointer"
-                                        }}>
-                                        <input
-                                            type="radio"
-                                            name="userRole"
-                                            value="user"
-                                            checked={role === "user"}
-                                            onChange={() => setRole("user")}
-                                            disabled={isSelf}
-                                            className="rounded-checkbox"
-                                        />
-                                        <div>
-                                            <div className="subtitle m-0">User</div>
-                                        </div>
-                                    </label>
-                                    <label className={`custom-radio-card ${role === "admin" ? "active" : ""}`}
-                                        style={{
-                                            opacity: isSelf ? 0.6 : 1,
-                                            pointerEvents: isSelf ? "none" : "auto",
-                                            cursor: isSelf ? "not-allowed" : "pointer"
-                                        }}>
-                                        <input
-                                            type="radio"
-                                            name="userRole"
-                                            value="admin"
-                                            checked={role === "admin"}
-                                            onChange={() => setRole("admin")}
-                                            disabled={isSelf}
-                                            className="rounded-checkbox"
-                                        />
-                                        <div>
-                                            <div className="subtitle m-0">Admin</div>
-                                        </div>
-                                    </label>
-
                                 </div>
                             </div>
                         </CustomScroll>

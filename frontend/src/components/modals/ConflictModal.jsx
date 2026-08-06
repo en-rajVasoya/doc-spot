@@ -1,13 +1,17 @@
 import { Modal } from "react-bootstrap"
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { useUpload } from "../../context/UploadContext"
 import InteractiveIcon from "../layout/InteractiveIcon"
 import closeIcon from "@images/icon/close-icon.svg"
+import useResponsive from "../../hooks/useResponsive"
 
 
 function ConflictModal(onClose) {
   const { conflictModalData, resolveConflict } = useUpload()
   const [choice, setChoice] = useState("replace")
+  const { isMobile } = useResponsive()
+  const [shake, setShake] = useState(false)
+  const modalRef = useRef(null)
 
   if (!conflictModalData) return null
 
@@ -18,14 +22,34 @@ function ConflictModal(onClose) {
     setChoice("replace")
   }
 
+  const handleOutsideClick = (e) => {
+    if (modalRef.current && !modalRef.current.contains(e.target)) {
+      if (isMobile) {
+        resolveConflict(null)
+      } else {
+        setShake(true)
+        setTimeout(() => setShake(false), 400)
+      }
+    }
+  }
+
 
   return (
-    <Modal show={true} backdrop="static" keyboard={false} centered className="upload-option-modal">
-      <Modal.Header className="border-0">
+    <div onClick={handleOutsideClick}>
+      <Modal
+        show={true}
+        backdrop="static"
+        keyboard={false}
+        centered
+        dialogClassName={shake ? "shake" : ""}
+        className="upload-option-modal"
+      >
+        <div ref={modalRef} className="position-relative">
+          <Modal.Header className="border-0">
         <Modal.Title>File Conflict</Modal.Title>
         <button
           className="btn-only-icon"
-          onClick={onClose}
+          onClick={() => resolveConflict(null)}
         >
           <InteractiveIcon defaultIcon={closeIcon} width={24} alt="close" />
         </button>
@@ -133,8 +157,9 @@ function ConflictModal(onClose) {
           Continue
         </button>
       </Modal.Footer>
-
-    </Modal>
+        </div>
+      </Modal>
+    </div>
   )
 
 }

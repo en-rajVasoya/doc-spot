@@ -20,7 +20,9 @@ export function AuthProvider({ children }) {
         try {
             const res = await axiosApi.get("/auth/me")
             setUser(res.data.user)
+            localStorage.setItem("docspot_has_session", "true")
         } catch (error) {
+            localStorage.removeItem("docspot_has_session")
             console.log(error.message)
         } finally {
             setIsLoading(false)
@@ -31,22 +33,44 @@ export function AuthProvider({ children }) {
     }, [])
 
 
-    //  if token expred here so auto refresh to login page here
+
+    //  here this is api call every 4.5 miniute so gets a new access token here
     useEffect(() => {
-        const interceptor = axiosApi.interceptors.response.use(
-            (response) => response,
-            (error) => {
-                if (error.response && error.response.status === 401) {
-                    setUser(null); // This clears user state and triggers ProtectedRoute redirect
+        if (!user) return
+
+        // refresh access token
+        const interval = setInterval(async () => {
+            try {
+                await axiosApi.get("/auth/refresh_token")
+                console.log("[Auth] Access token silently refreshed in background");
+            } catch (error) {
+                console.warn("[Auth] Background refresh failed:", error.message);
+                if (error.response?.status === 401) {
+                    setUser(null);
+                    localStorage.removeItem("docspot_has_session");
                 }
-                return Promise.reject(error);
             }
-        );
-        // Cleanup interceptor when component unmounts
-        return () => {
-            axiosApi.interceptors.response.eject(interceptor);
-        };
-    }, []);
+        }, 1 * 60 * 1000)
+        return () => clearInterval(interval)
+    }, [user])
+
+
+    //  if token expred here so auto refresh to login page here
+    // useEffect(() => {
+    //     const interceptor = axiosApi.interceptors.response.use(
+    //         (response) => response,
+    //         (error) => {
+    //             if (error.response && error.response.status === 401) {
+    //                 setUser(null); // This clears user state and triggers ProtectedRoute redirect
+    //             }
+    //             return Promise.reject(error);
+    //         }
+    //     );
+    //     // Cleanup interceptor when component unmounts
+    //     return () => {
+    //         axiosApi.interceptors.response.eject(interceptor);
+    //     };
+    // }, []);
 
     // when user click on login button this will run
     const login = async (email, password, remember) => {
@@ -57,11 +81,12 @@ export function AuthProvider({ children }) {
             if (!res.data.success) {
                 throw new Error(res.data?.message || "Login Failed")
             }
+            localStorage.setItem("docspot_has_session", "true")
             // fetch full user from DB including role - no need to set user from login response
             await checkAuthStatus()
             return res.data
         } catch (error) {
-            showNotification(error.response.data.message, "error", "bottom-center");
+            showNotification(error.response?.data?.message || error.message || "Login failed", "error", "bottom-center");
         }
 
     }
@@ -71,8 +96,13 @@ export function AuthProvider({ children }) {
 
     // when user click on logout
     const logout = async () => {
-        await axiosApi.post("/auth/logout")
+        try {
+            await axiosApi.post("/auth/logout")
+        } catch (error) {
+            console.warn("[Auth] Logout API call failed, clearing local session anyway:", error.message)
+        }
         setUser(null)
+        localStorage.removeItem("docspot_has_session")
         if (navigator.credentials && navigator.credentials.preventSilentAccess) {
             await navigator.credentials.preventSilentAccess()
         }
@@ -81,7 +111,7 @@ export function AuthProvider({ children }) {
 
 
     //  here this fucntion is for the update user profile 
-    const updateProfile = async (formData) => {
+    const updateProfile = async (formData, passwordUpdate = false) => {
         try {
             const res = await axiosApi.post("/auth/edit_profile", formData, {
                 headers: {
@@ -90,7 +120,7 @@ export function AuthProvider({ children }) {
             })
 
             if (res.data.success || res.status === 200) {
-                showNotification(res.data.message || "Profile updated successfully!", "success", "bottom-center");
+                showNotification(res.data.message || `${passwordUpdate ? "Password update successfully" : "Profile update successfully"}`, "success", "bottom-center");
 
                 if (res.data.data) {
                     setUser(res.data.data)

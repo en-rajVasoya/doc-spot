@@ -35,6 +35,9 @@ function MoveModal({ data, onClose }) {
     const browseFolderId = trail.length ? trail[trail.length - 1].id : null;
 
 
+    //  while moving loader show here
+    const [isMoving, setIsMoving] = useState(false);
+
 
     //  here use Effect for already iput "Untitle Folder" when user create new fodler inside the modal
     useEffect(() => {
@@ -105,6 +108,9 @@ function MoveModal({ data, onClose }) {
     };
 
     const handleMove = async (destinationId) => {
+        if(isMoving) return;
+        setIsMoving(true)
+
         const destination = destinationId ?? selectedDestination ?? null
         let allSuccess = true
         for (const itemId of data) {
@@ -120,6 +126,7 @@ function MoveModal({ data, onClose }) {
             const message = data.length > 1 ? "Items moved successfully" : "Item moved successfully"
             showNotification(message, "success", "bottom-center")
         }
+        setIsMoving(false)
         handleClose()
     }
 
@@ -152,7 +159,25 @@ function MoveModal({ data, onClose }) {
                 className="move-modal"
             >
                 <div ref={modalRef} className="position-relative">
-
+                    {isMoving && (
+                        <div 
+                            className="loader-wrapper-box" 
+                            style={{ 
+                                position: 'fixed',
+                                top: 0,
+                                left: 0,
+                                width: '100vw',
+                                height: '100vh',
+                                backgroundColor: 'transparent',
+                                zIndex: 99999,
+                                pointerEvents: 'auto' // Block all clicks underneath
+                            }}
+                        >
+                            <div className="cma-messages-are-loader-wrapper">
+                                <span className="loader"></span>
+                            </div>
+                        </div>
+                    )}
                     <Modal.Header className="border-0">
                         <Modal.Title>Move to</Modal.Title>
                         <Tooltip text="Close" offset={8}>
@@ -268,7 +293,7 @@ function MoveModal({ data, onClose }) {
                                 Cancel
                             </button>
 
-                            <button className="btn-black btn-lg m-0" onClick={() => handleMove()} disabled={browseFolderId === currentFolderId}>
+                            <button className="btn-black btn-lg m-0" onClick={() => handleMove()} disabled={browseFolderId === currentFolderId || isMoving}>
                                 Move
                             </button>
                         </div>

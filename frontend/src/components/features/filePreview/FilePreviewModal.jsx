@@ -101,7 +101,7 @@ function FilePreviewModal({ file, onClose }) {
                 <p className="single-sub-title">
                     A preview of this file is not available. Please download it.
                 </p>
-                <button className="btn btn-primary mt-2" onClick={handleDownload}>
+                <button className="preview-btn preview-btn-text mt-2" onClick={handleDownload}>
                     <InteractiveIcon
                         defaultIcon={downloadIcon}
                         width={24}

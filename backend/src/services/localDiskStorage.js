@@ -39,7 +39,7 @@ export const localDiskStorage = {
     // -------------------------------------------------------------
     // 2. Initialize New Upload
     // -------------------------------------------------------------
-    initNewUpload: async (uploadId, fileType, totalChunks, fileSize) => {
+    initNewUpload: async (uploadId, fileType, totalChunks, fileSize, fileName) => {
         const bucketDir = getBucketPath(uploadId);
         const bucket = uploadId.substring(0, 2);
         const absoluteTmpPath = path.join(bucketDir, `${uploadId}.tmp`);

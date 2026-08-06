@@ -165,7 +165,7 @@ export default function AudioViewer({ file }) {
     }
 
     // HEAD request check
-    fetch(src, { method: "HEAD" })
+    fetch(src, { method: "HEAD", credentials: "include" })
       .then(r => {
         const size = Number(r.headers.get("content-length") || 0);
         if (size > MAX_SIZE) {

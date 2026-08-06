@@ -17,11 +17,11 @@ function AdminProtectedRoute() {
 
 
     //  if user not logged in so logged out user
-    if(!user){
+    if (!user) {
         return <Navigate to="/" replace />
     }
 
-    if(user.role !== "admin"){
+    if (user.role !== "admin") {
         return <Navigate to="/dashboard" replace />
     }
 

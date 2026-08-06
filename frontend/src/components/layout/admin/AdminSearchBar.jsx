@@ -5,11 +5,14 @@ import { Form } from "react-bootstrap";
 import { useAdmin } from "../../../context/AdminContext";
 import Tooltip from "../Tooltip";
 import closeIcon from "@images/icon/close.svg";
+import backIcon from "@images/icon/arrow-left-outline-icon.svg";
+import useResponsive from "../../../hooks/useResponsive";
 
 function AdminSearchBar({ searchBarOpen, setSearchBarOpen }) {
     const { searchQuery, setSearchQuery } = useAdmin();
     const searchRef = useRef(null);
     const [localSearch, setLocalSearch] = useState(searchQuery || "");
+    const { isMobile } = useResponsive();
 
     //  close on the esc key 
     useEffect(() => {
@@ -54,11 +57,14 @@ function AdminSearchBar({ searchBarOpen, setSearchBarOpen }) {
                 <div className="search-area-box">
                     <Form.Group controlId="formAdminSearch">
                         <div className="form-control-single-icon">
-                            <InteractiveIcon
-                                defaultIcon={searchIcon}
-                                className="form-left-icon"
-                                width={24}
-                            />
+                            <span className={`form-left-icon ${isMobile ? "btn-only-icon" : ""}`}>
+                                <InteractiveIcon
+                                    defaultIcon={isMobile ? backIcon : searchIcon}
+                                    width={24}
+                                    onClick={isMobile ? () => setSearchBarOpen(false) : undefined}
+                                />
+                            </span>
+
                             <Form.Control
                                 name="adminSearch"
                                 type="text"
@@ -100,7 +106,9 @@ function AdminSearchBar({ searchBarOpen, setSearchBarOpen }) {
                         </div>
                     </Form.Group>
                 </div>
+
             </div>
+
         </div>
     )
 }

@@ -90,7 +90,13 @@ export function useDragSelect({
             if (overlaps) newSelected.add(id);
         });
 
-        setSelectedIds(newSelected);
+        setSelectedIds(prev => {
+            if (prev.size !== newSelected.size) return newSelected;
+            for (let id of newSelected) {
+                if (!prev.has(id)) return newSelected;
+            }
+            return prev;
+        });
     }, [dragStart, setSelectedIds, itemRefs]);
 
     const handleMouseMove = useCallback((e) => {
@@ -112,7 +118,7 @@ export function useDragSelect({
 
     useEffect(() => {
         onItemRefsReady?.(itemRefs.current);
-    });
+    }, []);
 
     useEffect(() => {
         if (!dragStart) return;

@@ -3,14 +3,26 @@ import csv from "csv-parser";
 import bcrypt from "bcryptjs";
 import { Validator } from "node-input-validator";
 
+import path from "path"
+
 //  model - schamea
 import userModel from "#models/userModel"
+import uploadModel from "#models/uploadModel"
+import sharedLinkModel from "#models/sharedLinksModel"
+import chunkModel from "#models/chunkModel"
+import sessionModel from "#models/sessionModel"
+import notificationModel from "#models/notification";
+
 
 //  utils - helper
 import { logger } from "#utils/logger"
 import { searchOptimize } from "#utils/index"
 import { processProfileImage } from "#utils/imageProcessor";
+import { getStorage } from "../services/storageFactory.js";
 
+//  htis for the editor upaldoe ditem moe to editor root
+import { sharedItemReperent } from "#utils/sharedItemReparent";
+import { updateFolderSizeTree } from "#utils/getFolderSizeHelper";
 
 // ----------------------------- CREATE USER  ----------------------------------
 export const createUser = async (req, res) => {
@@ -21,7 +33,7 @@ export const createUser = async (req, res) => {
         if (req.body.user_id) req.body.user_id = req.body.user_id.trim();
         if (req.body.email) req.body.email = req.body.email.trim();
 
-        let { user_id, name, email, password, role, is_active } = req.body;
+        let { user_id, name, email, password, is_active } = req.body;
 
         // ##################################################
         //  --- STEP - 2 : Validation
@@ -31,7 +43,6 @@ export const createUser = async (req, res) => {
             name: "required|string",
             email: "required|email",
             password: "required|minLength:8",
-            role: "in:admin,user",
             is_active: "boolean"
         });
 
@@ -102,7 +113,6 @@ export const createUser = async (req, res) => {
             name,
             email: normalizedEmail,
             password: hashedPassword,
-            role: role || "user",   // if not specified role so default - User
             is_active: is_active !== undefined ? is_active : true,
             profilePic: newAvatar?.original_url || "",
             compressed_profile_pic: newAvatar?.compressed_url || "",
@@ -263,7 +273,7 @@ export const updateUser = async (req, res) => {
         if (req.body.user_id) req.body.user_id = req.body.user_id.trim();
         if (req.body.email) req.body.email = req.body.email.trim();
 
-        const { name, email, user_id, password, is_active, role } = req.body;
+        const { name, password, is_active } = req.body;
         const { update_user_id } = req.params;
 
         //  if user id is same so dont change status and role here
@@ -276,19 +286,19 @@ export const updateUser = async (req, res) => {
         }
 
         // ==============================
-        // USERNAME CHECK
+        // USERNAME CHECK (Disabled so admin cannot change user_id)
         // ==============================
-        if (user_id && user_id !== userData.user_id) {
-            const exists = await userModel.findOne({ user_id });
-
-            if (exists) {
-                return res.status(400).json({
-                    message: "User ID already taken"
-                });
-            }
-
-            userData.user_id = user_id;
-        }
+        // if (user_id && user_id !== userData.user_id) {
+        //     const exists = await userModel.findOne({ user_id });
+        //
+        //     if (exists) {
+        //         return res.status(400).json({
+        //             message: "User ID already taken"
+        //         });
+        //     }
+        //
+        //     userData.user_id = user_id;
+        // }
 
         // ==============================
         // NAME UPDATE
@@ -297,25 +307,26 @@ export const updateUser = async (req, res) => {
             userData.name = name;
         }
 
-        if (email) {
-            const normalizedEmail = email.trim().toLowerCase()
-
-            //  Email validation email must contains @ - domain - . - extension
-            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-            if (!emailRegex.test(normalizedEmail)) {
-                return res.status(400).json({ success: false, message: "Email is invalid" })
-            }
-            
-            if (normalizedEmail !== userData.email) {
-                //  here chek liek if email id is already register here or not
-                const existingEmail = await userModel.findOne({email: normalizedEmail})
-                if (existingEmail) {
-                    return res.status(400).json({ success: false, message: "Email already registered" })
-                }
-            }
-            
-            userData.email = normalizedEmail;
-        }
+        // EMAIL UPDATE (Disabled so admin cannot change email)
+        // if (email) {
+        //     const normalizedEmail = email.trim().toLowerCase()
+        //
+        //     //  Email validation email must contains @ - domain - . - extension
+        //     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+        //     if (!emailRegex.test(normalizedEmail)) {
+        //         return res.status(400).json({ success: false, message: "Email is invalid" })
+        //     }
+        //
+        //     if (normalizedEmail !== userData.email) {
+        //         //  here chek liek if email id is already register here or not
+        //         const existingEmail = await userModel.findOne({ email: normalizedEmail })
+        //         if (existingEmail) {
+        //             return res.status(400).json({ success: false, message: "Email already registered" })
+        //         }
+        //     }
+        //
+        //     userData.email = normalizedEmail;
+        // }
 
         //    user active status
         if (is_active !== undefined) {
@@ -324,19 +335,6 @@ export const updateUser = async (req, res) => {
                 return res.status(400).json({ message: "You cannot deactivate your own account." });
             }
             userData.is_active = isActiveBool
-        }
-
-        if (role) {
-            //  vlaidate the role 
-            if (isSelf && role !== userData.role) {
-                return res.status(400).json({ message: "You cannot change your own role." });
-            }
-
-            if (role === "admin" || role === "user") {
-                userData.role = role;
-            } else {
-                return res.status(400).json({ message: "Invalid role" });
-            }
         }
 
         if (password) {
@@ -367,23 +365,14 @@ export const updateUser = async (req, res) => {
             // ==============================
             if (userData.profilePic) {
                 try {
-                    if (userData.profilePic) {
-                        fs.unlinkSync(
-                            path.join(process.cwd(), userData.profilePic)
-                        );
-                    }
+                    const pic = userData.profilePic.replace(/^[/\\]+/, '')
+                    const comp = userData.compressed_profile_pic?.replace(/^[/\\]+/, '')
+                    const thumb = userData.thumbnail_profile_pic?.replace(/^[/\\]+/, '')
 
-                    if (userData.compressed_profile_pic) {
-                        fs.unlinkSync(
-                            path.join(process.cwd(), userData.compressed_profile_pic)
-                        );
-                    }
+                    if (pic && fs.existsSync(path.join(process.cwd(), pic))) fs.unlinkSync(path.join(process.cwd(), pic));
+                    if (comp && fs.existsSync(path.join(process.cwd(), comp))) fs.unlinkSync(path.join(process.cwd(), comp));
+                    if (thumb && fs.existsSync(path.join(process.cwd(), thumb))) fs.unlinkSync(path.join(process.cwd(), thumb));
 
-                    if (userData.thumbnail_profile_pic) {
-                        fs.unlinkSync(
-                            path.join(process.cwd(), userData.thumbnail_profile_pic)
-                        );
-                    }
                 } catch (err) {
                     logger.error("Avatar delete error:", err);
                 }
@@ -392,7 +381,27 @@ export const updateUser = async (req, res) => {
             userData.profilePic = newAvatar.original_url;
             userData.compressed_profile_pic = newAvatar.compressed_url;
             userData.thumbnail_profile_pic = newAvatar.thumbnail_url;
+
+        } else if (req.body.removeProfilePic === "true") {
+            // remove the profile picture here form the storage
+            if (userData.profilePic) {
+                try {
+                    const pic = userData.profilePic.replace(/^[/\\]+/, '');
+                    const comp = userData.compressed_profile_pic?.replace(/^[/\\]+/, '');
+                    const thumb = userData.thumbnail_profile_pic?.replace(/^[/\\]+/, '');
+                    if (pic && fs.existsSync(path.join(process.cwd(), pic))) fs.unlinkSync(path.join(process.cwd(), pic));
+                    if (comp && fs.existsSync(path.join(process.cwd(), comp))) fs.unlinkSync(path.join(process.cwd(), comp));
+                    if (thumb && fs.existsSync(path.join(process.cwd(), thumb))) fs.unlinkSync(path.join(process.cwd(), thumb));
+                } catch (err) {
+                    logger.error("Avatar delete error:", err);
+                }
+            }
+
+            userData.profilePic = null;
+            userData.compressed_profile_pic = null;
+            userData.thumbnail_profile_pic = null;
         }
+
 
         await userData.save();
 
@@ -402,13 +411,20 @@ export const updateUser = async (req, res) => {
         delete safeUserData.password;
 
 
-        //  here esend the socket event to other user 
+        //  here send the socket event to other user 
         if (userData.is_active === false) {
-            // force log out
-            req.emitToUser(userData._id.toString(), "force_logout", {})
-        } else {
+            // force log out for account deactivation
+            req.emitToUser(userData._id.toString(), "force_logout", { message: "Your account has been deactivated by an Admin." })
+        } else if (!isSelf && password) {
+            // force log out for password change
+            req.emitToUser(userData._id.toString(), "force_logout", { message: "Your password was updated by an Admin. Please log in again." })
+        }
+        else {
             //  instant update the profile of other user socket
             req.emitToUser(safeUserData._id.toString(), "profile_updated", safeUserData);
+
+            // 2. Global broadcast to everyone
+            req.io?.emit("global_user_profile_updated", safeUserData);
         }
 
         return res.status(200).json({
@@ -446,43 +462,182 @@ export const getUserDetails = async (req, res) => {
 // ----------------------------- GET USER ------------------------------
 export const deleteUser = async (req, res) => {
     try {
-        const { user_ids } = req.body; // array of IDs from body, not params
+        const { user_ids } = req.body
 
         if (!Array.isArray(user_ids) || user_ids.length === 0) {
             return res.status(400).json({ success: false, message: "user_ids must be a non-empty array" });
         }
 
 
-        //  if there is the same user id as logged in user so disabled it here
-        if(user_ids.some(id => id.toString() === req.user._id.toString())){
+        if (user_ids.some(id => id.toString() === req.user._id.toString())) {
             return res.status(400).json({ success: false, message: "You cannot delete your own admin account." });
         }
 
-        const result = await userModel.updateMany(
-            { _id: { $in: user_ids }, is_deleted: false },
-            { $set: { is_deleted: true } }
-        );
-
-        if (result.matchedCount === 0) {
-            return res.status(400).json({ success: false, message: "No active users found" });
+        // -------------------------------------------------------------
+        // STEP 1: Find target users
+        // -------------------------------------------------------------
+        const targetUsers = await userModel.find({ _id: { $in: user_ids } })
+        if (!targetUsers || targetUsers.length === 0) {
+            return res.status(404).json({ success: false, message: "No active users found" });
         }
 
 
-        // socket event for when user delete so he willl be instant logged out here
-        // Send the force_logout socket event to each deleted user ID
+        // -------------------------------------------------------------
+        // STEP 2: Editor uplaoded item move to editor root
+        // -------------------------------------------------------------
+        const foldersOwnedByTarget = await uploadModel.find({
+            owner: { $in: user_ids },
+            type: "folder"
+        }).select("_id").lean()
+
+        const rootFolderIds = foldersOwnedByTarget.map(f => f._id);
+
+        let reparentMap = new Map()
+        if (rootFolderIds.length > 0) {
+            reparentMap = await sharedItemReperent(
+                rootFolderIds,
+                (ownerId) => !user_ids.map(String).includes(ownerId)
+            )
+        }
+
+        //  notify the ediotr whoes items moved out from deleted user shared folder
+        reparentMap.forEach((items, ownerId) => {
+            items.forEach(({ itemId, oldParent, movedItem }) => {
+                req.emitToUser(ownerId, "item_moved", {
+                    itemId,
+                    oldParent,
+                    newParent: null,
+                    movedItem
+                })
+            })
+        })
+
+
+        // -------------------------------------------------------------
+        // STEP 3: Here find all items that are upladoed by the user who is deleting
+        // -------------------------------------------------------------
+        const ownedItems = await uploadModel.find({
+            owner: { $in: user_ids }
+        }).lean()
+
+        const ownedFileItems = ownedItems.filter(i => i.type === "file")
+        const ownedIdSet = new Set(ownedItems.map(i => i._id.toString()))
+        const userUploadIds = ownedFileItems.map(f => f.uploadId).filter(Boolean)
+
+
+        // -------------------------------------------------------------
+        // STEP 4: when user is deleted here so if this user upaldoed items in another shared item so modify fodler size here
+        // -------------------------------------------------------------
+        for (const file of ownedFileItems) {
+            if (file.parent && file.fileSize && !ownedIdSet.has(file.parent.toString())) {
+                await updateFolderSizeTree(file.parent, -file.fileSize)
+            }
+        }
+
+
+        // -------------------------------------------------------------
+        // STEP 5: Delete DB records first
+        // -------------------------------------------------------------
+        if (userUploadIds.length > 0) {
+            await chunkModel.deleteMany({ uploadId: { $in: userUploadIds } })
+        }
+
+        await uploadModel.deleteMany({ owner: { $in: user_ids } })
+
+        //  here delete this user from the shared list where othr user shared file with this user 
+        await uploadModel.updateMany(
+            { "sharedWith.userId": { $in: user_ids } },
+            { $pull: { sharedWith: { userId: { $in: user_ids } } } }
+        )
+
+        //  shared link modal delete all record here
+        await sharedLinkModel.deleteMany({ user_id: { $in: user_ids } })
+
+        // session modal deelte 
+        await sessionModel.deleteMany({ user_id: { $in: user_ids } })
+
+        //  notification model deelte everything
+        await notificationModel.deleteMany({
+            $or: [
+                { recipient: { $in: user_ids } },
+                { actor: { $in: user_ids } }
+            ]
+        })
+
+        //  user record delte the record 
+        const deleteResult = await userModel.deleteMany({ _id: { $in: user_ids } })
+
+
+        // -------------------------------------------------------------
+        // STEP 6: Force logout
+        // -------------------------------------------------------------
         user_ids.forEach(userId => {
             req.emitToUser(userId.toString(), "force_logout", {})
         })
 
         res.status(200).json({
             success: true,
-            message: `${result.modifiedCount} user(s) deleted successfully`,
+            message: `${deleteResult.deletedCount} user(s) and all associated files/data permanently deleted successfully`
         });
+
+
+        // -------------------------------------------------------------
+        // STEP 7: Noe deelte the files form the disk 
+        // (avatars + uploaded files, refCount-safe)
+        // -------------------------------------------------------------
+
+        (async () => {
+            const storage = getStorage()
+
+            //  user profile pic delete
+            for (const u of targetUsers) {
+                try {
+                    const pic = u.profilePic?.replace(/^[/\\]+/, '');
+                    const comp = u.compressed_profile_pic?.replace(/^[/\\]+/, '');
+                    const thumb = u.thumbnail_profile_pic?.replace(/^[/\\]+/, '');
+
+                    if (pic && fs.existsSync(path.join(process.cwd(), pic))) fs.unlinkSync(path.join(process.cwd(), pic));
+                    if (comp && fs.existsSync(path.join(process.cwd(), comp))) fs.unlinkSync(path.join(process.cwd(), comp));
+                    if (thumb && fs.existsSync(path.join(process.cwd(), thumb))) fs.unlinkSync(path.join(process.cwd(), thumb));
+                } catch (error) {
+                    logger.error(`Avatar delete failed for ${u._id}: ${error.message}`);
+                }
+            }
+
+            // uploaded file delete
+            for (const file of ownedFileItems) {
+                if (!file.storagePath) continue
+
+                try {
+                    if (file.uploadStatus === "uploading") {
+                        await storage.cancelUpload(file.storagePath, file.s3_uplaod_id, file.uploadId)
+                        continue
+                    }
+                    await uploadModel.updateMany(
+                        { storagePath: file.storagePath },
+                        { $inc: { refCount: -1 } }
+                    )
+
+                    const remaining = await uploadModel.countDocuments({
+                        storagePath: file.storagePath
+                    })
+
+                    if (remaining === 0) {
+                        await storage.deleteFile(file.storagePath)
+                    }
+
+                } catch (error) {
+                    logger.error(`Background delete failed for ${file._id}: ${error.message}`);
+                }
+            }
+        })()
+
     } catch (error) {
-        logger.error(error);
-        res.status(500).json({ success: false, message: error.message });
+        logger.error("Delete user error: ", error);
+        return res.status(500).json({ success: false, message: error.message });
     }
-};
+}
+
 
 // ----------------------------- IMPORT USERS ------------------------------
 export const importUsers = async (req, res) => {
@@ -604,11 +759,11 @@ export const checkAvailability = async (req, res) => {
 
         if (user_id) {
             const normalizedUserId = user_id.trim();
-            const user = await userModel.findOne({ user_id: normalizedUserId });
+            const user = await userModel.findOne({ user_id: normalizedUserId, is_deleted: false });
             if (user) exists = true;
         } else if (email) {
             const normalizedEmail = email.trim().toLowerCase();
-            const user = await userModel.findOne({ email: normalizedEmail });
+            const user = await userModel.findOne({ email: normalizedEmail, is_deleted: false });
             if (user) exists = true;
         }
 

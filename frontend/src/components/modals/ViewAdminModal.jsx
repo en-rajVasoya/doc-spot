@@ -13,12 +13,14 @@ import uploadeIcon from "@images/icon/uploade-icon.svg";
 import { useAdmin } from "../../context/AdminContext";
 import UserAvatar from '../layout/UserAvatar';
 import singleUserIcon from "@images/icon/single-user-icon.svg";
+import useResponsive from "../../hooks/useResponsive.js";
 
 function ViewAdminModal({ onClose, setModal, data }) {
     const [shake, setShake] = useState(false);
     const modalRef = useRef(null);
 
     const { createUser } = useAdmin();
+    const { isMobile } = useResponsive();
 
     const [displayName, setDisplayName] = useState(data?.name || "");
     const [username, setUsername] = useState(data?.user_id || "");
@@ -36,8 +38,13 @@ function ViewAdminModal({ onClose, setModal, data }) {
 
     const handleOutsideClick = (e) => {
         if (modalRef.current && !modalRef.current.contains(e.target)) {
-            setShake(true);
-            setTimeout(() => setShake(false), 400);
+            if (isMobile) {
+                onClose()
+            } else {
+                setShake(true);
+                setTimeout(() => setShake(false), 400);
+            }
+
         }
     };
 
@@ -71,7 +78,7 @@ function ViewAdminModal({ onClose, setModal, data }) {
                         <div className="add-user-avatar-wrapper">
                             <div className="profile-single-box">
                                 <UserAvatar src={avatarUrl} name={displayName} user={data} />
-                                <h3 className="modal-title-sub">Profile picture</h3>
+                                <h3 className="modal-title-sub text-center">{displayName}</h3>
                             </div>
                         </div>
 
@@ -163,14 +170,14 @@ function ViewAdminModal({ onClose, setModal, data }) {
                         </div>
 
                         {/* user role */}
-                        <div className="mb-3">
+                        {/* <div className="mb-3">
                             <Form.Label className="d-block">User Role</Form.Label>
                             <div className="user-status-box">
                                 <span className="add-user-status-label">
                                     {role === "admin" ? "Admin" : "User"}
                                 </span>
                             </div>
-                        </div>
+                        </div> */}
 
                     </Modal.Body>
 

@@ -1087,6 +1087,31 @@ function UploadPanel() {
     const [issuesSessionId, setIssuesSessionId] = useState(null)
     // { sessionId, filekey?, isFolder }
 
+    //  this code is for the when new item uplado or downlaod so that panel comes infront
+    const [zIndex, setZIndex] = useState(9999);
+
+    useEffect(() => {
+        const handleFocus = (e) => {
+            if (e.detail === "upload") setZIndex(9999);
+            else setZIndex(9998);
+        };
+        window.addEventListener("panel-focus", handleFocus);
+        return () => window.removeEventListener("panel-focus", handleFocus);
+    }, []);
+
+    // Bring to front when a new session starts
+    useEffect(() => {
+        if (isPanelOpen) {
+            window.dispatchEvent(new CustomEvent("panel-focus", { detail: "upload" }));
+        }
+    }, [isPanelOpen, sessions.length]);
+
+    const handleBringToFront = () => {
+        if (zIndex !== 9999) {
+            window.dispatchEvent(new CustomEvent("panel-focus", { detail: "upload" }));
+        }
+    };
+
     const handleClosePanel = (e) => {
         e.stopPropagation();
         e.preventDefault();
@@ -1154,7 +1179,7 @@ function UploadPanel() {
                         isAll={confirmTarget?.isAll || false}
                     />
 
-                    <div className="upload-file-single-box">
+                    <div className="upload-file-single-box"  onMouseDown={handleBringToFront}>
                         <div className="upload-file-header">
                             <span className="file-name">Uploads</span>
                             <div className="upload-right-side">

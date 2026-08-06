@@ -60,7 +60,7 @@ useEffect(() => {
 
     return (
         <>
-            <div className="page-wrapper" >
+            <div className="page-wrapper all-page-search-bar" >
                 <div className='content-wrapper-main'>
 
                     {/* Same main header */}
@@ -100,7 +100,7 @@ useEffect(() => {
 
                 </div>
 
-                <SidebarNav isSidebarNavOpen={isSidebarNavOpen} />
+                <SidebarNav isSidebarNavOpen={isSidebarNavOpen} closeSidebar={() => setIsSidebarNavOpen(false)} />
 
                 {/* No NewAdd, No UploadPanel, No DownloadPanel, No DragAndDrop */}
                 <ModalManager modals={modals} setModal={setModal} />

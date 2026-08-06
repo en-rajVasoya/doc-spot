@@ -42,7 +42,7 @@ import { scanFileWithClamAV } from "../virusTotal/clamAVWorker.js";
 import { logger } from "#utils/logger";
 import { updateParentFolderTimestamps } from "#utils/parentFolderTimestamp";
 import { getAbsolutePath } from "#utils/pathHelper";
-
+import { updateFolderSizeTree } from "#utils/getFolderSizeHelper";
 
 
 
@@ -127,7 +127,7 @@ export const initUpload = async (req, res) => {
       parent: parent || null,
       isTrashed: { $ne: true }
     })
-    if (existing?.uploadStatus === "completed") {
+    if (existing?.uploadStatus === "completed" && !replacesFileId) {
       return res.status(200).json({ success: true, status: "completed", message: "Completed" })
     }
 
@@ -173,7 +173,7 @@ export const initUpload = async (req, res) => {
 
     // Init the upload here
     // if the AWS then it will gives the url to upaldo chunks
-    const initData = await storage.initNewUpload(uploadId, fileType, totalChunks, fileSize);
+    const initData = await storage.initNewUpload(uploadId, fileType, totalChunks, fileSize, fileName);
 
     // -------------------------------------------------------------------------
     // --- STEP 6: Save the new file record to MongoDB
@@ -204,13 +204,13 @@ export const initUpload = async (req, res) => {
       );
     }
     // Send the URLs back to the frontend to begin the upload!
-    res.json({ 
-        success: true, 
-        status: "new", 
-        uploadId, 
-        s3UploadId: initData.s3UploadId, 
-        urls: initData.urls, 
-        singlePutUrl: initData.singlePutUrl 
+    res.json({
+      success: true,
+      status: "new",
+      uploadId,
+      s3UploadId: initData.s3UploadId,
+      urls: initData.urls,
+      singlePutUrl: initData.singlePutUrl
     });
 
 
@@ -258,17 +258,17 @@ export const completeUpload = async (req, res) => {
 
     try {
       newRelativePath = await storage.completeUpload(
-        uploadId, 
-        record.storagePath, 
-        record.s3_uplaod_id, 
-        record.totalChunks, 
+        uploadId,
+        record.storagePath,
+        record.s3_uplaod_id,
+        record.totalChunks,
         finalExtension
       );
     } catch (storageError) {
       if (storageError.message.includes("Missing") || storageError.message.includes("Failed") || storageError.message.includes("temp file missing")) {
-         return res.status(400).json({ success: false, message: storageError.message });
+        return res.status(400).json({ success: false, message: storageError.message });
       }
-      throw storageError; 
+      throw storageError;
     }
 
     // ---------------------------------------------------------------------------
@@ -280,9 +280,17 @@ export const completeUpload = async (req, res) => {
         uploadStatus: "completed",
         storagePath: newRelativePath,
         lastActivity: new Date(),
-        s3_uplaod_id: null // clear this out since session is done - aws will give null
+        s3_uplaod_id: null, // clear this out since session is done - aws will give null
       }
     );
+
+    record.storagePath = newRelativePath
+    record.uploadStatus = "completed"
+
+    // here we need to change the fodler parent size update
+    if (record.parent && record.fileSize) {
+      await updateFolderSizeTree(record.parent, record.fileSize)
+    }
 
     //  --------------------------------------------------------------------------
     // --- STEP - 6 - Replace Old item data with new item 
@@ -307,8 +315,25 @@ export const completeUpload = async (req, res) => {
           }
         )
 
-        //  delete the old file from s3 or local disk
-        await storage.deleteFile(oldRecord.storagePath)
+        if (record.parent && oldRecord.fileSize) {
+          await updateFolderSizeTree(record.parent, -oldRecord.fileSize)
+        }
+
+        // Decrement refCount on any remaining copies before deleting old physical file
+        if (oldRecord.storagePath) {
+          await uploadModel.updateMany(
+            { storagePath: oldRecord.storagePath },
+            { $inc: { refCount: -1 } }
+          );
+
+          const remainingCount = await uploadModel.countDocuments({
+            storagePath: oldRecord.storagePath,
+            _id: { $ne: oldRecord._id }
+          });
+          if (remainingCount === 0) {
+            await storage.deleteFile(oldRecord.storagePath);
+          }
+        }
 
         // delete the record from mongodb
         await uploadModel.deleteOne({ _id: record.replacesFileId })
@@ -324,6 +349,19 @@ export const completeUpload = async (req, res) => {
       so while loop goes bottom to top to find parent folder that how many user has a sharing access to this folder.
     */
 
+    // Fetch populated record with formatted storagePath for live socket preview
+    let formattedRecord = await uploadModel.findById(record._id).populate("owner", "name email profilePic").lean();
+    if (formattedRecord) {
+      if (formattedRecord.storagePath) {
+        formattedRecord.storagePath = formattedRecord.storagePath.replace(/\\/g, "/");
+        if (!formattedRecord.storagePath.startsWith("/")) {
+          formattedRecord.storagePath = `/${formattedRecord.storagePath}`;
+        }
+      }
+    } else {
+      formattedRecord = record.toObject ? record.toObject() : { ...record };
+    }
+
     //  if file is uploaded inside the folder - so parent willbe there
     if (record.parent) {
       // Update parent folder modified timestamps recursively so in sorting this will help
@@ -336,12 +374,12 @@ export const completeUpload = async (req, res) => {
       while (currentParent) {
         if (currentParent.owner) {
           //  socket event for owner screen
-          req.emitToUser(currentParent.owner.toString(), "item_uploaded", { folderId: record.parent })
+          req.emitToUser(currentParent.owner.toString(), "item_uploaded", { folderId: record.parent, newItem: formattedRecord })
         }
         if (currentParent.sharedWith?.length > 0) {
           //  socket event for shared people 
           currentParent.sharedWith.forEach(s => {
-            req.emitToUser(s.userId.toString(), "item_uploaded", { folderId: record.parent })
+            req.emitToUser(s.userId.toString(), "item_uploaded", { folderId: record.parent, newItem: formattedRecord })
           })
           break
         }
@@ -349,6 +387,8 @@ export const completeUpload = async (req, res) => {
         if (!currentParent.parent) break
         currentParent = await uploadModel.findById(currentParent.parent).select("sharedWith parent owner")
       }
+    } else {
+      req.emitToUser(record.owner.toString(), "item_uploaded", { folderId: null, newItem: formattedRecord });
     }
 
     //  --------------------------------------------------------------------------
@@ -522,7 +562,7 @@ export const uploadSmallBatch = async (req, res) => {
       const key = `${meta.fingerprint}_${meta.parentId || "null"}`;
       const existing = existingMap.get(key);
       //  if file is aready exisit send response that already uplaoded
-      if (existing?.uploadStatus === "completed") {
+      if (existing?.uploadStatus === "completed" && !meta.replacesFileId) {
         results.push({ fingerprint: meta.fingerprint, status: "completed", id: existing._id });
         continue;
       }
@@ -541,11 +581,13 @@ export const uploadSmallBatch = async (req, res) => {
       const ext = meta.fileName?.includes(".") ? "." + meta.fileName.split(".").pop() : "";
       const bucket = uploadId.substring(0, 2);
       const relativeStoragePath = `files/${bucket}/${uploadId}${ext}`;
-      // 4) Push the upload promise to the same array so they all upload in parallel!
-      pendingDiskWrites.push(
-        storage.uploadBuffer(relativeStoragePath, file.buffer, meta.fileType)
-      );
-      
+      // 4) Push the task details instead of executing it immediately to prevent S3 connection overload
+      pendingDiskWrites.push({
+        path: relativeStoragePath,
+        buffer: file.buffer,
+        type: meta.fileType
+      });
+
 
       //  5) We are pushing object in to array when all complet so we can bult write to the mongodb
       pendingDbRecords.push({
@@ -591,8 +633,34 @@ export const uploadSmallBatch = async (req, res) => {
     //  if there is any pending record that need to write in the db so rite it 
     const dbPromise = pendingDbRecords.length > 0 ? uploadModel.bulkWrite(pendingDbRecords) : Promise.resolve();
 
-    //  wait for the all preocess to complete disk write + database write
-    await Promise.all([...pendingDiskWrites, dbPromise]);
+    // Process S3 uploads in smaller chunks to prevent "Connection Lost" / ECONNRESET errors
+    const CONCURRENCY_LIMIT = 5;
+    for (let i = 0; i < pendingDiskWrites.length; i += CONCURRENCY_LIMIT) {
+      const chunk = pendingDiskWrites.slice(i, i + CONCURRENCY_LIMIT);
+      await Promise.all(chunk.map(task => storage.uploadBuffer(task.path, task.buffer, task.type)));
+    }
+
+    await dbPromise;
+
+    const sizeByParent = new Map();
+
+    // NEW: update folder sizes — group by parentId so each folder
+    // chain is only walked once per batch, not once per file
+    pendingDbRecords.forEach(op => {
+      const doc = op.insertOne.document
+      const parentKey = doc.parent ? doc.parent.toString() : null
+      if (!parentKey || !doc.fileSize) return
+
+      const currentTotal = sizeByParent.get(parentKey) || 0
+      sizeByParent.set(parentKey, currentTotal + doc.fileSize)
+    })
+
+    for (const [parentId, totalSizeAdded] of sizeByParent.entries()) {
+      await updateFolderSizeTree(parentId, totalSizeAdded);
+    }
+
+
+
 
     //  update the all parents time stmap for sorting here
     if (parentId) {
@@ -620,14 +688,24 @@ export const uploadSmallBatch = async (req, res) => {
         )
       }
 
-      // delete old file from disk
-      const oldAbsolute = getAbsolutePath(oldRecord.storagePath)
-      if (oldAbsolute && fs.existsSync(oldAbsolute)) {
-        try {
-          fs.unlinkSync(oldAbsolute)
-        } catch (err) {
-          logger.error(err);
-          console.error("Old file delete failed:", err.message)
+      // NEW: subtract old file's size, since it's being removed
+      if (oldRecord.parent && oldRecord.fileSize) {
+        await updateFolderSizeTree(oldRecord.parent, -oldRecord.fileSize)
+      }
+
+      // Decrement refCount on any remaining copies before deleting old physical file
+      if (oldRecord.storagePath) {
+        await uploadModel.updateMany(
+          { storagePath: oldRecord.storagePath },
+          { $inc: { refCount: -1 } }
+        );
+
+        const remainingCount = await uploadModel.countDocuments({
+          storagePath: oldRecord.storagePath,
+          _id: { $ne: oldRecord._id }
+        });
+        if (remainingCount === 0) {
+          await storage.deleteFile(oldRecord.storagePath);
         }
       }
 
@@ -917,12 +995,12 @@ export const cancelUpload = async (req, res) => {
 
     const storage = getStorage();
     await storage.cancelUpload(
-      record.storagePath, 
-      record.s3_uplaod_id, 
+      record.storagePath,
+      record.s3_uplaod_id,
       uploadId // This 3rd argument triggers cleanupUploadResources() in your localDiskStorage file!
     );
 
-    
+
 
     await Promise.all([
       chunkModel.deleteMany({ uploadId }),
@@ -943,6 +1021,7 @@ export const cancelFolderUpload = async (req, res) => {
     const { uploadIds, folderIds, rootFolderId } = req.body
     const owner = req.user._id
     const isS3 = process.env.STORAGE_PROVIDER === "s3";
+    const storage = getStorage();
 
     // STEP 1 — release and delete in-progress files
     if (uploadIds?.length) {
@@ -1032,12 +1111,26 @@ export const completeFolderReplace = async (req, res) => {
     const { newFolderId, replacesFileId } = req.body;
     const owner = req.user._id;
 
+
+    //  now here check the permission here nly owner and editor can uplaod here
+    const permission = await getUserPermission(owner, replacesFileId)
+    if (!permission || !["owner", "editor"].includes(permission)) {
+      return res.status(403).json({ success: false, message: "Access denied" })
+    }
+
+
     const storage = getStorage();
 
     //  first find the older folder here
-    const oldFolder = await uploadModel.findOne({ _id: replacesFileId, owner });
+    const oldFolder = await uploadModel.findOne({ _id: replacesFileId });
     if (!oldFolder) {
       return res.status(404).json({ success: false, message: "Old folder not found" })
+    }
+
+    // NEW: subtract the old folder's total size from its ancestor chain,
+    // since we're about to delete it entirely
+    if (oldFolder.parent && oldFolder.totalSize) {
+      await updateFolderSizeTree(oldFolder.parent, -oldFolder.totalSize);
     }
 
     //  find the new root folder here
@@ -1061,24 +1154,38 @@ export const completeFolderReplace = async (req, res) => {
       await updateParentFolderTimestamps(newFolder.parent);
     }
 
-    // now after upload done of new folder delete whole old folder here
+    // now after upload done of new folder delete whole old folder recursively with refCount safety
     const deleteRecursive = async (parentId) => {
-      const children = await uploadModel.find({ parent: parentId, owner })
+      const children = await uploadModel.find({ parent: parentId });
       for (const child of children) {
         if (child.type === "folder") {
-          await deleteRecursive(child._id)
-        } else if (child.type === "file") {
-          await storage.deleteFile(child.storagePath);
+          await deleteRecursive(child._id);
+        } else if (child.type === "file" && child.storagePath) {
+          // Decrement refCount on any remaining copies
+          await uploadModel.updateMany(
+            { storagePath: child.storagePath },
+            { $inc: { refCount: -1 } }
+          );
+
+          // Check if any other user's document still references this storagePath
+          const remainingCount = await uploadModel.countDocuments({
+            storagePath: child.storagePath,
+            _id: { $ne: child._id }
+          });
+
+          if (remainingCount === 0) {
+            await storage.deleteFile(child.storagePath);
+          }
         }
-        await uploadModel.deleteOne({ _id: child._id })
+        await uploadModel.deleteOne({ _id: child._id });
       }
-    }
+    };
 
     //  delete all nested containes of folder
     await deleteRecursive(replacesFileId)
 
     //  now delete root levl folder here
-    await uploadModel.deleteOne({ _id: replacesFileId, owner })
+    await uploadModel.deleteOne({ _id: replacesFileId })
 
     res.json({ success: true })
 
@@ -1088,20 +1195,155 @@ export const completeFolderReplace = async (req, res) => {
   }
 }
 
+
+
+
+// //  this function is for the multiple batcj fiel socket event if 200 user sending socket so dont overflow it 
+// export const notifyUploadComplete = async (req, res) => {
+//   try {
+//     const { parentId } = req.body
+//     if (!parentId) return res.json({ success: true })
+
+//     let currentParent = await uploadModel.findById(parentId).select("sharedWith parent owner")
+
+//     while (currentParent) {
+//       if (currentParent.owner) {
+//         req.emitToUser(currentParent.owner.toString(), "item_uploaded", { folderId: String(parentId), newItem: record })
+//       }
+//       if (currentParent.sharedWith?.length > 0) {
+//         currentParent.sharedWith.forEach(s => {
+//           req.emitToUser(s.userId.toString(), "item_uploaded", { folderId: String(parentId), newItem: record })
+//         })
+//         break
+//       }
+//       if (!currentParent.parent) break
+//       currentParent = await uploadModel.findById(currentParent.parent).select("sharedWith parent owner")
+//     }
+
+//     res.json({ success: true })
+//   } catch (error) {
+//     logger.error(error);
+//     res.status(500).json({ success: false, message: error.message })
+//   }
+// }
+
+
+
+//  This function is ONLY for SMALL FILE uploads (under 1MB).
+// this fucntino will not sapm if user upladoed 200 files at once here
 export const notifyUploadComplete = async (req, res) => {
   try {
-    const { parentId } = req.body
-    if (!parentId) return res.json({ success: true })
+    // get inputs from frontend
+    const { parentId, itemIds, itemId, rootFolderId } = req.body
+    const currentUserID = req.user._id
 
+    let newItems = []
+
+    // folder upload - fetch only root folder, fast path
+    if (rootFolderId) {
+      const folder = await uploadModel
+        .findById(rootFolderId)
+        .populate("owner", "name email profilePic")
+        .lean()
+
+      if (folder) {
+        if (folder.storagePath) {
+          folder.storagePath = folder.storagePath.replace(/\\/g, "/")
+          if (!folder.storagePath.startsWith("/")) {
+            folder.storagePath = `/${folder.storagePath}`
+          }
+        }
+        newItems = [folder]
+      }
+    } else {
+      // flat files - bulk fetch + climb to resolve top-level items
+      const idsToFetch = itemIds?.length ? itemIds : (itemId ? [itemId] : [])
+
+      if (idsToFetch.length > 0) {
+        const uploadedDocs = await uploadModel.find({ _id: { $in: idsToFetch } }).select("parent").lean()
+
+        const directChildIds = []
+        const parentIdsSet = new Set()
+
+        // separate direct children from nested sub-files
+        uploadedDocs.forEach(doc => {
+          if (String(doc.parent || "null") === String(parentId || "null")) {
+            directChildIds.push(doc._id.toString())
+          } else if (doc.parent) {
+            parentIdsSet.add(doc.parent.toString())
+          }
+        })
+
+        const resolvedTargetIds = new Set(directChildIds)
+        const parentToTargetMap = new Map() // cache resolved chains
+
+        // climb each unique parent chain, memoized
+        if (parentIdsSet.size > 0) {
+          for (const pId of parentIdsSet) {
+            let currentId = pId
+            const visitedInChain = []
+
+            while (currentId) {
+              if (parentToTargetMap.has(currentId)) {
+                const cachedTopId = parentToTargetMap.get(currentId)
+                if (cachedTopId) resolvedTargetIds.add(cachedTopId)
+                visitedInChain.forEach(id => parentToTargetMap.set(id, cachedTopId))
+                break
+              }
+
+              const pDoc = await uploadModel.findById(currentId).select("parent").lean()
+              if (!pDoc) break
+
+              visitedInChain.push(currentId)
+
+              if (String(pDoc.parent || "null") === String(parentId || "null")) {
+                resolvedTargetIds.add(currentId)
+                visitedInChain.forEach(id => parentToTargetMap.set(id, currentId))
+                break
+              }
+              currentId = pDoc.parent ? pDoc.parent.toString() : null
+            }
+          }
+        }
+
+        // final bulk fetch of resolved top-level items
+        if (resolvedTargetIds.size > 0) {
+          newItems = await uploadModel
+            .find({ _id: { $in: [...resolvedTargetIds] } })
+            .populate("owner", "name email profilePic")
+            .lean()
+
+          newItems = newItems.map(item => {
+            if (item.storagePath) {
+              item.storagePath = item.storagePath.replace(/\\/g, "/")
+              if (!item.storagePath.startsWith("/")) {
+                item.storagePath = `/${item.storagePath}`
+              }
+            }
+            return item
+          })
+        }
+      }
+    }
+
+    const newItem = newItems[0] || null
+
+    // root level upload
+    if (!parentId) {
+      req.emitToUser(currentUserID.toString(), "item_uploaded", { folderId: null, newItem, newItems })
+      return res.json({ success: true })
+    }
+
+    // inside folder upload - climb sharedWith chain
     let currentParent = await uploadModel.findById(parentId).select("sharedWith parent owner")
 
     while (currentParent) {
       if (currentParent.owner) {
-        req.emitToUser(currentParent.owner.toString(), "item_uploaded", { folderId: String(parentId) })
+        req.emitToUser(currentParent.owner.toString(), "item_uploaded", { folderId: String(parentId), newItem, newItems })
       }
       if (currentParent.sharedWith?.length > 0) {
         currentParent.sharedWith.forEach(s => {
-          req.emitToUser(s.userId.toString(), "item_uploaded", { folderId: String(parentId) })
+          req.emitToUser(s.userId.toString(), "item_uploaded", { folderId: String(parentId), newItem, newItems })
         })
         break
       }
@@ -1110,8 +1352,9 @@ export const notifyUploadComplete = async (req, res) => {
     }
 
     res.json({ success: true })
+
   } catch (error) {
-    logger.error(error);
+    logger.error(error)
     res.status(500).json({ success: false, message: error.message })
   }
 }

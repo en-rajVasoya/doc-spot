@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react"
 import { useSearchParams, useNavigate, useLocation } from "react-router-dom"
-import { OverlayTrigger, Tooltip, Modal } from "react-bootstrap"
-import { Form } from "react-bootstrap"
+import { OverlayTrigger, Tooltip, Modal, Form } from "react-bootstrap"
 import ImageViewer from "../features/filePreview/ImageViewer"
 import PdfViewer from "../features/filePreview/PdfViewer"
 import TextViewer from "../features/filePreview/TextViewer"
@@ -17,6 +16,8 @@ import viewIcon from "@images/icon/view.svg"
 import viewHideIcon from "@images/icon/view-hide.svg"
 import errorIcon from "@images/icon/error-icon.svg"
 import { useAuth } from "../../context/AuthContext"
+import { useDownload } from "../../context/DownloadContext"
+import DownloadPanel from "../features/download/DownloadPanel"
 import downloadIcon from "@images/icon/download.svg"
 import fileIcon from "@images/svgs/file.svg"
 import copyIcon from "@images/icon/copy.svg"
@@ -93,6 +94,12 @@ function PasswordModal({ show, password, setPassword, passwordError, setPassword
                             value={password}
                             onChange={(e) => { setPassword(e.target.value); setPasswordError("") }}
                             disabled={verifyingPassword}
+                            onKeyDown={(e) => {
+                                if (e.key === "Enter" && !verifyingPassword && password.trim()) {
+                                    e.preventDefault();
+                                    onSubmit();
+                                }
+                            }}
                         />
                     </div>
                     {passwordError && <div className="invalid-feedback d-block">{passwordError}</div>}
@@ -124,22 +131,26 @@ function PasswordModal({ show, password, setPassword, passwordError, setPassword
     )
 }
 
-function FilePreview({ data, copied, setCopied }) {
-    const file = data.data
+function FilePreview({ data, copied, setCopied, downloadFile }) {
+    const file = data.data;
+
+    // FIX: Ensure storagePath has a leading slash so the viewer components 
+    // construct the URL correctly (e.g., domain/files/path instead of domainfiles/path)
+    if (file && file.storagePath && !file.storagePath.startsWith('/')) {
+        file.storagePath = '/' + file.storagePath;
+    }
+
     const fileUrl = data.redirect_url
     const { name: fileName, fileType: mimeType } = file
     const type = getFileType(mimeType)
 
     const handleDownload = () => {
-        const a = document.createElement("a")
-        a.href = fileUrl
-        a.download = fileName
-        a.click()
+        downloadFile(file)
     }
 
     const handleCopy = async () => {
         try {
-            const res = await fetch(fileUrl)
+            const res = await fetch(fileUrl, { credentials: "include" })
             const text = await res.text()
             await navigator.clipboard.writeText(text)
             setCopied(true)
@@ -212,6 +223,7 @@ function FilePreview({ data, copied, setCopied }) {
                     </div>
                 </div>
                 <div className="file-preview-body">{renderViewer()}</div>
+                <DownloadPanel />
             </div>
         </div>
     )
@@ -224,6 +236,7 @@ function SharedPreview() {
     const token = searchParams.get("token")
 
     const { logout, user } = useAuth()
+    const { downloadFile } = useDownload()
 
     const navigate = useNavigate()
     const location = useLocation()
@@ -238,6 +251,29 @@ function SharedPreview() {
     const [verifyingPassword, setVerifyingPassword] = useState(false)
     const [passwordVerified, setPasswordVerified] = useState(false)
     const [showPwd, setShowPwd] = useState(false)
+
+    // Helper to recursively ensure all file storagePaths have a leading slash
+    const fixStoragePaths = (res) => {
+        if (res.data && res.data.storagePath && !res.data.storagePath.startsWith('/')) {
+            res.data.storagePath = '/' + res.data.storagePath;
+        }
+        if (res.folder_data) {
+            const fixRecursive = (items) => {
+                if (!Array.isArray(items)) return items;
+                return items.map(item => {
+                    if (item.storagePath && !item.storagePath.startsWith('/')) {
+                        item.storagePath = '/' + item.storagePath;
+                    }
+                    if (item.children) {
+                        item.children = fixRecursive(item.children);
+                    }
+                    return item;
+                });
+            };
+            res.folder_data = fixRecursive(res.folder_data);
+        }
+        return res;
+    };
 
     useEffect(() => {
         if (!token) {
@@ -262,9 +298,9 @@ function SharedPreview() {
                     setError(res)
                 } else if (res.password_required) {
                     setShowPasswordModal(true)
-                    setData(res)
+                    setData(fixStoragePaths(res))
                 } else {
-                    setData(res)
+                    setData(fixStoragePaths(res))
                 }
             })
             .catch(() => setError("Something went wrong"))
@@ -290,7 +326,7 @@ function SharedPreview() {
                 setPasswordError(result.message || "Incorrect password")
             } else {
                 setPasswordVerified(true)
-                setData(result)
+                setData(fixStoragePaths(result))
                 setShowPasswordModal(false)
                 setPassword("")
             }
@@ -331,7 +367,7 @@ function SharedPreview() {
                     </h3>
 
                     <p className="mb-4" style={{ color: 'var(--dark-50)', fontSize: '15px' }}>
-                        {error.is_access_denied 
+                        {error.is_access_denied
                             ? `You are signed in as ${user?.email || "another user"}. You do not have permission to view this link.`
                             : (error.message || error)
                         }
@@ -370,7 +406,7 @@ function SharedPreview() {
     }
 
     if (data?.type === "file") {
-        return <FilePreview data={data} copied={copied} setCopied={setCopied} />
+        return <FilePreview data={data} copied={copied} setCopied={setCopied} downloadFile={downloadFile} />
     }
 
     if (data?.type === "folder") {

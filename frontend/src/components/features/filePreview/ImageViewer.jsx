@@ -348,6 +348,7 @@ export default function ImageViewer({ file }) {
     const [err, setErr] = useState(true);
     const [fitScale, setFitScale] = useState(1);
     const [tooBig, setTooBig] = useState(false);
+    const [pinchData, setPinchData] = useState(null);
 
     const containerRef = useRef(null);
     const dragRef = useRef({ x: 0, y: 0 });
@@ -387,7 +388,7 @@ export default function ImageViewer({ file }) {
         }
 
         if (!currentSize) {
-            fetch(src, { method: "HEAD" })
+            fetch(src, { method: "HEAD", credentials: "include" })
                 .then(r => {
                     const size = Number(r.headers.get("content-length") || 0);
                     if (size > MAX_SIZE) {
@@ -515,6 +516,69 @@ export default function ImageViewer({ file }) {
         });
     };
 
+    const getPinchDistance = (touches) => {
+        if (touches.length < 2) return 0;
+        const dx = touches[0].clientX - touches[1].clientX;
+        const dy = touches[0].clientY - touches[1].clientY;
+        return Math.sqrt(dx * dx + dy * dy);
+    };
+
+    const onTouchStart = (e) => {
+        if (e.touches.length === 2) {
+            setDrag(false);
+            const dist = getPinchDistance(e.touches);
+            setPinchData({ startDist: dist, startScale: scale });
+        } else if (e.touches.length === 1) {
+            setDrag(true);
+            dragRef.current = { x: e.touches[0].clientX - pos.x, y: e.touches[0].clientY - pos.y };
+        }
+    };
+
+    const onTouchMove = (e) => {
+        if (e.touches.length === 2 && pinchData) {
+            const currentDist = getPinchDistance(e.touches);
+            const targetScale = clampScale(pinchData.startScale * (currentDist / pinchData.startDist));
+            
+            setScale((prevScale) => {
+                if (targetScale <= fitScale) {
+                    setPos({ x: 0, y: 0 });
+                } else if (prevScale > fitScale) {
+                    const ratio = targetScale / prevScale;
+                    setPos((p) => ({
+                        x: p.x * ratio,
+                        y: p.y * ratio
+                    }));
+                }
+                return targetScale;
+            });
+        } else if (e.touches.length === 1 && drag) {
+            const container = containerRef.current;
+            const img = imgRef.current;
+            if (!container || !img) return;
+            const rect = img.getBoundingClientRect();
+            const maxX = rect.width / 2;
+            const maxY = rect.height / 2;
+            const nextX = e.touches[0].clientX - dragRef.current.x;
+            const nextY = e.touches[0].clientY - dragRef.current.y;
+            setPos({
+                x: Math.min(maxX, Math.max(-maxX, nextX)),
+                y: Math.min(maxY, Math.max(-maxY, nextY)),
+            });
+        }
+    };
+
+    const onTouchEnd = (e) => {
+        if (e.touches.length < 2) {
+            setPinchData(null);
+        }
+        if (e.touches.length === 0) {
+            setDrag(false);
+        } else if (e.touches.length === 1) {
+            setDrag(true);
+            dragRef.current = { x: e.touches[0].clientX - pos.x, y: e.touches[0].clientY - pos.y };
+        }
+    };
+
     const tf = `translate(${pos.x}px,${pos.y}px) scale(${scale})`;
 
     const currentSizeDisplay = file?.size || file?.fileSize || 0;
@@ -565,9 +629,14 @@ export default function ImageViewer({ file }) {
             onMouseMove={onMove}
             onMouseUp={() => setDrag(false)}
             onMouseLeave={() => setDrag(false)}
+            onTouchStart={onTouchStart}
+            onTouchMove={onTouchMove}
+            onTouchEnd={onTouchEnd}
+            onTouchCancel={onTouchEnd}
             style={{
                 cursor: drag ? "grabbing" : "grab",
                 overflow: "hidden",
+                touchAction: "none",
             }}
         >
 

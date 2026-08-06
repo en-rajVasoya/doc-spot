@@ -32,7 +32,7 @@ function UserAvatar({ user, name, src, className = "", style = {} }) {
     }, []);
 
     // 2. Check for thumbnail, compressed, or raw profile pic
-    const extractedSrc = src || user?.thumbnail_profile_pic || user?.compressed_profile_pic || user?.profilePic;
+    const extractedSrc = src !== undefined ? src : (user?.thumbnail_profile_pic || user?.compressed_profile_pic || user?.profilePic);
 
     // 3. Render image if it exists
     if (extractedSrc) {
@@ -59,8 +59,9 @@ function UserAvatar({ user, name, src, className = "", style = {} }) {
      const hasName = finalName.trim().length > 0;
     const initials = hasName ? finalName.trim().charAt(0).toUpperCase() : null;
 
-    //  here we are generating the user icon colro based on the user id here so in update user it will not change there
-    const bgColor = user?._id ? getColorFromName(user._id.toString()) : randomFallbackColor;
+    //  here we are generating the user icon color deterministically
+    const userId = user?._id || user?.userId || user?.id || user?.email || finalName;
+    const bgColor = userId ? getColorFromName(userId.toString()) : randomFallbackColor;
 
     return (
         <div className='user-profile-single-box'>

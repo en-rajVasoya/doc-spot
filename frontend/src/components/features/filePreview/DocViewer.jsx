@@ -11,9 +11,9 @@ import { useDownload } from "../../../context/DownloadContext.jsx";
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024
 const LoadingScreen = () => (
-    <div className="pdf-preview__loading">
-        <div className='file-upload-loader-container'>
-            <div className='file-upload-loader'></div>
+    <div className="loader-wrapper-box">
+        <div className="cma-messages-are-loader-wrapper">
+            <span className="loader"></span>
         </div>
     </div>
 )
@@ -342,19 +342,37 @@ async function injectCharts(containerEl, blob) {
         console.warn("Chart injection error:", e)
     }
 }
+
 function DocViewer({ file: fileData }) {
     const { downloadFile } = useDownload();
     const containerRef = useRef(null)
+    const contentRef = useRef(null)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
     const [isLegacyDoc, setIsLegacyDoc] = useState(false)
     const [scale, setScale] = useState(1)
+    const [autoFit, setAutoFit] = useState(true)
     const blobRef = useRef(null)
+
+    // Compute scale that fits the actual rendered docx page width into the viewport
+    const fitToWidth = useCallback(() => {
+        if (!containerRef.current || !contentRef.current) return
+        const pageEl = containerRef.current.querySelector("section.docx-preview") || containerRef.current.firstElementChild
+        if (!pageEl) return
+        const pageWidth = pageEl.getBoundingClientRect().width / (scale || 1) // undo current scale to get true width
+        const availableWidth = contentRef.current.clientWidth - 16 // small side padding
+        if (pageWidth > 0 && availableWidth > 0) {
+            const fitScale = Math.min(1, availableWidth / pageWidth)
+            setScale(Math.max(0.3, Math.round(fitScale * 100) / 100))
+        }
+    }, [scale])
+
     useEffect(() => {
         if (!fileData) return
         setLoading(true)
         setError(null)
         setIsLegacyDoc(false)
+        setAutoFit(true)
         const load = async () => {
             try {
                 const fileName = fileData?.name || fileData?.storagePath || ""
@@ -371,7 +389,6 @@ function DocViewer({ file: fileData }) {
                     return
                 }
                 let blob = null
-                console.log("fileData -->", fileData)
                 if (fileData instanceof File || fileData instanceof Blob) {
                     blob = fileData
                 } else if (fileData instanceof ArrayBuffer) {
@@ -381,9 +398,7 @@ function DocViewer({ file: fileData }) {
                     const url = `${FILE_BASE_URL}${fileData.storagePath}`
                     const response = await fetch(url, {
                         credentials: "include",
-                        headers: {
-                            Accept: "application/octet-stream",
-                        },
+                        headers: { Accept: "application/octet-stream" },
                     })
                     if (!response.ok) throw new Error(`Server returned status: ${response.status}`)
                     blob = await response.blob()
@@ -414,6 +429,16 @@ function DocViewer({ file: fileData }) {
                     await injectCharts(containerRef.current, blob)
                 }
                 setLoading(false)
+                // Auto-fit on small screens after render settles
+                requestAnimationFrame(() => {
+                    setTimeout(() => {
+                        if (window.innerWidth <= 768) {
+                            fitToWidth()
+                        } else {
+                            setScale(1)
+                        }
+                    }, 50)
+                })
             } catch (err) {
                 console.error("DOC load error:", err)
                 setError("Failed to load document preview.")
@@ -422,27 +447,48 @@ function DocViewer({ file: fileData }) {
         }
         load()
     }, [fileData])
-    const clampScale = (v) => Math.min(Math.max(v, 0.5), 3)
-    const zoomIn = () => setScale(prev => clampScale(Math.round((prev + 0.2) * 10) / 10))
-    const zoomOut = () => setScale(prev => clampScale(Math.round((prev - 0.2) * 10) / 10))
+
+    // Refit on window resize / orientation change
+    useEffect(() => {
+        const handleResize = () => {
+            if (loading) return
+            if (window.innerWidth <= 768) {
+                if (autoFit) fitToWidth()
+            } else {
+                setScale(1)
+            }
+        }
+        window.addEventListener("resize", handleResize)
+        window.addEventListener("orientationchange", handleResize)
+        return () => {
+            window.removeEventListener("resize", handleResize)
+            window.removeEventListener("orientationchange", handleResize)
+        }
+    }, [loading, autoFit, fitToWidth])
+
+    const clampScale = (v) => Math.min(Math.max(v, 0.3), 3)
+    const zoomIn = () => { setAutoFit(false); setScale(prev => clampScale(Math.round((prev + 0.2) * 10) / 10)) }
+    const zoomOut = () => { setAutoFit(false); setScale(prev => clampScale(Math.round((prev - 0.2) * 10) / 10)) }
     const resetZoom = () => {
-        if (scale !== 1) {
+        setAutoFit(false)
+        if (window.innerWidth <= 768) {
+            fitToWidth()
+            setAutoFit(true)
+        } else if (scale !== 1) {
             setScale(1)
         } else {
             setScale(1.5)
         }
     }
+
     if (isLegacyDoc) {
         return (
             <div className="preview-toobig">
                 <div className="txt-toobig-icon"><img src={fileIcon} alt="" width={38} /></div>
                 <p className="preview-toobig-title m-0">{fileData?.name || "Document"}</p>
                 <p className="mute-text">Legacy .doc files cannot be previewed. Download the file to open it in MS Word or LibreOffice.</p>
-                <button className="btn-primary btn mt-2" onClick={() => downloadFile(fileData)}>
-                    <InteractiveIcon
-                        defaultIcon={downloadIcon}
-                        width={24}
-                    />
+                <button className="preview-btn preview-btn-text mt-2" onClick={() => downloadFile(fileData)}>
+                    <InteractiveIcon defaultIcon={downloadIcon} width={24} />
                     Download
                 </button>
             </div>
@@ -454,11 +500,8 @@ function DocViewer({ file: fileData }) {
                 <div className="txt-toobig-icon"><img src={fileIcon} alt="" width={38} /></div>
                 <p className="preview-toobig-title m-0">Preview not available</p>
                 <p className="mute-text">{error}</p>
-                <button className="btn-primary btn mt-2" onClick={() => downloadFile(fileData)}>
-                    <InteractiveIcon
-                        defaultIcon={downloadIcon}
-                        width={24}
-                    />
+                <button className="preview-btn preview-btn-text mt-2" onClick={() => downloadFile(fileData)}>
+                    <InteractiveIcon defaultIcon={downloadIcon} width={24} />
                     Download
                 </button>
             </div>
@@ -466,16 +509,19 @@ function DocViewer({ file: fileData }) {
     }
     return (
         <div className="doc-preview" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-
             {loading && <LoadingScreen />}
-            <div className="doc-preview__content" style={{
-                visibility: loading ? "hidden" : "visible",
-                flex: 1,
-                overflow: "auto",
-                display: "flex",
-                justifyContent: "center",
-                paddingTop: "20px"
-            }}>
+            <div
+                ref={contentRef}
+                className="doc-preview__content"
+                style={{
+                    visibility: loading ? "hidden" : "visible",
+                    flex: 1,
+                    overflow: "auto",
+                    display: "flex",
+                    justifyContent: "center",
+                    paddingTop: "20px"
+                }}
+            >
                 <div style={{
                     boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
                     background: "#fff",
@@ -490,23 +536,16 @@ function DocViewer({ file: fileData }) {
                 <div className="image-preview-bar">
                     <div className="new-preview-zoom-controls-sub after-line-horizontal">
                         <button
-                            className={`image-preview-btn${scale <= 0.5 ? " pdf-preview__btn--disabled" : ""}`}
-                            onClick={zoomOut} disabled={scale <= 0.5}
+                            className={`image-preview-btn${scale <= 0.3 ? " pdf-preview__btn--disabled" : ""}`}
+                            onClick={zoomOut} disabled={scale <= 0.3}
                         >
-                            <InteractiveIcon
-                                defaultIcon={nagativIcon}
-                                width={24}
-                            />
+                            <InteractiveIcon defaultIcon={nagativIcon} width={24} />
                         </button>
-
                         <button
                             className={`image-preview-btn${scale >= 3 ? " pdf-preview__btn--disabled" : ""}`}
                             onClick={zoomIn} disabled={scale >= 3}
                         >
-                            <InteractiveIcon
-                                defaultIcon={plusIcon}
-                                width={24}
-                            />
+                            <InteractiveIcon defaultIcon={plusIcon} width={24} />
                         </button>
                     </div>
                     <div className="new-preview-zoom-controls-sub">

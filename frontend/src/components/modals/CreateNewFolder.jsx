@@ -4,6 +4,7 @@ import { useFileExplorer } from "../../context/FileExplorerContext";
 import { useEffect } from "react";
 import InteractiveIcon from "../layout/InteractiveIcon";
 import closeIcon from "@images/icon/close-icon.svg"
+import useResponsive from "../../hooks/useResponsive";
 
 function CreateNewFolder({ onClose }) {
     const [name, setName] = useState("Untitled Folder");
@@ -11,6 +12,7 @@ function CreateNewFolder({ onClose }) {
     const modalRef = useRef(null);
     const inputRef = useRef(null)
 
+    const { isMobile } = useResponsive()
     const { createFolderApi } = useFileExplorer();
 
     //  here untitle folder will auto select when user opens modal 
@@ -23,8 +25,13 @@ function CreateNewFolder({ onClose }) {
 
     const handleOutsideClick = (e) => {
         if (modalRef.current && !modalRef.current.contains(e.target)) {
-            setShake(true);
-            setTimeout(() => setShake(false), 400);
+            if (isMobile) {
+                onClose()
+            } else {
+                setShake(true);
+                setTimeout(() => setShake(false), 400);
+            }
+
         }
     };
 

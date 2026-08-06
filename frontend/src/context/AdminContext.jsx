@@ -2,12 +2,14 @@ import { createContext, useContext, useState, useEffect } from "react";
 import axiosApi from "../utils/api.js";
 import { useNotification } from "./NotificationContext.jsx";
 import { useAuth } from "./AuthContext.jsx";
+import { useSocket } from "./SocketContext.jsx";
 
 
 const AdminContext = createContext(null)
 
 export function AdminAuthProvider({ children }) {
     const { user: loggedInUser, setUser } = useAuth();
+    const { socket } = useSocket();
     const [isLoading, setIsLoading] = useState(true)
     const [users, setUsers] = useState([])
 
@@ -29,6 +31,21 @@ export function AdminAuthProvider({ children }) {
 
     //  notifiation toaster
     const { showNotification } = useNotification();
+
+    // Listen for live profile updates from other Admin windows/tabs
+    useEffect(() => {
+        if (!socket) return;
+        const handleProfileUpdated = (updatedUser) => {
+            setUsers(prev => prev.map(u =>
+                String(u._id) === String(updatedUser._id) ? { ...u, ...updatedUser } : u
+            ));
+        };
+        // Listen to global_user_profile_updated
+        socket.on("global_user_profile_updated", handleProfileUpdated);
+        return () => {
+            socket.off("global_user_profile_updated", handleProfileUpdated);
+        };
+    }, [socket]);
 
 
 

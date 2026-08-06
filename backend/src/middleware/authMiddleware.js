@@ -8,9 +8,13 @@ const getKey = () => {
 
 const authMiddleware = async (req, res, next) => {
     try {
-        const token = req.cookies.auth_token
+        let token = req.cookies.auth_token;
+        if (!token && req.headers.authorization && req.headers.authorization.startsWith("Bearer")) {
+            token = req.headers.authorization.split(" ")[1];
+        }
+
         if (!token) {
-            return res.status(401).json({ message: "Not authorized, please login" })
+            return res.status(401).json({ message: "Not authorized, please login" });
         }
 
         const payload = await V3.decrypt(token, getKey())
@@ -26,8 +30,8 @@ const authMiddleware = async (req, res, next) => {
 
 
         //  her instant logged out here when admin deactive the user
-        if(!req.user.is_active){
-            return res.status(401).json({ message: "Your account has been deactivated"  })
+        if (!req.user.is_active) {
+            return res.status(401).json({ message: "Your account has been deactivated" })
         }
 
         next()

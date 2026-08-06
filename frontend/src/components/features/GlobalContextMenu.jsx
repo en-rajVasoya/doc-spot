@@ -14,6 +14,7 @@ import { useFileExplorer } from "../../context/FileExplorerContext";
 import { useNavigate, useLocation } from "react-router-dom";
 import homeIcon from "@images/icon/home-icon.svg";
 import { useSearch } from "../../context/SearchContext";
+import useResponsive from "../../hooks/useResponsive";
 
 function GlobalContextMenu({ setModal, disableContextMenu = false }) {
 
@@ -21,6 +22,7 @@ function GlobalContextMenu({ setModal, disableContextMenu = false }) {
     const { isSearchMode } = useSearch()
     const navigate = useNavigate()
     const location = useLocation()
+    const { isMobile } = useResponsive()
     const isTrashPage = location.pathname.startsWith("/trash")
     const isSharedPage = location.pathname === "/shared" || location.pathname === "/shared-with-me"
 
@@ -79,42 +81,55 @@ function GlobalContextMenu({ setModal, disableContextMenu = false }) {
     };
 
     useEffect(() => {
-    const handleRightClick = (e) => {
-        e.preventDefault()
+        const handleRightClick = (e) => {
+            e.preventDefault()
 
-        if (disableContextMenu || isSearchMode || isSharedPage) return;
+            if (e.target.closest(".custom-context-menu") || e.target.closest(".new-btn")) {
+                return
+            }
 
-        if (e.target.closest(".table-row")) {
-            setMenu((prev => ({ ...prev, visible: false })))
-            return
-        }
+            if (e.target.closest(".table-row")) {
+                setMenu((prev => ({ ...prev, visible: false })))
+                return
+            }
+            if (disableContextMenu || isSearchMode || isSharedPage || isMobile) return;
 
-        if (!e.target.closest(".content-view-wrapper")) {
+
+
+            if (!e.target.closest(".content-view-wrapper")) {
+                setMenu((prev) => ({ ...prev, visible: false }));
+                return;
+            }
+
+            openMenu({
+                x: e.clientX,
+                y: e.clientY
+            });
+        };
+
+        const handleClick = () => {
+            setMenu((prev) => ({
+                ...prev,
+                visible: false
+            }));
+        };
+
+
+
+        const handleCloseGlobal = () => {
             setMenu((prev) => ({ ...prev, visible: false }));
-            return;
-        }
+        };
 
-        openMenu({
-            x: e.clientX,
-            y: e.clientY
-        });
-    };
+        window.addEventListener("contextmenu", handleRightClick);
+        window.addEventListener("click", handleClick);
+        window.addEventListener("close-global-menu", handleCloseGlobal);
 
-    const handleClick = () => {
-        setMenu((prev) => ({
-            ...prev,
-            visible: false
-        }));
-    };
-
-    window.addEventListener("contextmenu", handleRightClick);
-    window.addEventListener("click", handleClick);
-
-    return () => {
-        window.removeEventListener("contextmenu", handleRightClick);
-        window.removeEventListener("click", handleClick);
-    };
-}, [disableContextMenu, isSearchMode, isSharedPage]);
+        return () => {
+            window.removeEventListener("contextmenu", handleRightClick);
+            window.removeEventListener("click", handleClick);
+            window.removeEventListener("close-global-menu", handleCloseGlobal);
+        };
+    }, [disableContextMenu, isSearchMode, isSharedPage, isMobile]);
 
     const isActionDisabled = isViewerOnly || isSharedPage;
 
@@ -230,6 +245,10 @@ function GlobalContextMenu({ setModal, disableContextMenu = false }) {
             {!disableContextMenu && menu.visible && (
                 <div
                     className="custom-context-menu"
+                    onContextMenu={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    }}
                     style={{
                         position: "fixed",
                         top: menu.top ?? "auto",
@@ -286,7 +305,7 @@ function GlobalContextMenu({ setModal, disableContextMenu = false }) {
                             </button>
                         </li>
 
-                        <li  onClick={(e) => {
+                        <li onClick={(e) => {
                             if (isActionDisabled) {
                                 e.stopPropagation()
                                 return
@@ -313,7 +332,12 @@ function GlobalContextMenu({ setModal, disableContextMenu = false }) {
 
             {/*  Floating New Button */}
             {!disableContextMenu && !isSearchMode && (
-                <button className="new-btn" onClick={handleNewButtonClick}>
+                <button className="new-btn"
+                    onClick={handleNewButtonClick}
+                    onContextMenu={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    }}>
                     <InteractiveIcon
                         defaultIcon={plusIcon}
                         className="me-2"

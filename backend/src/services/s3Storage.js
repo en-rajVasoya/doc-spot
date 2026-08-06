@@ -64,7 +64,7 @@ export const s3Storage = {
                             UploadId: s3UploadId,
                             PartNumber: i + 1
                         });
-                        urls[i] = await getSignedUrl(s3Client, uploadPartCommand, { expiresIn: 3600 });
+                        urls[i] = await getSignedUrl(s3Client, uploadPartCommand, { expiresIn: 43200 });
                     }
                 }
             }
@@ -91,9 +91,10 @@ export const s3Storage = {
     // -------------------------------------------------------------
     // 2. Initialize New Upload
     // -------------------------------------------------------------
-    initNewUpload: async (uploadId, fileType, totalChunks) => {
+    initNewUpload: async (uploadId, fileType, totalChunks, fileSize, fileName) => {
         const bucket = uploadId.substring(0, 2);
-        const storagePath = `files/${bucket}/${uploadId}.tmp`;
+        const finalExtension = fileName?.includes(".") ? "." + fileName.split(".").pop() : "";
+        const storagePath = `files/${bucket}/${uploadId}${finalExtension}`;
         let s3UploadId = null;
         let urls = null;
         let singlePutUrl = null;
@@ -118,7 +119,7 @@ export const s3Storage = {
                     UploadId: s3UploadId,
                     PartNumber: i + 1
                 });
-                urls[i] = await getSignedUrl(s3Client, uploadPartCommand, { expiresIn: 3600 });
+                urls[i] = await getSignedUrl(s3Client, uploadPartCommand, { expiresIn: 43200 });
             }
 
         } else {
@@ -127,7 +128,7 @@ export const s3Storage = {
                 Key: storagePath,
                 ContentType: fileType || "application/octet-stream"
             });
-            singlePutUrl = await getSignedUrl(s3Client, putCommand, { expiresIn: 3600 });
+            singlePutUrl = await getSignedUrl(s3Client, putCommand, { expiresIn: 43200 });
         }
         return { storagePath, s3UploadId, urls, singlePutUrl };
 

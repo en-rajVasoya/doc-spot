@@ -12,6 +12,8 @@ const MAX_CONCURRENT = 4
 export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSession) {
     const { sessionMapsRef, uploadQueuesRef, uploadStartedRef, abortControllersRef } = refs
 
+    // Checks if the user is trying to upload the exact same file twice at the same time.
+    // If it is already uploading, we skip the duplicate to save bandwidth.
     const isDuplicateActiveUpload = (sessionId, filekey, fingerprint, parentId) => {
         for (const [sid, map] of sessionMapsRef.current.entries()) {
             for (const [fk, f] of map.entries()) {
@@ -26,7 +28,9 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
         return false
     }
 
-    //  this is the helper function for read 4100 byts of data as base64 for security checking MIME 
+    // Reads the first 4100 bytes (header) of a file.
+    // We send this small piece to the backend to securely verify the real file type (MIME type),
+    // preventing hackers from uploading malicious files with fake extensions.
     const getFileHeader = (file) => {
         return new Promise((resolve) => {
             const slice = file.slice(0, 4100)
@@ -40,9 +44,11 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
     }
 
 
-    //  this function is used for uploading multiple small file in one http request here
+    // Takes a group of small files and uploads them all together in one single API request.
+    // This is much faster than doing a separate network request for every single small image or text file.
     const uploadSmallBatch = async (sessionId, batch, parentId) => {
         // STEP 1 — handle placeholders separately
+        // (A placeholder is just an empty UI shell, we mark it done immediately without sending data)
         batch
             .filter(f => f.file._isPlaceholder)
             .forEach(f => {
@@ -50,10 +56,12 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
             })
 
         // STEP 2 — filter real files
+        // If there are no real files left to upload, we stop here.
         const realBatch = batch.filter(f => !f.file._isPlaceholder)
         if (realBatch.length === 0) return
 
         // STEP 3 — block dangerous files (frontend validation)
+        // We check the file names and extensions to make sure they aren't harmful before sending them.
         const safeBatch = []
         for (const f of realBatch) {
             if (isBlockedFile(f.file.name)) {
@@ -100,6 +108,7 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
         if (uploadBatch.length === 0) return
 
         // STEP 4 — create abort controller for batch
+        // This allows the user to click "Cancel" and completely stop the network request.
         const controller = new AbortController()
         uploadBatch.forEach(f => {
             abortControllersRef.current.set(f.filekey, controller)
@@ -110,6 +119,7 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
 
         try {
             // STEP 5 — get file headers for backend security check
+            // We read the first few bytes of every file in the batch to verify they are safe.
             const fileHeaders = await Promise.all(
                 uploadBatch.map(f => getFileHeader(f.file))
             )
@@ -127,18 +137,21 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
             form.append("metadata", JSON.stringify(metadata))
 
             // STEP 6 — append files and mark uploading
+            // We pack all the files into a single form data package and tell the UI they are uploading.
             uploadBatch.forEach((f, i) => {
                 form.append(`file_${i}`, f.file)
                 updateFile(sessionId, f.filekey, { status: "uploading" }, f.status)
             })
 
             // STEP 7 — API call
+            // We send the entire package of small files to the server at once.
             const { data } = await axiosApi.post("/upload/small-batch", form, {
                 signal: controller.signal,
                 timeout: 30000
             })
 
             // STEP 8 — handle response
+            // The server tells us which files succeeded and which were blocked, and we update the UI.
             uploadBatch.forEach(f => {
                 const result = data.results?.find(
                     r => r.fingerprint === f.fingerprint
@@ -207,7 +220,8 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
 
 
 
-    // handle large files uploading 
+    // Handles uploading large files by breaking them down into small 15MB chunks.
+    // It safely checks for dangerous files, tracks real-time progress, and sends the chunks to either our backend or directly to S3.
     const uploadLargeFile = async (sessionId, fileObj, replaceMap) => {
         if (fileObj.file._isPlaceholder) {
             updateFile(sessionId, fileObj.filekey, {
@@ -227,6 +241,7 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
         updateFile(sessionId, filekey, { status: "uploading" })
 
         // create abort controller for this file
+        // This allows the user to click "Cancel" to stop the big upload midway through.
         const controller = new AbortController()
         abortControllersRef.current.set(filekey, controller)
 
@@ -235,6 +250,7 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
             await new Promise(r => setTimeout(r, 500))
 
             //  here we are blocking the dangorus file extension 
+            // We check the file type right away so we don't waste time uploading a bad file.
             if (isBlockedFile(file.name)) {
                 updateFile(sessionId, filekey, { status: "blocked", message: "File type is not allowed" })
                 return
@@ -258,6 +274,7 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
             let uploadId, alreadyUploaded
 
             //  first init data to backend for check status
+            // We tell the server "Hey, I have a big file. Where should I put it?"
             const initStart = performance.now()
             const { data: initData } = await axiosApi.post("/upload/init", {
                 fileName: file.name,
@@ -280,14 +297,16 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
             console.log(`[INIT] ${(performance.now() - initStart).toFixed(1)}ms | uploadId=${initData.uploadId}`);
 
             //  if file already uploaded then already uploaded
+            // If the exact file is already there, we skip uploading and instantly mark it 100%.
             if (initData.status === "completed") {
-                updateFile(sessionId, filekey, { status: "skipped", progress: 100 }, fileObj.status)
+                updateFile(sessionId, filekey, { status: "done", progress: 100 }, fileObj.status)
                 return
             }
 
             uploadId = initData.uploadId
 
             // store uploadId in fileObj for cancle use
+            // We save the ID so if the user clicks cancel, we can tell the server to delete the incomplete pieces.
             const filesMap = sessionMapsRef.current.get(sessionId)
             if (filesMap?.has(filekey)) {
                 filesMap.set(filekey, { ...filesMap.get(filekey), uploadId })
@@ -298,6 +317,7 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
             const totalChunks = Math.ceil(file.size / CHUNK_SIZE)
 
             // here skipp the chunks that are already uploaded
+            // If the upload failed halfway earlier, we resume from where it left off instead of starting from 0%.
             const chunks = []
             for (let i = 0; i < totalChunks; i++) {
                 if (alreadyUploaded.has(i)) continue
@@ -305,7 +325,7 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
                 const end = Math.min(start + CHUNK_SIZE, file.size)
                 chunks.push({ index: i, start, blob: file.slice(start, end) })
             }
-            
+
             let uploadCount = alreadyUploaded.size;
             // S3 Single Put (files between 1MB and 5MB)
             if (initData.singlePutUrl) {
@@ -318,17 +338,17 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
                         let bytesInWindow = 0;
                         let windowStart = Date.now();
                         const SPEED_UPDATE_INTERVAL = 1500;
-                        
+
                         await axios.put(initData.singlePutUrl, file, {
                             headers: { "Content-Type": file.type || "application/octet-stream" },
                             signal: controller.signal,
                             onUploadProgress: (progressEvent) => {
                                 const pct = parseFloat((progressEvent.progress * 100).toFixed(1));
-                                
+
                                 const loadedDelta = progressEvent.loaded - lastLoaded;
                                 bytesInWindow += loadedDelta;
                                 lastLoaded = progressEvent.loaded;
-                                
+
                                 const now = Date.now();
                                 const elapsed = now - windowStart;
                                 if (elapsed >= SPEED_UPDATE_INTERVAL) {
@@ -357,6 +377,7 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
                 uploadCount = totalChunks;
             } else {
                 //  in one batch how many chunk we want
+                // We bundle the 15MB chunks into groups of 10 so we don't overwhelm the browser.
                 const batches = []
                 for (let i = 0; i < chunks.length; i += CHUNK_BATCH_SIZE) {
                     batches.push(chunks.slice(i, i + CHUNK_BATCH_SIZE))
@@ -367,6 +388,9 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
                 let windowStart = Date.now()
                 const SPEED_UPDATE_INTERVAL = 1500     // here every 1.5 second speed update
 
+                // Track total bytes across all chunks for smooth % bar
+                let totalBytesLoaded = alreadyUploaded.size * CHUNK_SIZE;
+                if (totalBytesLoaded > file.size) totalBytesLoaded = file.size;
 
                 //  send batch to the backend /upload-chunk
                 console.log(`[CHUNKS] ${file.name} | Total batches: ${batches.length} | Total chunks: ${chunks.length} | Already uploaded: ${alreadyUploaded.size}`)
@@ -383,6 +407,7 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
                         try {
                             if (initData.urls) {
                                 // S3 MULTIPART PUT
+                                // Uploading directly to Amazon S3 (the fastest and safest way).
                                 await Promise.all(batch.map(async (c) => {
                                     const putUrl = initData.urls[c.index];
                                     let lastLoaded = 0;
@@ -392,28 +417,31 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
                                         onUploadProgress: (progressEvent) => {
                                             const loadedDelta = progressEvent.loaded - lastLoaded;
                                             bytesInWindow += loadedDelta;
+                                            totalBytesLoaded += loadedDelta;
                                             lastLoaded = progressEvent.loaded;
-                                            
+
+                                            const pct = Math.min(99.9, parseFloat(((totalBytesLoaded / file.size) * 100).toFixed(1)));
+
                                             const now = Date.now();
                                             const elapsed = now - windowStart;
                                             if (elapsed >= SPEED_UPDATE_INTERVAL) {
                                                 const speedMBps = (bytesInWindow / (1024 * 1024)) / (elapsed / 1000);
-                                                updateFile(sessionId, filekey, { speed: speedMBps });
+                                                updateFile(sessionId, filekey, { progress: pct, speed: speedMBps });
                                                 bytesInWindow = 0;
                                                 windowStart = now;
+                                            } else {
+                                                updateFile(sessionId, filekey, { progress: pct });
                                             }
                                         }
                                     });
-                                    // INSTANT PROGRESS BAR UPDATE!
-                                    uploadCount++;
-                                    const pct = parseFloat(((uploadCount / totalChunks) * 100).toFixed(1));
-                                    updateFile(sessionId, filekey, { progress: pct });
                                 }));
                             } else {
                                 // LOCAL CHUNK UPLOAD
+                                // Uploading to our own server, which will piece the chunks together later.
                                 const form = new FormData()
                                 batch.forEach(c => form.append(`chunk_${c.index}`, c.blob))
-                                
+
+                                let lastLoaded = 0;
                                 await axiosApi.post("/upload/upload-chunk", form, {
                                     signal: controller.signal,
                                     timeout: 45000,   // 5 miniutes
@@ -421,9 +449,27 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
                                         "x-upload-id": uploadId,
                                         "x-indexes": JSON.stringify(batch.map(c => c.index)),
                                         "x-starts": JSON.stringify(batch.map(c => c.start))
+                                    },
+                                    onUploadProgress: (progressEvent) => {
+                                        const loadedDelta = progressEvent.loaded - lastLoaded;
+                                        bytesInWindow += loadedDelta;
+                                        totalBytesLoaded += loadedDelta;
+                                        lastLoaded = progressEvent.loaded;
+
+                                        const pct = Math.min(99.9, parseFloat(((totalBytesLoaded / file.size) * 100).toFixed(1)));
+
+                                        const now = Date.now();
+                                        const elapsed = now - windowStart;
+                                        if (elapsed >= SPEED_UPDATE_INTERVAL) {
+                                            const speedMBps = (bytesInWindow / (1024 * 1024)) / (elapsed / 1000);
+                                            updateFile(sessionId, filekey, { progress: pct, speed: speedMBps });
+                                            bytesInWindow = 0;
+                                            windowStart = now;
+                                        } else {
+                                            updateFile(sessionId, filekey, { progress: pct });
+                                        }
                                     }
                                 })
-                                uploadCount += batch.length;
                             }
                             console.log(`[BATCH OK] ${file.name} | batch ${i + 1}/${batches.length} | took ${(performance.now() - chunkStart).toFixed(0)}ms`)
                             break // Success!
@@ -458,26 +504,7 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
                         }
                     }
 
-                    // update the speed only for local chunk uploads (S3 is handled per-chunk above)
-                    if (!initData.urls) {
-                        bytesInWindow += batchBytes
-                        const now = Date.now()
-                        const elapsed = now - windowStart
-                        const pct = parseFloat(((uploadCount / totalChunks) * 100).toFixed(1))
-
-                        if (elapsed >= SPEED_UPDATE_INTERVAL) {
-                            const speedMBps = (bytesInWindow / (1024 * 1024)) / (elapsed / 1000)
-                            updateFile(sessionId, filekey, {
-                                progress: pct,
-                                speed: speedMBps
-                            })
-                            // reset window
-                            bytesInWindow = 0;
-                            windowStart = now;
-                        } else {
-                            updateFile(sessionId, filekey, { progress: pct })
-                        }
-                    }
+                    // Local speed is now handled inside onUploadProgress
                 }
             }
 
@@ -553,7 +580,8 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
     }
 
 
-    // create 5 paralle upllading worker here 
+    // Creates up to 4 background "workers" that constantly check the queue for new files.
+    // This ensures we never upload more than 4 files at the exact same time, preventing the browser from freezing or crashing.
     const startUploadWorkers = (sessionId) => {
         if (uploadStartedRef.current.get(sessionId)) return []
         uploadStartedRef.current.set(sessionId, true)
@@ -597,7 +625,7 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
     }
 
 
-    //  retru file whe user lcick on retry icon on upload failed here
+    // When a single file fails (like losing internet), this function resets its status and pushes it back to the front of the queue to try again.
     const retryFile = (sessionId, filekey) => {
         const filesMap = sessionMapsRef.current.get(sessionId)
         const fileObj = filesMap?.get(filekey)
@@ -631,7 +659,7 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
 
 
 
-    //  here we are retrying the foder when user clcik on retry icon on folder upload 
+    // When an entire folder fails, this function finds all the failed files inside it, resets them, and restarts the background workers to try them all again.
     const retryFolder = (sessionId) => {
         const filesMap = sessionMapsRef.current.get(sessionId)
         if (!filesMap) return

@@ -32,6 +32,10 @@ function CopyModal({ data, onClose }) {
     const [newFolderName, setNewFolderName] = useState("");
     const inputRef = useRef(null);
 
+
+    //  while copying show loader here
+    const [isCopying, setIsCopying] = useState(false);
+
     // Auto-select text when new folder mode opens
     useEffect(() => {
         if (newFolderMode) {
@@ -103,6 +107,8 @@ function CopyModal({ data, onClose }) {
 
     // this is actual copy when user click on copy here
     const handleCopy = async (destinationId) => {
+        if (isCopying) return; // Prevent double clicks
+        setIsCopying(true)
         const destination = destinationId ?? selectedDestination ?? null
         let allSuccess = true
         for (const itemId of data) {
@@ -119,6 +125,7 @@ function CopyModal({ data, onClose }) {
             showNotification(message, "success", "bottom-center")
             handleClose()
         }
+        setIsCopying(false);
         handleClose()
     }
 
@@ -151,7 +158,26 @@ function CopyModal({ data, onClose }) {
                 className="copy-modal"
             >
                 <div ref={modalRef} className="model-wrapper">
-
+                    {/* Show loader overlay when copying */}
+                    {isCopying && (
+                        <div 
+                            className="loader-wrapper-box" 
+                            style={{ 
+                                position: 'fixed',
+                                top: 0,
+                                left: 0,
+                                width: '100vw',
+                                height: '100vh',
+                                backgroundColor: 'transparent',
+                                zIndex: 99999,
+                                pointerEvents: 'auto' // Block all clicks underneath
+                            }}
+                        >
+                            <div className="cma-messages-are-loader-wrapper">
+                                <span className="loader"></span>
+                            </div>
+                        </div>
+                    )}
                     <Modal.Header className="border-0">
                         <Modal.Title>Copy to</Modal.Title>
                         <Tooltip text="Close" offset={8}>
@@ -274,7 +300,7 @@ function CopyModal({ data, onClose }) {
                             <button
                                 className="btn-black btn-lg m-0"
                                 onClick={() => handleCopy()}
-                                disabled={browseFolderId === currentFolderId}
+                                disabled={isCopying}
                             >
                                 Copy
                             </button>

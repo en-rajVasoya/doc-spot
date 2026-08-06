@@ -10,11 +10,13 @@ import backIcon from "@images/icon/arrow-left-outline-icon.svg";
 import { useNotification } from "../../../context/NotificationContext";
 import { useDownload } from "../../../context/DownloadContext";
 import deleteIcon from "@images/icon/trash.svg";
+import useResponsive from "../../../hooks/useResponsive";
 
 const TrashSubHeader = memo(function TrashSubHeader({ view, setView, setModal }) {
     const { trail, navigateTo, items, selectedIds, setSelectedIds, restoreItemApi } = useTrash()
     const { downloadFile, downloadFolder, downloadMultiple } = useDownload()
     const { showNotification } = useNotification()
+    const { isMobile } = useResponsive()
     const navigate = useNavigate();
 
     const selectedArray = Array.from(selectedIds || new Set())
@@ -62,87 +64,135 @@ const TrashSubHeader = memo(function TrashSubHeader({ view, setView, setModal })
 
 
             <header className="header header-trash">
-                <div className="header-view d-flex align-items-center justify-content-between">
+                {isMobile ? (
+                    <>
+                        <div className="header-view d-flex align-items-center justify-content-between">
+                            <div className="d-flex align-items-center">
+                                <Breadcrumbs
+                                    trail={[]}
+                                    onNavigate={navigateTo}
+                                    onHomeClick={() => navigate("/trash-dashboard")}
+                                    maxVisible={1}
+                                    rootLabel={
+                                        <div className="trash-box-breadcrumb breadcrumb-title">     
+                                          <InteractiveIcon defaultIcon={deleteIcon} className="me-2" width={24} />                               
+                                            Trash
+                                        </div>
+                                    }
+                                    actions={[]}
+                                    selectedIds={selectedIds}
+                                    onRestore={handleRestore}
+                                    onDeleteForever={handleDeleteForever}
+                                    downloadFile={downloadFile}
+                                    downloadFolder={downloadFolder}
+                                    downloadMultiple={downloadMultiple}
+                                    items={items}
+                                />
+                            </div>
+                            <div className="d-flex align-items-center">
+                                <ul className="mb-0 d-flex view-btn">
+                                    <li>
+                                        <Tooltip text="List View">
+                                            <button
+                                                className={`btn btn-icon rounded-end-0 ${view === "list" ? "view-active" : ""}`}
+                                                onClick={() => setView("list")}
+                                            >
+                                                <InteractiveIcon defaultIcon={menuIcon} width={20} />
+                                            </button>
+                                        </Tooltip>
+                                    </li>
+                                    <li>
+                                        <Tooltip text="Grid View">
+                                            <button
+                                                className={`btn btn-icon rounded-start-0 ${view === "grid" ? "view-active" : ""}`}
+                                                onClick={() => setView("grid")}
+                                            >
+                                                <InteractiveIcon defaultIcon={gridIcon} width={20} />
+                                            </button>
+                                        </Tooltip>
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
 
-                    {/*  bread crumb and the back icon */}
-                    <div className="d-flex align-itmes-cnter">
-                        {/* <Tooltip text="Back" placement="bottom" >
-                        <button className="btn-hover-gray me-3"
-                            onClick={() => navigate('/dashboard')}
-                        >
-                            <InteractiveIcon
-                                defaultIcon={backIcon}
-                                width={20}
-                                height={20}
-                            />
-                        </button>
-                        </Tooltip> */}
-                        {/* <Breadcrumbs
-                            trail={trail}
-                            onNavigate={navigateTo}
-                            onHomeClick={() => navigate("/trash-dashboard")}
-                            maxVisible={2}
-                            rootLabel="Trash"
-                            actions={["download", "restore", "deleteForever"]}
-                            selectedIds={selectedIds}
-                            onRestore={handleRestore}
-                            onDeleteForever={handleDeleteForever}
-                            downloadFile={downloadFile}
-                            downloadFolder={downloadFolder}
-                            downloadMultiple={downloadMultiple}
-                            items={items}
-
-                        /> */}
-
-                        <Breadcrumbs
-                            trail={trail}
-                            onNavigate={navigateTo}
-                            onHomeClick={() => navigate("/trash-dashboard")}
-                            maxVisible={2}
-                            rootLabel={
-                                <div className="trash-box-breadcrumb breadcrumb-title">     
-                                  <InteractiveIcon defaultIcon={deleteIcon} className="me-2" width={24} />                               
-                                    Trash
+                        {trail.length > 0 && (
+                            <div className="header-view d-flex align-items-center justify-content-between pt-0 mt-2">
+                                <div className="breadcrumb-mobile-row">
+                                    <Breadcrumbs
+                                        trail={trail}
+                                        onNavigate={navigateTo}
+                                        onHomeClick={() => navigate("/trash-dashboard")}
+                                        maxVisible={1}
+                                        rootLabel=""
+                                        hideRoot={true}
+                                        actions={["restore", "deleteForever"]}
+                                        selectedIds={selectedIds}
+                                        onRestore={handleRestore}
+                                        onDeleteForever={handleDeleteForever}
+                                        downloadFile={downloadFile}
+                                        downloadFolder={downloadFolder}
+                                        downloadMultiple={downloadMultiple}
+                                        items={items}
+                                        currentFolderId={trail.length > 0 ? trail[trail.length - 1].id : null}
+                                        currentFolderMeta={trail.length > 0 ? trail[trail.length - 1] : null}
+                                    />
                                 </div>
-                            }
-                            actions={trail.length === 0 ? [] : ["restore", "deleteForever"]}
-                            selectedIds={selectedIds}
-                            onRestore={handleRestore}
-                            onDeleteForever={handleDeleteForever}
-                            downloadFile={downloadFile}
-                            downloadFolder={downloadFolder}
-                            downloadMultiple={downloadMultiple}
-                            items={items}
-                            currentFolderId={trail.length > 0 ? trail[trail.length - 1].id : null}
-                            currentFolderMeta={trail.length > 0 ? trail[trail.length - 1] : null}
-                        />
-                    </div>
+                            </div>
+                        )}
+                    </>
+                ) : (
+                    <div className="header-view d-flex align-items-center justify-content-between">
+                        <div className="d-flex align-itmes-cnter">
+                            <Breadcrumbs
+                                trail={trail}
+                                onNavigate={navigateTo}
+                                onHomeClick={() => navigate("/trash-dashboard")}
+                                maxVisible={2}
+                                rootLabel={
+                                    <div className="trash-box-breadcrumb breadcrumb-title">     
+                                      <InteractiveIcon defaultIcon={deleteIcon} className="me-2" width={24} />                               
+                                        Trash
+                                    </div>
+                                }
+                                actions={trail.length === 0 ? [] : ["restore", "deleteForever"]}
+                                selectedIds={selectedIds}
+                                onRestore={handleRestore}
+                                onDeleteForever={handleDeleteForever}
+                                downloadFile={downloadFile}
+                                downloadFolder={downloadFolder}
+                                downloadMultiple={downloadMultiple}
+                                items={items}
+                                currentFolderId={trail.length > 0 ? trail[trail.length - 1].id : null}
+                                currentFolderMeta={trail.length > 0 ? trail[trail.length - 1] : null}
+                            />
+                        </div>
 
-                    <div className="d-flex align-items-center">
-                        <ul className="mb-0 d-flex view-btn">
-                            <li>
-                                <Tooltip text="List View">
-                                    <button
-                                        className={`btn btn-icon rounded-end-0 ${view === "list" ? "view-active" : ""}`}
-                                        onClick={() => setView("list")}
-                                    >
-                                        <InteractiveIcon defaultIcon={menuIcon} width={20} />
-                                    </button>
-                                </Tooltip>
-                            </li>
-                            <li>
-                                <Tooltip text="Grid View">
-                                    <button
-                                        className={`btn btn-icon rounded-start-0 ${view === "grid" ? "view-active" : ""}`}
-                                        onClick={() => setView("grid")}
-                                    >
-                                        <InteractiveIcon defaultIcon={gridIcon} width={20} />
-                                    </button>
-                                </Tooltip>
-                            </li>
-                        </ul>
+                        <div className="d-flex align-items-center">
+                            <ul className="mb-0 d-flex view-btn">
+                                <li>
+                                    <Tooltip text="List View">
+                                        <button
+                                            className={`btn btn-icon rounded-end-0 ${view === "list" ? "view-active" : ""}`}
+                                            onClick={() => setView("list")}
+                                        >
+                                            <InteractiveIcon defaultIcon={menuIcon} width={20} />
+                                        </button>
+                                    </Tooltip>
+                                </li>
+                                <li>
+                                    <Tooltip text="Grid View">
+                                        <button
+                                            className={`btn btn-icon rounded-start-0 ${view === "grid" ? "view-active" : ""}`}
+                                            onClick={() => setView("grid")}
+                                        >
+                                            <InteractiveIcon defaultIcon={gridIcon} width={20} />
+                                        </button>
+                                    </Tooltip>
+                                </li>
+                            </ul>
+                        </div>
                     </div>
-                </div>
+                )}
             </header>
             {/* full width notice bar */}
             {/* {items.length > 0 && (

@@ -13,6 +13,7 @@ import { getRoute } from "../../../utils/getRoutes.js";
 import sharedWithIcon from "@images/icon/shared-with-me-icon.svg";
 import userPlusIcon from "@images/icon/user-plus.svg";
 
+import useResponsive from "../../../hooks/useResponsive";
 
 // ---- SubHeader Component -------------------------
 // This component renders the secondary navigation bar 
@@ -23,32 +24,33 @@ const SubHeader = memo(function SubHeader({ view, setView, setModal, isSearchMod
     const { trail, selectedIds, items, currentFolderId, navigateTo, changeColorApi, isViewerOnly, currentFolderMeta } = useFileExplorer();
     const { addFiles, checkAndUpload, openScanningPanel } = useUpload();
     const { downloadFile, downloadFolder, downloadMultiple } = useDownload();
+    const { isMobile } = useResponsive();
 
     // 2. Setup routing hooks for navigation
     const navigate = useNavigate()
     const location = useLocation()
 
-    
+
     // ---- STEP 1: Determine Route Prefix --------------
     // Checks the current URL path to figure out which 
     // root dashboard the user is currently browsing.
-    
+
     const getPathPrefix = () => {
         if (location.pathname.startsWith(getRoute.SHARED_WITH_ME)) return getRoute.SHARED_WITH_ME;
         if (location.pathname.startsWith(getRoute.SHARED)) return getRoute.SHARED;
         return getRoute.DASHBOARD;
     };
 
-    
+
     // ---- STEP 2: Determine Root Label ----------------
     // Sets the very first breadcrumb label (e.g. "My Docspot") 
     // depending on the active route.
-    
+
     const getRootLabel = () => {
         if (location.pathname.startsWith(getRoute.SHARED_WITH_ME)) return (
             <div className="share-with-me breadcrumb-title">
                 <InteractiveIcon defaultIcon={sharedWithIcon} className="me-2" width={24} />
-                Share with me 
+                Share with me
             </div>
         );
         if (location.pathname.startsWith(getRoute.SHARED)) return (
@@ -60,11 +62,11 @@ const SubHeader = memo(function SubHeader({ view, setView, setModal, isSearchMod
         return "My Docspot";
     };
 
-    
+
     // ---- STEP 3: Permission Logic & Breadcrumb Actions
     // Calculates what options should be available inside 
     // the breadcrumb dropdown based on the folder level.
-    
+
 
     // Check if user is at the root of a Shared folder (trail is empty)
     const isSharedRoot = (location.pathname.startsWith(getRoute.SHARED_WITH_ME) || location.pathname.startsWith(getRoute.SHARED)) && trail.length === 0;
@@ -82,72 +84,211 @@ const SubHeader = memo(function SubHeader({ view, setView, setModal, isSearchMod
         actionsList = ["newFolder", "uploadFolder", "addFiles", "share", "download", "rename", "changeColor", "copy", "move", "info", "trash"];
     }
 
+    // return (
+    //     <>
+    //         {/* Only display the subheader if the user is NOT actively searching */}
+    //         {!isSearchMode && (
+    //             <header className="header">
+
+    //                 {/* ################################################## */}
+    //                 {/* ---- MAIN HEADER ROW ----------------------------- */}
+    //                 {/* ################################################## */}
+    //                 <div className="header-view d-flex align-items-center justify-content-between ">
+
+    //                     {/* --- BREADCRUMBS COMPONENT --- */}
+    //                     {/* Passes all calculated navigation and permission data to the breadcrumb renderer */}
+    //                     <Breadcrumbs
+    //                         trail={trail}
+    //                         onNavigate={navigateTo}
+    //                         onHomeClick={() => navigate(getPathPrefix())}
+    //                         maxVisible={isMobile ? 1 : 2}
+    //                         rootLabel={getRootLabel()}
+    //                         actions={actionsList}
+    //                         setModal={setModal}
+    //                         selectedIds={selectedIds}
+    //                         items={items}
+    //                         currentFolderId={currentFolderId}
+    //                         addFiles={checkAndUpload}
+    //                         openScanningPanel={openScanningPanel}
+    //                         downloadFile={downloadFile}
+    //                         downloadFolder={downloadFolder}
+    //                         downloadMultiple={downloadMultiple}
+    //                         changeColor={changeColorApi}
+    //                         isViewerOnly={isViewerOnly}
+    //                         currentFolderMeta={currentFolderMeta}
+    //                     />
+
+    //                     {/* --- VIEW TOGGLE BUTTONS --- */}
+    //                     {/* Allows switching between List and Grid layouts */}
+    //                     <div className="d-flex align-items-center">
+    //                         <ul className="mb-0 d-flex view-btn">
+
+    //                             {/* List View Toggle */}
+    //                             <li>
+    //                                 <Tooltip text="List View">
+    //                                     <button
+    //                                         className={`btn btn-icon rounded-end-0 ${view === "list" ? "view-active" : ""}`}
+    //                                         onClick={() => setView("list")}
+    //                                     >
+    //                                         <InteractiveIcon defaultIcon={menuIcon} width={20} />
+    //                                     </button>
+    //                                 </Tooltip>
+    //                             </li>
+
+    //                             {/* Grid View Toggle */}
+    //                             <li>
+    //                                 <Tooltip text="Grid View">
+    //                                     <button
+    //                                         className={`btn btn-icon rounded-start-0  ${view === "grid" ? "view-active" : ""}`}
+    //                                         onClick={() => setView("grid")}
+    //                                     >
+    //                                         <InteractiveIcon defaultIcon={gridIcon} width={20} />
+    //                                     </button>
+    //                                 </Tooltip>
+    //                             </li>
+
+    //                         </ul>
+    //                     </div>
+    //                 </div>
+    //             </header>
+    //         )}
+    //     </>
+    // );
     return (
         <>
-            {/* Only display the subheader if the user is NOT actively searching */}
             {!isSearchMode && (
                 <header className="header">
 
-                    {/* ################################################## */}
-                    {/* ---- MAIN HEADER ROW ----------------------------- */}
-                    {/* ################################################## */}
-                    <div className="header-view d-flex align-items-center justify-content-between ">
+                    {isMobile ? (
+                        <>
+                            <div className="header-view d-flex align-items-center justify-content-between">
+                                <div className="d-flex align-items-center">
+                                    <Breadcrumbs
+                                        trail={[]}
+                                        onNavigate={navigateTo}
+                                        onHomeClick={() => navigate(getPathPrefix())}
+                                        maxVisible={1}
+                                        rootLabel={getRootLabel()}
+                                        actions={trail.length === 0 ? actionsList : []}
+                                        highlightRoot={trail.length === 0}
+                                        setModal={setModal}
+                                        selectedIds={selectedIds}
+                                        items={items}
+                                        currentFolderId={currentFolderId}
+                                        addFiles={checkAndUpload}
+                                        openScanningPanel={openScanningPanel}
+                                        downloadFile={downloadFile}
+                                        downloadFolder={downloadFolder}
+                                        downloadMultiple={downloadMultiple}
+                                        changeColor={changeColorApi}
+                                        isViewerOnly={isViewerOnly}
+                                        currentFolderMeta={currentFolderMeta}
+                                    />
+                                </div>
+                                <div className="d-flex align-items-center">
+                                    <ul className="mb-0 d-flex view-btn">
+                                        <li>
+                                            <Tooltip text="List View">
+                                                <button
+                                                    className={`btn btn-icon rounded-end-0 ${view === "list" ? "view-active" : ""}`}
+                                                    onClick={() => setView("list")}
+                                                >
+                                                    <InteractiveIcon defaultIcon={menuIcon} width={20} />
+                                                </button>
+                                            </Tooltip>
+                                        </li>
+                                        <li>
+                                            <Tooltip text="Grid View">
+                                                <button
+                                                    className={`btn btn-icon rounded-start-0  ${view === "grid" ? "view-active" : ""}`}
+                                                    onClick={() => setView("grid")}
+                                                >
+                                                    <InteractiveIcon defaultIcon={gridIcon} width={20} />
+                                                </button>
+                                            </Tooltip>
+                                        </li>
+                                    </ul>
+                                </div>
+                            </div>
 
-                        {/* --- BREADCRUMBS COMPONENT --- */}
-                        {/* Passes all calculated navigation and permission data to the breadcrumb renderer */}
-                        <Breadcrumbs
-                            trail={trail}
-                            onNavigate={navigateTo}
-                            onHomeClick={() => navigate(getPathPrefix())}
-                            maxVisible={2}
-                            rootLabel={getRootLabel()}
-                            actions={actionsList}
-                            setModal={setModal}
-                            selectedIds={selectedIds}
-                            items={items}
-                            currentFolderId={currentFolderId}
-                            addFiles={checkAndUpload}
-                            openScanningPanel={openScanningPanel}
-                            downloadFile={downloadFile}
-                            downloadFolder={downloadFolder}
-                            downloadMultiple={downloadMultiple}
-                            changeColor={changeColorApi}
-                            isViewerOnly={isViewerOnly}
-                            currentFolderMeta={currentFolderMeta}
-                        />
+                            {trail.length > 0 && (
+                                <div className="header-view d-flex align-items-center justify-content-between pt-0 mt-2">
+                                    <div className="breadcrumb-mobile-row">
+                                        <Breadcrumbs
+                                            trail={trail}
+                                            onNavigate={navigateTo}
+                                            onHomeClick={() => navigate(getPathPrefix())}
+                                            maxVisible={1}
+                                            rootLabel={getRootLabel()}
+                                            hideRoot={trail.length > 0}
+                                            actions={actionsList}
+                                            setModal={setModal}
+                                            selectedIds={selectedIds}
+                                            items={items}
+                                            currentFolderId={currentFolderId}
+                                            addFiles={checkAndUpload}
+                                            openScanningPanel={openScanningPanel}
+                                            downloadFile={downloadFile}
+                                            downloadFolder={downloadFolder}
+                                            downloadMultiple={downloadMultiple}
+                                            changeColor={changeColorApi}
+                                            isViewerOnly={isViewerOnly}
+                                            currentFolderMeta={currentFolderMeta}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+                        </>
+                    ) : (
+                        <div className="header-view d-flex align-items-center justify-content-between ">
 
-                        {/* --- VIEW TOGGLE BUTTONS --- */}
-                        {/* Allows switching between List and Grid layouts */}
-                        <div className="d-flex align-items-center">
-                            <ul className="mb-0 d-flex view-btn">
+                            <Breadcrumbs
+                                trail={trail}
+                                onNavigate={navigateTo}
+                                onHomeClick={() => navigate(getPathPrefix())}
+                                maxVisible={2}
+                                rootLabel={getRootLabel()}
+                                actions={actionsList}
+                                setModal={setModal}
+                                selectedIds={selectedIds}
+                                items={items}
+                                currentFolderId={currentFolderId}
+                                addFiles={checkAndUpload}
+                                openScanningPanel={openScanningPanel}
+                                downloadFile={downloadFile}
+                                downloadFolder={downloadFolder}
+                                downloadMultiple={downloadMultiple}
+                                changeColor={changeColorApi}
+                                isViewerOnly={isViewerOnly}
+                                currentFolderMeta={currentFolderMeta}
+                            />
 
-                                {/* List View Toggle */}
-                                <li>
-                                    <Tooltip text="List View">
-                                        <button
-                                            className={`btn btn-icon rounded-end-0 ${view === "list" ? "view-active" : ""}`}
-                                            onClick={() => setView("list")}
-                                        >
-                                            <InteractiveIcon defaultIcon={menuIcon} width={20} />
-                                        </button>
-                                    </Tooltip>
-                                </li>
-
-                                {/* Grid View Toggle */}
-                                <li>
-                                    <Tooltip text="Grid View">
-                                        <button
-                                            className={`btn btn-icon rounded-start-0  ${view === "grid" ? "view-active" : ""}`}
-                                            onClick={() => setView("grid")}
-                                        >
-                                            <InteractiveIcon defaultIcon={gridIcon} width={20} />
-                                        </button>
-                                    </Tooltip>
-                                </li>
-
-                            </ul>
+                            <div className="d-flex align-items-center">
+                                <ul className="mb-0 d-flex view-btn">
+                                    <li>
+                                        <Tooltip text="List View">
+                                            <button
+                                                className={`btn btn-icon rounded-end-0 ${view === "list" ? "view-active" : ""}`}
+                                                onClick={() => setView("list")}
+                                            >
+                                                <InteractiveIcon defaultIcon={menuIcon} width={20} />
+                                            </button>
+                                        </Tooltip>
+                                    </li>
+                                    <li>
+                                        <Tooltip text="Grid View">
+                                            <button
+                                                className={`btn btn-icon rounded-start-0  ${view === "grid" ? "view-active" : ""}`}
+                                                onClick={() => setView("grid")}
+                                            >
+                                                <InteractiveIcon defaultIcon={gridIcon} width={20} />
+                                            </button>
+                                        </Tooltip>
+                                    </li>
+                                </ul>
+                            </div>
                         </div>
-                    </div>
+                    )}
                 </header>
             )}
         </>

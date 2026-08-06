@@ -1,5 +1,5 @@
 
-import { createContext, useContext, useState, useCallback } from "react";
+import { createContext, useContext, useState, useCallback, useRef } from "react";
 import axiosApi from "../utils/api.js";
 import { useNavigate } from "react-router-dom";
 
@@ -7,6 +7,11 @@ const SearchContext = createContext()
 
 
 export function SearchProvider({ children }) {
+
+    const abortControllerRef = useRef(null);
+
+    //  for storing search result in the cache so when user comes back so no api will call here
+    const searchCache = useRef({})
 
     const [isSearchMode, setIsSearchMode] = useState(false)
     const [searchResults, setSearchResults] = useState([])
@@ -21,7 +26,8 @@ export function SearchProvider({ children }) {
         personIds: null,
         personNames: null,
         dateFrom: null,
-        dateTo: null
+        dateTo: null,
+        date: null
     })
 
     //  pagination state
@@ -34,6 +40,35 @@ export function SearchProvider({ children }) {
 
     //  search api
     const searchApi = useCallback(async (filters, page = 1) => {
+
+        //  create cache key  for sving search result here
+        const cacheKey = JSON.stringify({ filters, page })
+
+        //  cehck cache if we have search recently so no new search happens
+        if (searchCache.current[cacheKey]) {
+            const cachedData = searchCache.current[cacheKey]
+
+            if (page === 1) setSearchResults(cachedData.results || [])
+            else setSearchResults(prev => [...prev, ...(cachedData.results || [])]);
+
+            setTotalCount(cachedData.totalCount);
+            setCurrentPage(page);
+            setIsSearchMode(true);
+            setSearchFilters(filters);
+            setSearchLoading(false);
+            setLoadingMore(false);
+            return; // We stop here! No API call is made.
+        }
+
+        // clear the previous request if still running here
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort()
+        }
+
+        //  create new controller for new request (must be outside the if block!)
+        const controller = new AbortController()
+        abortControllerRef.current = controller
+
         try {
             if (page === 1) {
                 setSearchLoading(true)
@@ -42,6 +77,8 @@ export function SearchProvider({ children }) {
             }
             setSearchError(null)
             setIsSearchMode(true)
+
+            setSearchFilters(filters)
 
             const params = {}
             if (filters.query) params.query = filters.query
@@ -54,7 +91,13 @@ export function SearchProvider({ children }) {
             if (filters.dateTo) params.dateTo = filters.dateTo
             params.page = page
 
-            const { data } = await axiosApi.get("/search/filter", { params })
+            const { data } = await axiosApi.get("/search/filter", {
+                params,
+                signal: controller.signal
+            })
+
+            // 3. SAVE TO CACHE: Save the backend response into our memory dictionary for next time!
+            searchCache.current[cacheKey] = data;
 
             if (page === 1) {
                 setSearchResults(data.results || [])
@@ -64,14 +107,21 @@ export function SearchProvider({ children }) {
 
             setTotalCount(data.totalCount)
             setCurrentPage(page)
-            setSearchFilters(filters)
+
 
         } catch (error) {
+            // Silently ignore if the error was just us cancelling the request
+            if (error.name === "CanceledError" || error.code === "ERR_CANCELED") {
+                return;
+            }
             setSearchError(error.response?.data?.message || "Search failed")
             setSearchResults([])
         } finally {
-            setSearchLoading(false)
-            setLoadingMore(false)
+            // Only stop the loading spinner if this specific request wasn't cancelled
+            if (!controller.signal.aborted) {
+                setSearchLoading(false)
+                setLoadingMore(false)
+            }
         }
     }, [])
 
@@ -86,9 +136,17 @@ export function SearchProvider({ children }) {
 
     // when search clear 
     const clearSearch = useCallback(() => {
+
+        // force stop the pending search api request instatly
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort()
+        }
+
         setIsSearchMode(false)
         setSearchResults([])
         setSearchError(null)
+        setSearchLoading(false)
+        setLoadingMore(false)
         setTotalCount(0)
         setCurrentPage(1)
         setSearchFilters({
@@ -100,7 +158,8 @@ export function SearchProvider({ children }) {
             personIds: null,
             personNames: null,
             dateFrom: null,
-            dateTo: null
+            dateTo: null,
+            date: null
         })
     }, [])
 

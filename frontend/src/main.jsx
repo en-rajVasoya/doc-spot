@@ -13,20 +13,21 @@ import { BrowserRouter } from 'react-router-dom'
 import { NotificationProvider } from './context/NotificationContext.jsx';
 
 
-// if ('serviceWorker' in navigator) {
-//     navigator.serviceWorker.register('/streamsaver-sw.js')
-// }
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/streamsaver-sw.js')
+}
 
 
 createRoot(document.getElementById('root')).render(
 
+  <BrowserRouter>
+    <NotificationProvider>
+      <AuthProvider>
 
-  <NotificationProvider>
-    <AuthProvider>
-      <BrowserRouter>
         <App />
-      </BrowserRouter>
-    </AuthProvider>
-  </NotificationProvider>
+      </AuthProvider>
+    </NotificationProvider>
+  </BrowserRouter>
+
 
 )

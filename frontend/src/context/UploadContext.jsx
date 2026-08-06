@@ -2,7 +2,7 @@
 /* eslint-disable no-unused-vars */
 
 
-import { createContext, useContext, useState, useRef, useMemo } from "react";
+import { createContext, useContext, useState, useRef, useMemo, useEffect  } from "react";
 import { generateFingerprintBatch } from "../utils/fileHash.js"
 import axiosApi from "../utils/api.js"
 // import { data, replace } from "react-router-dom";
@@ -14,6 +14,7 @@ import { useUploadWorkers } from "../hooks/upload/useUploadWorkers.js";
 import { useUploadCancel } from "../hooks/upload/useUploadCancel.js";
 import { useUploadConflict } from "../hooks/upload/useUploadConflict.js";
 
+import { useAuth } from "./AuthContext.jsx";
 
 const UploadContext = createContext()
 
@@ -24,7 +25,8 @@ const SMALL_FILE_THRESHOLD = 1 * 1024 * 1024
 
 export function UploadProvider({ children }) {
 
-
+    const {user} = useAuth()
+    const prevUserIdRef = useRef(user?._id)
 
     const onUploadCompleteRef = useRef(null)
     const setOnUploadComplete = (fn) => {
@@ -59,6 +61,22 @@ export function UploadProvider({ children }) {
     //  for conflick files and folder import 
     const { conflictModalData, checkAndUpload, resolveConflict } = useUploadConflict(addFilesRef)
 
+
+
+    //  here reset the upload panel when user logges out 
+    useEffect(() => {
+        const currentUserId = user?._id
+        const prevUserId = prevUserIdRef.current
+
+        // if user logged out or user logged in as a diffrent user
+        if(!currentUserId || (prevUserId && currentUserId !== prevUserId)){
+            closeAllSessions()
+            setSessions([])
+            setIsPanelOpen(false)
+        }
+
+        prevUserIdRef.current = currentUserId
+    }, [user?._id])
 
 
     //   here this function is used for like creating folder if user upload a folder here
@@ -346,14 +364,13 @@ export function UploadProvider({ children }) {
                         f.progress = 100
                         filesMap.set(f.filekey, f)
                         updateFile(sessionId, f.filekey, { status: "skipped", progress: 100 }, "waiting")
-                    } else if (info?.status === "completed") {
-                        console.log(`[QUEUE] skipped: ${f.file.name}`)
-                        f.status = "skipped"
+                    } else if (info?.status === "completed" && !f.replacesFileId) {
+                        console.log(`[QUEUE] instantly done (dedup): ${f.file.name}`)
+                        f.status = "done"
                         f.progress = 100
-                        // batchSkipped++
                         filesMap.set(f.filekey, f)
-                        updateFile(sessionId, f.filekey, { status: "skipped", progress: 100 }, "waiting")
-                    } else if (info?.status === "resumable") {
+                        updateFile(sessionId, f.filekey, { status: "done", progress: 100 }, "waiting")
+                    } else if (info?.status === "resumable" && !f.replacesFileId) {
                         console.log(`[QUEUE] resumable: ${f.file.name}`)
                         f.uploadId = info.uploadId
                         f.uploadedChunks = info.uploadedChunks
@@ -426,11 +443,19 @@ export function UploadProvider({ children }) {
         const totalTime = performance.now() - sessionStart
         console.log(`[SESSION DONE] totalTime: ${(totalTime / 1000).toFixed(2)}s`)
 
-        if (parentId) {
-            axiosApi.post("/upload/notify-complete", { parentId }).catch(err => {
-                console.error("notify-complete failed:", err)
-            })
-        }
+        const itemIds = [...sessionMapsRef.current.get(sessionId)?.values() || []]
+            .filter(f => (f.id || f._id) && f.status === "done")
+            .map(f => f.id || f._id)
+
+        const rootFolderName = isFolder ? selectedFiles[0].webkitRelativePath.split("/")[0] : null
+        const rootFolderId = isFolder && pathToId ? pathToId[rootFolderName] : null
+        axiosApi.post("/upload/notify-complete", {
+            parentId: parentId || null,
+            itemIds,
+            rootFolderId
+        }).catch(err => {
+            console.error("notify-complete failed:", err)
+        })
 
         onUploadCompleteRef.current?.()
     }

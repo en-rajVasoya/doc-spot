@@ -28,6 +28,7 @@ import trashEmptyIcon from "@images/icon/trash-icon.svg";
 import noFilesFound from "@images/icon/no-files-found.svg";
 import { useNavigate } from "react-router-dom";
 import axiosApi from "../../../utils/api.js";
+import useResponsive from "../../../hooks/useResponsive";
 
 
 
@@ -40,14 +41,14 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
     const itemRefs = useRef({})
 
     // Access file exploration state and helper actions from the FileExplorerContext
-    const { items, loading, error, selectedIds, toggleSelect, setSelectedIds, openFolder, highlightedId, changeColorApi, isViewerOnly, sortBy, setSortBy, sortOrder, setSortOrder, triggerHighlight } = useFileExplorer()
+    const { items, loading, error, selectedIds, toggleSelect, setSelectedIds, openFolder, highlightedId, setHighlightedId, changeColorApi, isViewerOnly, sortBy, setSortBy, sortOrder, setSortOrder, triggerHighlight, prepareNavigation, fetchItems } = useFileExplorer()
     // Access search state and filters from the SearchContext
     const { isSearchMode, searchResults, searchLoading, searchError, clearSearch, searchFilters, loadMore, totalCount, loadingMore, searchApi } = useSearch()
     // Access currently logged in user details from the AuthContext
     const { user } = useAuth()
     // Access file and folder downloading functions from the DownloadContext
     const { downloadFile, downloadFolder, downloadMultiple } = useDownload()
-
+    const { isMobile } = useResponsive()
 
     const navigate = useNavigate()
     // State to store the parent trail path (breadcrumbs list) of the single selected item during search
@@ -57,13 +58,51 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
     // State to show a loading spinner while fetching the folder path trail from the API
     const [loadingSearchTrail, setLoadingSearchTrail] = useState(false)
 
+    // Ref to attach the IntersectionObserver to the bottom of the list
+    const loadMoreObserverRef = useRef(null)
 
+    // State to store the scrollable container element
+    const [scrollContainer, setScrollContainer] = useState(null)
+
+
+
+    // this use effect will remove selected item state when item moved or un shared here 
+    useEffect(() => {
+        setSelectedIds(prev => {
+            if (prev.size === 0) return prev
+            const validIds = new Set(displayItems.map(item => item._id.toString()))
+            const next = new Set([...prev].filter(id => validIds.has(id)))
+            return next.size === prev.size ? prev : next
+        })
+    }, [displayItems, setSelectedIds])
+
+
+    // Effect to trigger loadMore when the user scrolls to the bottom of the search results
+    useEffect(() => {
+        if (!scrollContainer) return;
+
+        const observer = new IntersectionObserver((entries) => {
+            // If the invisible div is on screen, and we are in search mode, trigger loadMore
+            if (entries[0].isIntersecting && isSearchMode && loadMore) {
+                loadMore();
+            }
+        }, {
+            root: scrollContainer, // Track intersection relative to the scroll container!
+            rootMargin: "300px" // Trigger when 300px close to the bottom (scrolling little bit up from below)
+        });
+
+        if (loadMoreObserverRef.current) {
+            observer.observe(loadMoreObserverRef.current);
+        }
+
+        return () => observer.disconnect();
+    }, [isSearchMode, loadMore, scrollContainer]);
 
     //  this use effect is for when user opens a fodler so for 150ms dont show the spinner for better ui here ok 
     const [showSpinner, setShowSpinner] = useState(false);
     useEffect(() => {
         let timer;
-        if(displayLoading){
+        if (displayLoading) {
             timer = setTimeout(() => setShowSpinner(true), 150)
         } else {
             setShowSpinner(false)
@@ -97,15 +136,34 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
 
         //  find if the item is owned by somone else or in the shared directory becuase we want to show this in the bread crumb here
         const isOwn = selectedItem.owner?._id?.toString() === currentUserId?.toString()
-        const isShared = !isOwn || (selectedItem.locationPath && selectedItem.locationPath.startsWith("Shared with me"))
+        let rootLabel = "My Docspot"
+        if (selectedItem.isTrashed) {
+            rootLabel = "Trash"
+        } else if (selectedItem.locationPath) {
+            if (selectedItem.locationPath.startsWith("Trash")) {
+                rootLabel = "Trash"
+            } else if (selectedItem.locationPath.startsWith("Shared with me")) {
+                rootLabel = "Shared with me"
+            } else if (selectedItem.locationPath.startsWith("Shared")) {
+                rootLabel = "Shared"
+            }
+        } else if (!isOwn) {
+            rootLabel = "Shared with me"
+        }
 
         //  update the base breadcrumb label based on owner / sharing status
-        setSearchItemRootLabel(isShared ? "Shared with me" : "My Docspot")
+        setSearchItemRootLabel(rootLabel)
 
         //  if the item is already in the root not in the nested
         if (!parentId) {
             if (selectedItem.type === "folder") {
-                setSearchItemTrail([{ id: selectedItem._id, name: selectedItem.name }])
+                setSearchItemTrail([{
+                    id: selectedItem._id,
+                    name: selectedItem.name,
+                    color: selectedItem.color,
+                    isShared: selectedItem.isShared,
+                    isSharedWithMe: selectedItem.owner?._id?.toString() !== currentUserId?.toString()
+                }])
             } else {
                 setSearchItemTrail([])
             }
@@ -116,10 +174,22 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
         setLoadingSearchTrail(true)
         axiosApi.get(`/file/folder/${parentId}`)
             .then(({ data }) => {
-                const fetchedTrail = data.trail.map(t => ({ id: t.id, name: t.name }))
+                const fetchedTrail = data.trail.map(t => ({
+                    id: t.id,
+                    name: t.name,
+                    color: t.color,
+                    isShared: t.isShared,
+                    isSharedWithMe: t.isSharedWithMe
+                }))
                 //  if the selected item itself is a folder append to last in breadcrumb
                 if (selectedItem.type === "folder") {
-                    fetchedTrail.push({ id: selectedItem._id, name: selectedItem.name })
+                    fetchedTrail.push({
+                        id: selectedItem._id,
+                        name: selectedItem.name,
+                        color: selectedItem.color,
+                        isShared: selectedItem.isShared,
+                        isSharedWithMe: selectedItem.owner?._id?.toString() !== currentUserId?.toString()
+                    })
                 }
                 setSearchItemTrail(fetchedTrail)
             })
@@ -138,10 +208,22 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
         const selectedId = Array.from(selectedIds)[0]
         const selectedItem = displayItems.find(item => item._id?.toString() === selectedId?.toString())
         if (!selectedItem) return
-
         const currentUserId = user?._id || user?.id
         const isOwn = selectedItem.owner?._id?.toString() === currentUserId?.toString()
-        const isShared = !isOwn || (selectedItem.locationPath && selectedItem.locationPath.startsWith("Shared with me"))
+        let targetRoute = "/dashboard"
+        if (selectedItem.isTrashed) {
+            targetRoute = "/trash-dashboard"
+        } else if (selectedItem.locationPath) {
+            if (selectedItem.locationPath.startsWith("Trash")) {
+                targetRoute = "/trash-dashboard"
+            } else if (selectedItem.locationPath.startsWith("Shared with me")) {
+                targetRoute = "/shared-with-me"
+            } else if (selectedItem.locationPath.startsWith("Shared")) {
+                targetRoute = "/shared"
+            }
+        } else if (!isOwn) {
+            targetRoute = "/shared-with-me"
+        }
 
         // Highlight the root-level item that leads to this fil
         if (searchItemTrail.length > 0) {
@@ -154,9 +236,13 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
         clearSearch()
         setSearchBarOpen(false)
 
-        // Redirect user to the corresponding page
-        navigate(isShared ? "/shared-with-me" : "/dashboard")
-    }, [selectedIds, displayItems, user, navigate, clearSearch, setSearchBarOpen, searchItemTrail, triggerHighlight])
+        if (window.location.pathname === targetRoute) {
+            fetchItems()
+        } else {
+            prepareNavigation()
+            navigate(targetRoute, { state: { highlightId: selectedItem._id } })
+        }
+    }, [selectedIds, displayItems, user, navigate, clearSearch, setSearchBarOpen, searchItemTrail, triggerHighlight, prepareNavigation, fetchItems])
 
 
     //  this fucntion when in search result user will double click on folder so clear search and goes to the inside of that fodler ehre
@@ -172,18 +258,32 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
         if (selectedItem.type === "folder" && folder.id?.toString() === selectedItem._id?.toString()) {
             triggerHighlight(selectedItem._id)   // hight light the item here
 
+            prepareNavigation()
             clearSearch()
             setSearchBarOpen(false)
 
             const currentUserId = user?._id || user?.id
             const isOwn = selectedItem.owner?._id?.toString() === currentUserId?.toString()
-            const isShared = !isOwn || (selectedItem.locationPath && selectedItem.locationPath.startsWith("Shared with me"))
+            let targetRoute = "/dashboard"
+            if (selectedItem.isTrashed) {
+                targetRoute = "/trash-dashboard"
+            } else if (selectedItem.locationPath) {
+                if (selectedItem.locationPath.startsWith("Trash")) {
+                    targetRoute = "/trash-dashboard"
+                } else if (selectedItem.locationPath.startsWith("Shared with me")) {
+                    targetRoute = "/shared-with-me"
+                } else if (selectedItem.locationPath.startsWith("Shared")) {
+                    targetRoute = "/shared"
+                }
+            } else if (!isOwn) {
+                targetRoute = "/shared-with-me"
+            }
             if (selectedItem.parent) {
                 // Go to parent folder
-                navigate(`${isShared ? "/shared-with-me" : "/dashboard"}/folder/${selectedItem.parent}`)
+                navigate(`${targetRoute}/folder/${selectedItem.parent}`, { state: { highlightId: selectedItem._id } })
             } else {
                 // Go to root dashboard if it has no parent
-                navigate(isShared ? "/shared-with-me" : "/dashboard")
+                navigate(targetRoute, { state: { highlightId: selectedItem._id } })
             }
             return
         }
@@ -199,13 +299,27 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
 
         const currentUserId = user?._id || user?.id
         const isOwn = selectedItem.owner?._id?.toString() === currentUserId?.toString()
-        const isShared = !isOwn || (selectedItem.locationPath && selectedItem.locationPath.startsWith("Shared with me"))
+        let targetRoute = "/dashboard"
+        if (selectedItem.isTrashed) {
+            targetRoute = "/trash-dashboard"
+        } else if (selectedItem.locationPath) {
+            if (selectedItem.locationPath.startsWith("Trash")) {
+                targetRoute = "/trash-dashboard"
+            } else if (selectedItem.locationPath.startsWith("Shared with me")) {
+                targetRoute = "/shared-with-me"
+            } else if (selectedItem.locationPath.startsWith("Shared")) {
+                targetRoute = "/shared"
+            }
+        } else if (!isOwn) {
+            targetRoute = "/shared-with-me"
+        }
 
+        prepareNavigation()
         clearSearch()
         setSearchBarOpen(false)
         // redirect to the directly in to the folder it self
-        navigate(`${isShared ? "/shared-with-me" : "/dashboard"}/folder/${folder.id}`)
-    }, [searchItemTrail, selectedIds, displayItems, user, navigate, clearSearch, setSearchBarOpen, triggerHighlight])
+        navigate(`${targetRoute}/folder/${folder.id}`, { state: { highlightId: childToHighlight ? childToHighlight.id : selectedItem._id } })
+    }, [searchItemTrail, selectedIds, displayItems, user, navigate, clearSearch, setSearchBarOpen, triggerHighlight, prepareNavigation])
 
 
     // ##################################################
@@ -317,10 +431,7 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
     // ##################################################
     useEffect(() => {
         const handleCloseRightClickMenu = (e) => {
-            // If the user clicked inside a table row (an actual file/folder item), do nothing
-            if (e.target.closest(".table-row")) {
-                return;
-            }
+            // Otherwise, they clicked in an empty space, so close the context menu
             // Otherwise, they clicked in an empty space, so close the context menu
             setItemContextMenu({ visible: false })
             // Also close the folder color menu
@@ -354,8 +465,15 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
                 behavior: "smooth",
                 block: "center"
             });
+
+            // Give 500ms for smooth scroll to finish, then 2000ms for user to see it
+            const timer = setTimeout(() => {
+                setHighlightedId(null);
+            }, 2500);
+
+            return () => clearTimeout(timer);
         }
-    }, [highlightedId]);
+    }, [highlightedId, displayItems, setHighlightedId]);
 
 
 
@@ -380,6 +498,7 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
     // ---- STEP 10: Double click handler ---------------
     // ##################################################
     const handleItemClick = (item) => {
+        if (item.isTrashed) return;
         // Get the current timestamp to detect double clicks
         const now = Date.now()
 
@@ -555,6 +674,13 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
             id => displayItems.find(i => i._id === id)?.type === "folder"
         )
 
+    //  here checking here liek this file is trashed or not based on that we can hide or show header toolbar here
+    const isSelectionTrashed =
+        selectedIds.size > 0 &&
+        Array.from(selectedIds).every(
+            id => displayItems.find(i => i._id === id)?.isTrashed
+        )
+
     if (showSpinner) return (
         <div className="loader-wrapper-box">
             <div className="cma-messages-are-loader-wrapper">
@@ -582,6 +708,10 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
                 ref={(el) => {
                     scrollRef.current = el
                     gridContainerRef.current = el
+                    // Store the DOM node of the scroll container
+                    if (el && el !== scrollContainer) {
+                        setScrollContainer(el);
+                    }
                 }}
                 onMouseDown={handleMouseDown}
                 className={`grid-single-box ${view === "grid" ? "grid-view" : "list-view"}`}
@@ -602,7 +732,7 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
                         }}
                     />
                 )}
-                <section className="content-wrapper">
+                <section className={`content-wrapper ${isMobile && selectedIds.size > 0 ? "has-selection" : ""}`}>
                     <div className="table row">
                         <div className="table-header">
                             <div className="table-cell">
@@ -686,7 +816,7 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
                         )}
                         {displayItems.length === 0 && !displayLoading && (
                             <div className="page-empty-state">
-                                {isSearchMode ? "No results found" : ""}
+                                {isSearchMode ? "" : ""}
                             </div>
                         )}
                         {(() => { return null })()}
@@ -698,10 +828,14 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
                                 onClick={() => handleItemClick(item)}
                                 onContextMenu={(e) => {
                                     e.preventDefault()
+                                    e.stopPropagation()
+                                    window.dispatchEvent(new Event("close-global-menu"));
 
                                     if (!selectedIds.has(item._id)) {
                                         setSelectedIds(new Set([item._id]))
                                     }
+
+                                    if (isMobile) return;
                                     // 1. Check if the current user is a viewer on this specific item
                                     const currentUserId = user?._id || user?.id;
                                     const isSharedWithMe = item.owner?._id?.toString() !== currentUserId?.toString()
@@ -793,9 +927,9 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
                                     <div className="table-cell">
                                         <div className="folder-name-single-box">
                                             <div className='profile-single-box'>
-                                                <UserAvatar user={item.owner} />
+                                                <UserAvatar user={item.owner?._id?.toString() === (user?._id || user?.id)?.toString() ? user : item.owner} />
                                             </div>
-                                            <span>{user._id === item.owner._id ? "Me" : item.owner.name}</span>
+                                            <span>{item.owner?._id?.toString() === (user?._id || user?.id)?.toString() ? "Me" : item.owner.name}</span>
                                         </div>
                                     </div>
 
@@ -819,16 +953,14 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
 
                                     {/*  size list */}
                                     <div className="table-cell">
-                                        {item.type === "file" && item.fileSize
-                                            ? item.fileSize < 1024
-                                                ? `${item.fileSize} B`
-                                                : item.fileSize < 1024 * 1024
-                                                    ? `${(item.fileSize / 1024).toFixed(1)} KB`
-                                                    : item.fileSize < 1024 * 1024 * 1024
-                                                        ? `${(item.fileSize / (1024 * 1024)).toFixed(1)} MB`
-                                                        : `${(item.fileSize / (1024 * 1024 * 1024)).toFixed(1)} GB`
-                                            : "—"
-                                        }
+                                        {(() => {
+                                            const size = item.type === "folder" ? (item.totalSize || 0) : item.fileSize;
+                                            if (size === undefined || size === null) return "—";
+                                            if (size < 1024) return `${size} B`;
+                                            if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+                                            if (size < 1024 * 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+                                            return `${(size / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+                                        })()}
                                     </div>
 
                                     {/* date list */}
@@ -842,9 +974,40 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
                             </div>
                         ))}
 
-                        {/*  SPINNER HERE */}
+                        <div
+                            ref={loadMoreObserverRef}
+                            style={{
+                                gridColumn: '1 / -1',
+                                width: '100%',
+                                height: '10px'
+                            }}
+                        />
+
+                        {loadingMore && (
+                            <div
+                                className="loader-wrapper-box"
+                                style={{
+                                    gridColumn: '1 / -1',
+                                    width: '100%',
+                                    position: 'relative',
+                                    top: 'auto',
+                                    left: 'auto',
+                                    transform: 'none',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    padding: '20px 0'
+                                }}
+                            >
+                                <div className="cma-messages-are-loader-wrapper">
+                                    <span className="loader"></span>
+                                </div>
+                            </div>
+                        )}
 
                     </div>
+
+                    {/*  SPINNER HERE */}
                 </section>
             </div>
 
@@ -867,11 +1030,11 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
                         {/* share */}
                         <li
                             style={{
-                                opacity: itemContextMenu.isViewerItem || selectedIds.size > 1 ? 0.6 : 1,
-                                cursor: itemContextMenu.isViewerItem || selectedIds.size > 1 ? "not-allowed" : "pointer"
+                                opacity: itemContextMenu.isViewerItem || selectedIds.size > 1 || isSelectionTrashed ? 0.6 : 1,
+                                cursor: itemContextMenu.isViewerItem || selectedIds.size > 1 || isSelectionTrashed ? "not-allowed" : "pointer"
                             }}
                             onClick={(e) => {
-                                if (itemContextMenu.isViewerItem || selectedIds.size > 1) { e.stopPropagation(); return }
+                                if (itemContextMenu.isViewerItem || selectedIds.size > 1 || isSelectionTrashed) { e.stopPropagation(); return }
                                 if (isViewerOnly) { e.stopPropagation(); return }
                                 const selectedItems = displayItems.filter(i => selectedIds.has(i._id.toString()))
                                 setModal({ type: "shareUser", data: selectedItems })
@@ -886,22 +1049,29 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
                         </li>
 
                         {/*  dwonload here  */}
-                        <li onClick={() => {
-                            const selectedItems = Array.from(selectedIds)
-                                .map(id => displayItems.find(i => i._id === id))
-                                .filter(Boolean)
+                        <li
+                            style={{
+                                opacity: isSelectionTrashed ? 0.6 : 1,
+                                cursor: isSelectionTrashed ? "not-allowed" : "pointer"
+                            }}
+                            onClick={(e) => {
+                                if (isSelectionTrashed) { e.stopPropagation(); return }
+                                const selectedItems = Array.from(selectedIds)
+                                    .map(id => displayItems.find(i => i._id === id))
+                                    .filter(Boolean)
 
-                            if (selectedItems.length === 1) {
-                                const item = selectedItems[0]
-                                if (item.type === "file") {
-                                    downloadFile(item)
+                                if (selectedItems.length === 1) {
+                                    const item = selectedItems[0]
+                                    if (item.type === "file") {
+                                        downloadFile(item)
+                                    } else {
+                                        downloadFolder(item)
+                                    }
                                 } else {
-                                    downloadFolder(item)
+                                    downloadMultiple(selectedItems)
                                 }
-                            } else {
-                                downloadMultiple(selectedItems)
-                            }
-                        }}>
+                            }}
+                        >
                             <span className="d-flex align-items-center">
                                 <InteractiveIcon defaultIcon={downloadIcon} className="me-2" width={20} height={20} alt="" />
                                 Download
@@ -910,9 +1080,12 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
 
                         {/* rename */}
                         <li
-                            style={{ opacity: itemContextMenu.isViewerItem || selectedIds.size > 1 ? 0.6 : 1, cursor: itemContextMenu.isViewerItem || selectedIds.size > 1 ? "not-allowed" : "pointer" }}
+                            style={{
+                                opacity: itemContextMenu.isViewerItem || selectedIds.size > 1 || isSelectionTrashed ? 0.6 : 1,
+                                cursor: itemContextMenu.isViewerItem || selectedIds.size > 1 || isSelectionTrashed ? "not-allowed" : "pointer"
+                            }}
                             onClick={(e) => {
-                                if (itemContextMenu.isViewerItem || selectedIds.size > 1) { e.stopPropagation(); return }
+                                if (itemContextMenu.isViewerItem || selectedIds.size > 1 || isSelectionTrashed) { e.stopPropagation(); return }
                                 if (isViewerOnly || selectedIds.size > 1) { e.stopPropagation(); return }
                                 const selectedItem = displayItems.find(i => i._id === Array.from(selectedIds)[0])
                                 if (!selectedItem) return
@@ -928,9 +1101,13 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
 
                         {/* change color */}
                         <li
-                            style={{ position: "relative", opacity: itemContextMenu.isViewerItem || !hasFolder ? 0.6 : 1, cursor: itemContextMenu.isViewerItem || !hasFolder ? "not-allowed" : "pointer" }}
+                            style={{
+                                position: "relative",
+                                opacity: itemContextMenu.isViewerItem || !hasFolder || isSelectionTrashed ? 0.6 : 1,
+                                cursor: itemContextMenu.isViewerItem || !hasFolder || isSelectionTrashed ? "not-allowed" : "pointer"
+                            }}
                             onClick={(e) => {
-                                if (itemContextMenu.isViewerItem || !hasFolder) { e.stopPropagation(); return }
+                                if (itemContextMenu.isViewerItem || !hasFolder || isSelectionTrashed) { e.stopPropagation(); return }
                                 if (isViewerOnly || !hasFolder) { e.stopPropagation(); return }
                                 e.stopPropagation()
                                 setShowColorMenu(prev => !prev)
@@ -955,25 +1132,39 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
                                         zIndex: 10000,
                                         left: "100%",
                                         top: 0,
-                                        minWidth: "226px",
-                                        padding: "20px",
+                                        minWidth: "175px",
+                                        padding: "12px",
                                         background: "var(--white)",
                                         border: "1px solid var(--secondary)",
                                         borderRadius: "8px",
                                         boxShadow: "0px 4px 24px 0px rgba(0,0,0,0.10)"
                                     }}
                                 >
-                                    <p className="mb-3">Folder Color</p>
-                                    <div className="d-flex align-items-center flex-wrap">
+                                    <p className="mb-2 text-nowrap" style={{ fontSize: "12px", color: "var(--dark-50)", textAlign: "left" }}>
+                                        Folder Color
+                                    </p>
+                                    <div
+                                        style={{
+                                            display: "grid",
+                                            gridTemplateColumns: "repeat(5, 1fr)", // ✅ 5 columns wide (2 rows)
+                                            gap: "8px",
+                                            justifyItems: "center"
+                                        }}
+                                    >
                                         {["red", "orange", "yellow", "green", "green-dark", "blue", "violet", "pink", "gray"].map(color => (
                                             <button
                                                 key={color}
                                                 className="border-0"
                                                 style={{
+                                                    position: "relative",
+                                                    display: "block",
                                                     width: "24px",
                                                     height: "24px",
                                                     borderRadius: "50%",
-                                                    margin: "8px",
+                                                    outline: "1px solid var(--dark-20)",
+                                                    outlineOffset: "-1px",
+                                                    padding: 0,
+                                                    cursor: "pointer",
                                                     backgroundColor: `var(--${color})`
                                                 }}
                                                 onClick={(e) => {
@@ -991,8 +1182,15 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
 
                         {/*  copy */}
                         <li
-                            onClick={() => setModal({ type: "CopyModal", data: Array.from(selectedIds) })}
-                        >
+                            style={{
+                                opacity: itemContextMenu.isViewerItem || isSelectionTrashed ? 0.6 : 1,
+                                cursor: itemContextMenu.isViewerItem || isSelectionTrashed ? "not-allowed" : "pointer"
+                            }}
+                            onClick={(e) => {
+                                if (itemContextMenu.isViewerItem || isSelectionTrashed) { e.stopPropagation(); return }
+                                if (isViewerOnly) { e.stopPropagation(); return }
+                                setModal({ type: "CopyModal", data: Array.from(selectedIds) })
+                            }}>
                             <button className="dropdown-item" style={{ cursor: "inherit" }}>
                                 <span className="d-flex align-items-center">
                                     <InteractiveIcon defaultIcon={copyIcon} className="me-2" width={20} height={20} alt="" />
@@ -1003,9 +1201,12 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
 
                         {/* move */}
                         <li
-                            style={{ opacity: itemContextMenu.isViewerItem ? 0.6 : 1, cursor: itemContextMenu.isViewerItem ? "not-allowed" : "pointer" }}
+                            style={{
+                                opacity: itemContextMenu.isViewerItem || isSelectionTrashed ? 0.6 : 1,
+                                cursor: itemContextMenu.isViewerItem || isSelectionTrashed ? "not-allowed" : "pointer"
+                            }}
                             onClick={(e) => {
-                                if (itemContextMenu.isViewerItem) { e.stopPropagation(); return }
+                                if (itemContextMenu.isViewerItem || isSelectionTrashed) { e.stopPropagation(); return }
                                 if (isViewerOnly) { e.stopPropagation(); return }
                                 setModal({ type: "MoveModal", data: Array.from(selectedIds) })
                             }}>
@@ -1019,9 +1220,12 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
 
                         {/*  file info */}
                         <li
-                            style={{ opacity: selectedIds.size > 1 ? 0.6 : 1, cursor: selectedIds.size > 1 ? "not-allowed" : "pointer" }}
+                            style={{
+                                opacity: selectedIds.size > 1 || isSelectionTrashed ? 0.6 : 1,
+                                cursor: selectedIds.size > 1 || isSelectionTrashed ? "not-allowed" : "pointer"
+                            }}
                             onClick={(e) => {
-                                if (selectedIds.size > 1) { e.stopPropagation(); return }
+                                if (selectedIds.size > 1 || isSelectionTrashed) { e.stopPropagation(); return }
                                 const selectedItem = displayItems.find(i => i._id === Array.from(selectedIds)[0])
                                 if (!selectedItem) return
                                 setModal({ type: "ItemInfoModal", data: selectedItem })
@@ -1036,9 +1240,12 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
 
                         {/*  trash */}
                         <li
-                            style={{ opacity: itemContextMenu.isViewerItem ? 0.6 : 1, cursor: itemContextMenu.isViewerItem ? "not-allowed" : "pointer" }}
+                            style={{
+                                opacity: itemContextMenu.isViewerItem || isSelectionTrashed ? 0.6 : 1,
+                                cursor: itemContextMenu.isViewerItem || isSelectionTrashed ? "not-allowed" : "pointer"
+                            }}
                             onClick={(e) => {
-                                if (itemContextMenu.isViewerItem) { e.stopPropagation(); return }
+                                if (itemContextMenu.isViewerItem || isSelectionTrashed) { e.stopPropagation(); return }
                                 if (isViewerOnly) { e.stopPropagation(); return }
                                 setModal({ type: "DeleteModal", data: Array.from(selectedIds) })
                             }}>
@@ -1059,33 +1266,7 @@ function ContentView({ view, setSearchBarOpen, searchBarOpen, setModal, onItemRe
             {isSearchMode && selectedIds.size === 1 && (
                 <div className="header pb-0 mt-3 search-location-breadcrumbs" style={{ zIndex: 10 }}>
                     {/* Scoped CSS adjustments */}
-                    <style>{`
-                        /* 1. Remove the white box, border outline, shadow, and arrow from the last item */
-                        .search-location-breadcrumbs .breadcrumb a.highlight {
-                            outline: 0 !important;
-                            box-shadow: none !important;
-                            background-color: transparent !important;
-                        }
-                        .search-location-breadcrumbs .breadcrumb a.highlight::after {
-                            display: none !important;
-                        }
-                        /* 2. Remove the gray background color from the "..." collapsed section */
-                        .search-location-breadcrumbs .over-breadcrumb-links-folder {
-                            background-color: transparent !important;
-                        }
-                        /* 3. Align the breadcrumbs perfectly to the left edge of the grid */
-                        .search-location-breadcrumbs .breadcrumb {
-                            padding-left: 0 !important;
-                            margin-left: 0 !important;
-                        }
-                        .search-location-breadcrumbs .breadcrumb li:first-child a {
-                            padding-left: 0 !important;
-                        }
-                        /* 4. Add spacing at the bottom of the breadcrumbs */
-                        .search-location-breadcrumbs {
-                            margin-bottom: 30px !important;
-                        }
-                    `}</style>
+
                     <div className="header-view">
                         <Breadcrumbs
                             trail={searchItemTrail}

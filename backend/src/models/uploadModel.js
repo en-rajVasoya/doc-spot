@@ -46,6 +46,12 @@ const uploadSchema = mongoose.Schema({
         type: Number,
         default: null
     },
+    
+    // total nested size specifically for folders (prevents double-counting in storage quotas)
+    totalSize: {
+        type: Number,
+        default: 0
+    },
     fileType: {
         type: String,
         default: null
@@ -176,6 +182,18 @@ uploadSchema.index({ scanStatus: 1 })
 uploadSchema.index({ parent: 1, type: 1, isTrashed: 1 })
 uploadSchema.index({ "sharedWith.userId": 1, type: 1, isTrashed: 1 })
 
+// new added for testing
+uploadSchema.index({ owner: 1, isTrashed: 1, type: 1 })
+uploadSchema.index({ name: "text" })
+uploadSchema.index({ "sharedWith.userId": 1 })
+uploadSchema.index({ parent: 1 })
+uploadSchema.index({ createdAt: -1 })
+uploadSchema.index({ fileType: 1 })
+uploadSchema.index({ ancestorIds: 1 })
+uploadSchema.index(
+  { name: 1 },
+  { collation: { locale: "en", strength: 2 } }
+)
 const Upload = mongoose.model("Upload", uploadSchema)
 
 export default Upload

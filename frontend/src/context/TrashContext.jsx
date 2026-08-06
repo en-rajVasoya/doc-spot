@@ -60,8 +60,8 @@ export function TrashProvider({ children }) {
                 valA = a.name.toLowerCase()
                 valB = b.name.toLowerCase()
             } else if (sortBy === "size") {
-                valA = a.fileSize || 0;
-                valB = b.fileSize || 0;
+                valA = a.type === "folder" ? (a.totalSize || 0) : (a.fileSize || 0);
+                valB = b.type === "folder" ? (b.totalSize || 0) : (b.fileSize || 0);
             } else {
                 valA = new Date(a.trashedAt || a.updatedAt).getTime()
                 valB = new Date(b.trashedAt || b.updatedAt).getTime()

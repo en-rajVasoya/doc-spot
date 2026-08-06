@@ -14,6 +14,9 @@ import { useAdmin } from "../../context/AdminContext";
 import UserAvatar from '../layout/UserAvatar';
 import CustomScroll from "../layout/CustomScroll";
 import singleUserIcon from "@images/icon/single-user-icon.svg";
+import uploadIcon from "@images/icon/upload-icon.svg";
+import deleteIcon from "@images/icon/trash.svg";
+import useResponsive from "../../hooks/useResponsive";
 
 function AddUserAdminModal({ onClose, setModal }) {
     const [shake, setShake] = useState(false);
@@ -27,7 +30,6 @@ function AddUserAdminModal({ onClose, setModal }) {
     const [showPwd, setShowPwd] = useState(false);
     const [email, setEmail] = useState("");
     const [statusActive, setStatusActive] = useState(true);
-    const [role, setRole] = useState("user");
 
     const [avatarUrl, setAvatarUrl] = useState(null);
     const fileInputRef = useRef(null);
@@ -37,6 +39,7 @@ function AddUserAdminModal({ onClose, setModal }) {
 
     const [usernameStatus, setUsernameStatus] = useState("");
     const [emailStatus, setEmailStatus] = useState("");
+    const { isMobile, isTablet, isDesktop, isSmallMobile } = useResponsive();
 
     // / live password requirement checks - recalculates whenever `password` changes
     const checks = useMemo(() => [
@@ -139,8 +142,13 @@ function AddUserAdminModal({ onClose, setModal }) {
 
     const handleOutsideClick = (e) => {
         if (modalRef.current && !modalRef.current.contains(e.target)) {
-            setShake(true);
-            setTimeout(() => setShake(false), 400);
+            if (isMobile) {
+                onClose()
+            } else {
+                setShake(true);
+                setTimeout(() => setShake(false), 400);
+            }
+
         }
     };
 
@@ -203,7 +211,6 @@ function AddUserAdminModal({ onClose, setModal }) {
             formData.append("email", email.trim().toLowerCase());
             formData.append("password", password);
             formData.append("is_active", statusActive);
-            formData.append("role", role);
             if (avatarFile) {
                 formData.append("profilePic", avatarFile);
             }
@@ -239,7 +246,7 @@ function AddUserAdminModal({ onClose, setModal }) {
                             {/* Avatar row */}
                             <div className="add-user-avatar-wrapper">
                                 <div className="profile-single-box">
-                                    <UserAvatar src={avatarUrl} name={displayName} />
+                                    <UserAvatar src={avatarUrl} name={displayName ? displayName.trim().charAt(0) : ""} />
                                 </div>
 
                                 <div className="d-flex gap-3">
@@ -251,17 +258,44 @@ function AddUserAdminModal({ onClose, setModal }) {
                                         accept="image/*"
                                         onChange={handleImageUpload}
                                     />
-                                    <button
-                                        className="btn-black btn-lg m-0"
-                                        onClick={() => fileInputRef.current?.click()}
-                                    >
-                                        Upload Profile
-                                    </button>
-                                    {avatarUrl && (
-                                        <button className="btn-secondary btn-lg m-0" onClick={handleRemoveImage}>
-                                            Remove
+                                    {isSmallMobile ? (
+                                        <button
+                                            className="btn-black btn-lg m-0"
+                                            onClick={() => fileInputRef.current?.click()}
+                                        >
+                                            <InteractiveIcon defaultIcon={uploadIcon} alt="" width={20} />
+                                        </button>
+                                    ) : (
+                                        <button
+                                            className="btn-black btn-lg m-0"
+                                            onClick={() => fileInputRef.current?.click()}
+                                        >
+                                            Upload Profile
                                         </button>
                                     )}
+
+
+
+                                    {avatarUrl && (
+                                        isSmallMobile ? (
+                                            <button
+                                                className="btn-secondary btn-lg  "
+                                                onClick={handleRemoveImage}
+                                            >
+                                                <InteractiveIcon defaultIcon={deleteIcon} alt="" width={20} />
+                                            </button>
+                                        ) : (
+                                            <button
+                                                className="btn-secondary btn-lg m-0"
+                                                onClick={handleRemoveImage}
+                                            >
+                                                Remove
+                                            </button>
+                                        )
+                                    )}
+
+
+
                                 </div>
                             </div>
 
@@ -433,43 +467,6 @@ function AddUserAdminModal({ onClose, setModal }) {
                                 </div>
                             </div>
 
-                            {/* User Role radio */}
-                            <div className="mb-3">
-                                <Form.Label className="required-star d-block">User Role</Form.Label>
-                                <div className="custom-radio-card-wrapper only-radio-btn">
-
-                                    <label className={`custom-radio-card ${role === "user" ? "active" : ""}`}>
-                                        <input
-                                            type="radio"
-                                            name="userRole"
-                                            value="user"
-                                            checked={role === "user"}
-                                            onChange={() => setRole("user")}
-                                            className="rounded-checkbox"
-                                        />
-                                        <div>
-                                            <div className="subtitle m-0">User</div>
-                                        </div>
-                                    </label>
-
-                                    <label className={`custom-radio-card ${role === "admin" ? "active" : ""}`}>
-                                        <input
-                                            type="radio"
-                                            name="userRole"
-                                            value="admin"
-                                            checked={role === "admin"}
-                                            onChange={() => setRole("admin")}
-                                            className="rounded-checkbox"
-                                        />
-                                        <div>
-                                            <div className="subtitle m-0">Admin</div>
-                                        </div>
-                                    </label>
-
-
-                                </div>
-                            </div>
-
                         </CustomScroll>
                     </Modal.Body>
 
@@ -478,8 +475,8 @@ function AddUserAdminModal({ onClose, setModal }) {
                         <button className="btn-black btn-lg m-0" onClick={handleSave}>Save</button>
                     </Modal.Footer>
                 </div>
-            </Modal>
-        </div>
+            </Modal >
+        </div >
     );
 }
 

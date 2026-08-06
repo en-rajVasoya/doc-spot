@@ -306,8 +306,15 @@ export function NotificationProvider({ children }) {
     // showNotification("message", "success", "top-right")
     // position defaults to "top-right" if not provided
     const showNotification = useCallback((message, type = "info", position = "top-right") => {
+        // Clear all previous timeouts to prevent them from firing and removing the new toast
+        Object.keys(timersRef.current).forEach(prevId => {
+            clearTimeout(timersRef.current[prevId]);
+            delete timersRef.current[prevId];
+        });
+
         const id = Math.random().toString(36).substr(2, 9);
-        setNotifications(prev => [...prev, { id, message, type, position }]);
+        // Replace previous notifications with only the new one
+        setNotifications([{ id, message, type, position }]);
         timersRef.current[id] = setTimeout(() => removeNotification(id), DURATION);
         return id;
     }, [removeNotification]);
