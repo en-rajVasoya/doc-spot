@@ -550,7 +550,7 @@ function ZipViewer({ file }) {
                                 />
                                 <span
                                     className={`text-truncate zip-preview-row-name-text ${entry.isDir ? "is-dir" : "is-file"}`}
-                                    title={entry.name}
+                                    // title={entry.name}
                                 >
                                     {entry.name}
                                 </span>

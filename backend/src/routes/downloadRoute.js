@@ -3,7 +3,6 @@ import authMiddleware from "../middleware/authMiddleware.js"
 import optionalAuth from "../middleware/optionalAuth.js"
 import { deleteZip, downloadFile, downloadFolder, downloadMultiple, downloadZip, getZipStatus } from "../controllers/downloadController.js"
 
-
 const downloadRouter = express.Router()
 
 //  download any file here
@@ -23,6 +22,8 @@ downloadRouter.get("/zip/:zip_id", optionalAuth, downloadZip)
 
 // delete zip
 downloadRouter.delete("/zip/:zip_id", optionalAuth, deleteZip)
+
+
 
 
 export default downloadRouter

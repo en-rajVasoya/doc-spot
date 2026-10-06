@@ -34,18 +34,13 @@ const TrashSubHeader = memo(function TrashSubHeader({ view, setView, setModal })
     // ---- STEP 2: Restore selected items --------------
     // ##################################################
     const handleRestore = async (targetFolder) => {
-        if (targetFolder) {
-            await restoreItemApi(targetFolder.id, true)
-            showNotification("Folder restored successfully", "success", "bottom-center")
-        } else {
-            for (const id of selectedIds) {
-                await restoreItemApi(id, true)
-            }
-            const message = selectedArray.length > 1 ? "Items restored successfully" : "Item restored successfully"
-            showNotification(message, "success", "bottom-center")
-            setSelectedIds(new Set())
-        }
+    if (targetFolder) {
+        await restoreItemApi(targetFolder.id)
+    } else {
+        if (selectedArray.length === 0) return
+        await restoreItemApi(selectedArray)
     }
+}
 
     // ##################################################
     // ---- STEP 3: Delete items forever ----------------

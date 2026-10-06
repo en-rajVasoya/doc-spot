@@ -28,7 +28,7 @@ import servingFileRouter from "#routes/servingFiles"
 connectDB()
 // initClamAV()
 startTrashCleanup(emitToUser) // Cron job that deletes trash files/folders periodically
-startExpiredLinksCleanup()
+startExpiredLinksCleanup(emitToUser)
 
 // ===================================
 // EXPRESS APP INITIALIZATION
@@ -48,7 +48,7 @@ app.use(cors({
         "https://192.168.1.35:5177",
         "http://192.168.1.112:5177",
         "https://192.168.1.112:5177",
-        "https://192.168.1.213:5177",
+        "https://192.168.1.160:5177",
         "http://docspot-frontend-web.s3-website.ap-south-1.amazonaws.com",
         // "https://d2u61zpmg3hahd.cloudfront.net",
     ],
@@ -84,6 +84,9 @@ app.use(cookieParser())
 // Serve uploaded images
 app.use("/uploadimage", express.static(path.resolve("uploadimage")))
 
+// Serve static email and template assets
+app.use("/views", express.static(path.resolve("views")))
+
 // Serve uploaded files with cross-origin headers
 // const __dirname = path.resolve()
 // app.use("/files", (req, res, next) => {
@@ -107,16 +110,16 @@ app.use((req, res, next) => {
 // ===================================
 // ACTIVE CONNECTIONS MONITORING
 // ===================================
-let activeConnections = 0
-app.use((req, res, next) => {
-    activeConnections++
-    res.on("finish", () => activeConnections--)
-    res.on("close", () => activeConnections--)
-    if (activeConnections % 10 === 0) {
-        console.log(`[CONNECTIONS] active=${activeConnections}`)
-    }
-    next()
-})
+// let activeConnections = 0
+// app.use((req, res, next) => {
+//     activeConnections++
+//     res.on("finish", () => activeConnections--)
+//     res.on("close", () => activeConnections--)
+//     if (activeConnections % 10 === 0) {
+//         console.log(`[CONNECTIONS] active=${activeConnections}`)
+//     }
+//     next()
+// })
 
 // ===================================
 // SPECIAL TIMEOUT FOR UPLOAD CHUNKS

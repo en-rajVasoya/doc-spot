@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from "react";
+import { createContext, useContext, useState, useEffect, useRef } from "react";
 import axiosApi from "../utils/api.js";
 import { useNotification } from "./NotificationContext.jsx";
 
@@ -50,27 +50,31 @@ export function AuthProvider({ children }) {
                     localStorage.removeItem("docspot_has_session");
                 }
             }
-        }, 1 * 60 * 1000)
+        }, 110 * 60 * 1000)
         return () => clearInterval(interval)
     }, [user])
 
 
-    //  if token expred here so auto refresh to login page here
-    // useEffect(() => {
-    //     const interceptor = axiosApi.interceptors.response.use(
-    //         (response) => response,
-    //         (error) => {
-    //             if (error.response && error.response.status === 401) {
-    //                 setUser(null); // This clears user state and triggers ProtectedRoute redirect
-    //             }
-    //             return Promise.reject(error);
-    //         }
-    //     );
-    //     // Cleanup interceptor when component unmounts
-    //     return () => {
-    //         axiosApi.interceptors.response.eject(interceptor);
-    //     };
-    // }, []);
+    // Keep userRef updated with latest user state
+    const userRef = useRef(null);
+    useEffect(() => {
+        userRef.current = user;
+    }, [user]);
+
+    //  listen to the auto expired from the api.js
+    useEffect(() => {
+        const handleAuthExpired = () => {
+            // Ignore if nobody is logged in (e.g. login page, public share link)
+            if (!userRef.current) return;
+
+            setUser(null)
+            localStorage.removeItem("docspot_has_session");
+            showNotification("Session expired, please log in again", "error", "bottom-center");
+        }
+
+        window.addEventListener("auth-expired", handleAuthExpired);
+        return () => window.removeEventListener("auth-expired", handleAuthExpired);
+    }, [])
 
     // when user click on login button this will run
     const login = async (email, password, remember) => {

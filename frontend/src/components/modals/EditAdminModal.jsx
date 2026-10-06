@@ -116,7 +116,7 @@ function EditAdminModal({ onClose, setModal, data }) {
             //  checking here the password regex 
             const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
             if (!passwordRegex.test(password)) {
-                newErrors.password = "Password must be 8 chars, 1 uppercase, and 1 special symbol.";
+                newErrors.password = "Password must be 8 chars, 1 uppercase, 1 special symbol, and no spaces.";
             }
         }
 
@@ -144,7 +144,7 @@ function EditAdminModal({ onClose, setModal, data }) {
             // attach new profile pic if upladoed here
             if (avatarFile) {
                 formData.append("profilePic", avatarFile)
-            } else if (avatarUrl === null){
+            } else if (avatarUrl === null) {
                 formData.append("removeProfilePic", true)
             }
 
@@ -201,7 +201,7 @@ function EditAdminModal({ onClose, setModal, data }) {
                                             className="btn-black btn-lg m-0"
                                             onClick={() => fileInputRef.current?.click()}
                                         >
-                                           <InteractiveIcon defaultIcon={uploadIcon} alt="" width={20} />
+                                            <InteractiveIcon defaultIcon={uploadIcon} alt="" width={20} />
                                         </button>
                                     ) : (
                                         <button

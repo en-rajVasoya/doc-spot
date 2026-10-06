@@ -24,6 +24,8 @@ const processQueue = async () => {
     }
 }
 
+
+
 export const addToScanQueue = (uploadId, job) => {
     if (queuedIds.has(uploadId)) {
         console.log(`[SCAN QUEUE] Duplicate skipped: ${uploadId}`)

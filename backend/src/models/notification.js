@@ -15,7 +15,7 @@ const notificationSchema = new mongoose.Schema(
         },
         type: {
             type: String,
-            enum: ["file_deleted", "file_restored", "file_shared", "folder_deleted"],
+            enum: ["file_deleted", "file_restored", "file_shared", "folder_deleted", "file_removed", "folder_removed", "link_expiring", "link_expired"],
             required: true
         },
         message: {
@@ -27,7 +27,8 @@ const notificationSchema = new mongoose.Schema(
             itemName: String,
             itemType: String,
             parentId: mongoose.Schema.Types.ObjectId,
-            profilePic: String
+            profilePic: String,
+            expireDate: Date
         },
         isRead: {
             type: Boolean,

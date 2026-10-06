@@ -16,6 +16,11 @@ import { logger } from "#utils/logger";
 import { Upload } from "@aws-sdk/lib-storage";
 import { PassThrough } from "stream";
 
+// Helper to sanitize S3 keys: strips leading slashes and converts backslashes to forward slashes
+const cleanS3Key = (key) => {
+    if (!key) return key;
+    return key.replace(/^[/\\]+/, "").replace(/\\/g, "/");
+};
 
 export const s3Storage = {
     // -------------------------------------------------------------
@@ -234,9 +239,10 @@ export const s3Storage = {
 
     deleteFile: async (storagePath) => {
         try {
+            const cleanKey = cleanS3Key(storagePath);
             const deleteCmd = new DeleteObjectCommand({
                 Bucket: process.env.AWS_S3_BUCKET_NAME,
-                Key: storagePath
+                Key: cleanKey
             });
             await s3Client.send(deleteCmd);
         } catch (error) {
@@ -248,9 +254,10 @@ export const s3Storage = {
     // 6. Upload Buffer (For small batch uploads)
     // -------------------------------------------------------------
     uploadBuffer: async (storagePath, buffer, fileType) => {
+        const cleanKey = cleanS3Key(storagePath);
         const putCommand = new PutObjectCommand({
             Bucket: process.env.AWS_S3_BUCKET_NAME,
-            Key: storagePath,
+            Key: cleanKey,
             Body: buffer,
             ContentType: fileType || "application/octet-stream"
         });
@@ -264,9 +271,10 @@ export const s3Storage = {
     //    zip worker reading each source file)
     // -------------------------------------------------------------
     getFileStream: async (storagePath, range) => {
+        const cleanKey = cleanS3Key(storagePath);
         const command = new GetObjectCommand({
             Bucket: process.env.AWS_S3_BUCKET_NAME,
-            Key: storagePath,
+            Key: cleanKey,
             Range: range || undefined
         });
 

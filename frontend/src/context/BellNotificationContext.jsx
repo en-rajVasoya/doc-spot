@@ -48,14 +48,13 @@ export function BellNotificationProvider({ children }) {
         if(!socket || !user) return
 
         //  listen for live incoming notification
-        socket.on("new_notification", (notification) => {
+        const handleNewNotification = (notification) => {
             setNotifications(prev => [notification, ...prev])
             setUnreadCount(prev => prev + 1)
-        })
-
+        }
 
         // listen for remove notification
-        socket.on("notifications_removed", ({ ids }) => {
+        const handleNotificationsRemoved = ({ ids }) => {
             const removedSet = new Set(ids.map(id => id.toString()));
             setNotifications(prev => {
                 const removedUnread = prev.filter(
@@ -64,11 +63,26 @@ export function BellNotificationProvider({ children }) {
                 setUnreadCount(count => Math.max(0, count - removedUnread));
                 return prev.filter(n => !removedSet.has(n._id.toString()));
             });
-        });
+        }
+
+        const handleProfileUpdated = (updatedUser) => {
+            if (!updatedUser?._id) return;
+            setNotifications(prev => prev.map(notif => {
+                if (notif.actor && String(notif.actor._id) === String(updatedUser._id)) {
+                    return { ...notif, actor: { ...notif.actor, ...updatedUser } };
+                }
+                return notif;
+            }));
+        }
+
+        socket.on("new_notification", handleNewNotification)
+        socket.on("notifications_removed", handleNotificationsRemoved)
+        socket.on("global_user_profile_updated", handleProfileUpdated)
 
         return () => {
-            socket.off("new_notification");
-            socket.off("notifications_removed");
+            socket.off("new_notification", handleNewNotification);
+            socket.off("notifications_removed", handleNotificationsRemoved);
+            socket.off("global_user_profile_updated", handleProfileUpdated);
         };
 
     }, [socket, user])

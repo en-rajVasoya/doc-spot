@@ -11,6 +11,7 @@ import ModalManager from "../modals/ModalManager.jsx";
 
 // Context
 import { useAuth } from "../../context/AuthContext";
+import { useFileExplorer } from "../../context/FileExplorerContext";
 import { getRoute } from "../../utils/getRoutes.js";
 
 // Icons
@@ -28,6 +29,7 @@ import useResponsive from "../../hooks/useResponsive.js";
 function UpdateUserProfile() {
     const navigate = useNavigate();
     const { user, updateProfile } = useAuth();
+    const { clearSelection } = useFileExplorer();
 
     const [searchBarOpen, setSearchBarOpen] = useState(false);
     const [modals, setModalsState] = useState([]);
@@ -83,6 +85,12 @@ function UpdateUserProfile() {
             setHeaderHeight(headerRef.current.offsetHeight);
         }
     }, []);
+
+    // Clear any selected items from dashboard
+    useEffect(() => {
+    clearSelection();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+}, []);
 
     // Load initial user data
     useEffect(() => {
@@ -209,6 +217,7 @@ function UpdateUserProfile() {
                         searchBarOpen={searchBarOpen}
                         setSearchBarOpen={setSearchBarOpen}
                         onMobileSidebarNavclick={() => setIsSidebarNavOpen(prev => !prev)}
+                        disableSearch={true}
                     />
                 </div>
 
@@ -281,23 +290,23 @@ function UpdateUserProfile() {
                                                             accept="image/*"
                                                             onChange={handleImageUpload}
                                                         />
-                                                        
 
-                                                        {isSmallMobile ? (                                                           
+
+                                                        {isSmallMobile ? (
                                                             <button
-                                                            className="btn-black btn-lg m-0"
-                                                            onClick={() => fileInputRef.current?.click()}
-                                                        >
-                                                           <InteractiveIcon defaultIcon={uploadIcon} alt="" width={20} />
-                                                        </button>
+                                                                className="btn-black btn-lg m-0"
+                                                                onClick={() => fileInputRef.current?.click()}
+                                                            >
+                                                                <InteractiveIcon defaultIcon={uploadIcon} alt="" width={20} />
+                                                            </button>
 
                                                         ) : (
                                                             <button
-                                                            className="btn-black btn-lg m-0"
-                                                            onClick={() => fileInputRef.current?.click()}
-                                                        >
-                                                            Upload Profile
-                                                        </button>
+                                                                className="btn-black btn-lg m-0"
+                                                                onClick={() => fileInputRef.current?.click()}
+                                                            >
+                                                                Upload Profile
+                                                            </button>
 
                                                         )}
                                                         {avatarUrl && (

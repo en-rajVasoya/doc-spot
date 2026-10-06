@@ -176,9 +176,11 @@ function UploadFileRow({ file, sessionId, onRetry, onCancelClick }) {
     };
 
     const handleOpenFolder = () => {
-        if (file.parentId) navigate(`/dashboard/folder/${file.parentId}`);
-        else navigate("/dashboard");
-        if (file.id) triggerHighlight(file.id);
+        const targetRoute = file.parentId ? `/dashboard/folder/${file.parentId}` : "/dashboard";
+        navigate(targetRoute, { state: { highlightId: file.id } });
+        if (file.id && window.location.pathname === targetRoute) {
+            triggerHighlight(file.id);
+        }
     };
 
     const handleCloseClick = (e) => {
@@ -272,9 +274,11 @@ function UploadFolderRow({ session, onCancelClick, onViewIssuesClick, onRetryFol
     const isInProgress = status === "preparing" || status === "uploading";
 
     const handleOpenFolder = () => {
-        if (session.parentId) navigate(`/dashboard/folder/${session.parentId}`);
-        else navigate("/dashboard");
-        if (session.rootId) triggerHighlight(session.rootId);
+        const targetRoute = session.parentId ? `/dashboard/folder/${session.parentId}` : "/dashboard";
+        navigate(targetRoute, { state: { highlightId: session.rootId } });
+        if (session.rootId && window.location.pathname === targetRoute) {
+            triggerHighlight(session.rootId);
+        }
     };
 
     const handleCloseClick = (e) => {

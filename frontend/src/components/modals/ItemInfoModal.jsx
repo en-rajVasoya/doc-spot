@@ -40,6 +40,8 @@ function ItemInfoModal({ data, onClose }) {
   //  calculating the folder size here
   const [calculatedSize, setCalculatedSize] = useState(item.type === "folder" ? null : item.fileSize)
 
+  const [folderContents, setFolderContents] = useState("");
+
 
   // fetch the all detail when the modal opens here
   useEffect(() => {
@@ -58,9 +60,10 @@ function ItemInfoModal({ data, onClose }) {
 
     const fetchFolderSize = async () => {
       if (isFolder) {
-        const size = await getFolderSizeApi(item._id)
-        if (size !== null) {
-          setCalculatedSize(size)
+        const response = await getFolderSizeApi(item._id)
+        if (response !== null) {
+          setCalculatedSize(response.size)
+          setFolderContents(response.contentsString)
         }
       }
     }
@@ -157,7 +160,9 @@ function ItemInfoModal({ data, onClose }) {
   const itemLocation = item.locationPath ? item.locationPath : (trailNames ? `${rootLabel} / ${trailNames}` : rootLabel);
 
   // Remove the owner from the shared list to prevent redundancy
-  const filteredSharedWith = sharedWith.filter(user => user.userId !== owner?.userId);
+  const filteredSharedWith = sharedWith.filter(user =>
+    String(user.userId?._id || user.userId) !== String(owner?.userId?._id || owner?.userId)
+  );
 
   return (
     <div onClick={handleOutsideClick}>
@@ -195,6 +200,14 @@ function ItemInfoModal({ data, onClose }) {
                   <div className='file-details-box'>
                     <p className='file-details-label'>Location</p>
                     <p className='file-details-value'>{itemLocation}</p>
+                  </div>
+                )}
+
+                {/* Folder Contents */}
+                {isFolder && folderContents && (
+                  <div className='file-details-box'>
+                    <p className='file-details-label'>Contains</p>
+                    <p className='file-details-value'>{folderContents}</p>
                   </div>
                 )}
 

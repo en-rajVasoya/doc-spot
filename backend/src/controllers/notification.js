@@ -6,7 +6,7 @@ export const getNotifications = async (req, res) => {
     try {
         const notifications = await notificationModel
             .find({ recipient: req.user._id })
-            .populate("actor", "name profilePic")
+            .populate("actor", "name profilePic thumbnail_profile_pic compressed_profile_pic")
             .sort({ createdAt: -1 });
 
         const unreadCount = await notificationModel.countDocuments({

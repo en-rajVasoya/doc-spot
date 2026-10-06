@@ -1,11 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useUpload } from "../../context/UploadContext";
 import { useFileExplorer } from "../../context/FileExplorerContext";
 import InteractiveIcon from "../layout/InteractiveIcon";
 import DragAndDropIcon from "@images/drag-and-drop-icon.svg";
 import { useSearch } from "../../context/SearchContext";
-
-
 
 const decodeHtmlEntities = (str) => {
     const textarea = document.createElement("textarea");
@@ -13,51 +11,129 @@ const decodeHtmlEntities = (str) => {
     return textarea.value;
 };
 
-
 function DragAndDrop({ isModalOpen = false }) {
     const { addFiles, checkAndUpload } = useUpload();
     const { currentFolderId, items } = useFileExplorer();
     const { isSearchMode } = useSearch();
     const [isDragging, setIsDragging] = useState(false);
 
+    // Keep dynamic values in a ref so the window event listeners are permanently attached
+    // and NEVER unbind/rebind during rapid drag-and-drop actions.
+    const stateRef = useRef({
+        currentFolderId,
+        items,
+        checkAndUpload,
+        isModalOpen,
+        isSearchMode
+    });
+
     useEffect(() => {
-        if (isModalOpen || isSearchMode) return;
+        stateRef.current = {
+            currentFolderId,
+            items,
+            checkAndUpload,
+            isModalOpen,
+            isSearchMode
+        };
+    }, [currentFolderId, items, checkAndUpload, isModalOpen, isSearchMode]);
+
+    // Track drag enter/leave depth across child elements
+    const dragCounterRef = useRef(0);
+
+    useEffect(() => {
+        const handleDragEnter = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            dragCounterRef.current += 1;
+
+            const { isModalOpen: modalOpen, isSearchMode: searchMode } = stateRef.current;
+            if (modalOpen || searchMode) return;
+
+            setIsDragging(true);
+        };
 
         const handleDragOver = (e) => {
+            // ALWAYS prevent default to stop Chrome from opening the file in a new tab!
             e.preventDefault();
+            e.stopPropagation();
 
-            if (isModalOpen || isSearchMode) return;
+            if (e.dataTransfer) {
+                e.dataTransfer.dropEffect = "copy";
+            }
 
-            if (!isDragging) {
-                setIsDragging(true);
+            const { isModalOpen: modalOpen, isSearchMode: searchMode } = stateRef.current;
+            if (modalOpen || searchMode) return;
+
+            if (dragCounterRef.current === 0) {
+                dragCounterRef.current = 1;
+            }
+            setIsDragging(true);
+        };
+
+        const handleDragLeave = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            dragCounterRef.current -= 1;
+            if (dragCounterRef.current <= 0 || !e.relatedTarget) {
+                dragCounterRef.current = 0;
+                setIsDragging(false);
             }
         };
 
         const handleDrop = async (e) => {
+            // ALWAYS prevent default so the browser never opens the file as a URL
             e.preventDefault();
+            e.stopPropagation();
 
-            console.log("========== DROP EVENT FIRED ==========");
-
-            if (isModalOpen || isSearchMode) {
-                console.log("[EXIT] Blocked because isModalOpen or isSearchMode is true");
-                return;
-            }
-
+            dragCounterRef.current = 0;
             setIsDragging(false);
 
-            console.log("[DEBUG] dataTransfer types:", e.dataTransfer.types);
+            const {
+                isModalOpen: modalOpen,
+                isSearchMode: searchMode,
+                checkAndUpload: uploadFn,
+                currentFolderId: folderId,
+                items: currentItems
+            } = stateRef.current;
 
-            const dragItems = [...e.dataTransfer.items];
-            console.log("[DEBUG] dragItems length:", dragItems.length);
-
-            if (!dragItems || dragItems.length === 0) {
-                console.log("[EXIT] No dragItems at all, stopping here");
+            if (modalOpen || searchMode) {
                 return;
             }
 
-            const fileList = [];
+            const dragItems = e.dataTransfer?.items ? [...e.dataTransfer.items] : [];
+            if (!dragItems || dragItems.length === 0) {
+                // Fallback to standard files list if items are unavailable
+                if (e.dataTransfer?.files?.length > 0) {
+                    uploadFn([...e.dataTransfer.files], folderId, currentItems);
+                }
+                return;
+            }
+
+            // CRITICAL: Extract all file/directory entries synchronously BEFORE any await calls.
+            // In Chromium and modern browsers, DataTransferItem objects are invalidated as soon as
+            // execution yields to the event loop.
+            const looseFiles = [];
+            const folderEntries = [];
+
+            for (const item of dragItems) {
+                const entry = item.webkitGetAsEntry?.();
+                if (entry) {
+                    if (entry.isDirectory) {
+                        folderEntries.push(entry);
+                    } else if (entry.isFile) {
+                        const file = item.getAsFile();
+                        if (file) looseFiles.push(file);
+                    }
+                } else if (item.kind === "file") {
+                    const file = item.getAsFile();
+                    if (file) looseFiles.push(file);
+                }
+            }
 
             const readDirectory = async (dirEntry, path = "") => {
+                const folderFiles = [];
                 const reader = dirEntry.createReader();
 
                 const readEntries = () => {
@@ -66,77 +142,82 @@ function DragAndDrop({ isModalOpen = false }) {
                     });
                 };
 
+                let hasEntries = false;
                 let entries = await readEntries();
 
                 while (entries.length > 0) {
+                    hasEntries = true;
                     for (const entry of entries) {
                         if (entry.isFile) {
-                            const file = await new Promise((res) => entry.file(res));
-
-                            Object.defineProperty(file, "webkitRelativePath", {
-                                value: path + dirEntry.name + "/" + file.name,
+                            const file = await new Promise((res) => {
+                                entry.file(res, (err) => {
+                                    console.warn("Failed to get file from entry:", entry.name, err);
+                                    res(null);
+                                });
                             });
 
-                            fileList.push(file);
+                            if (file) {
+                                Object.defineProperty(file, "webkitRelativePath", {
+                                    value: path + dirEntry.name + "/" + file.name,
+                                });
+
+                                folderFiles.push(file);
+                            }
                         } else if (entry.isDirectory) {
-                            await readDirectory(entry, path + dirEntry.name + "/");
+                            const subFiles = await readDirectory(entry, path + dirEntry.name + "/");
+                            folderFiles.push(...subFiles);
                         }
                     }
 
                     entries = await readEntries();
                 }
+
+                // If folder is empty, create a placeholder file so folder path is tracked and created
+                if (!hasEntries) {
+                    const emptyPath = path + dirEntry.name;
+                    const placeholder = new File([""], ".keep", { type: "text/plain" });
+                    Object.defineProperty(placeholder, "webkitRelativePath", {
+                        value: `${emptyPath}/.keep`,
+                        writable: false,
+                    });
+                    placeholder._isPlaceholder = true;
+                    folderFiles.push(placeholder);
+                }
+
+                return folderFiles;
             };
 
-            for (const item of dragItems) {
-                console.log("[DEBUG] item.kind:", item.kind, "| item.type:", item.type);
-                const entry = item.webkitGetAsEntry?.();
-                console.log("[DEBUG] webkitGetAsEntry result:", entry);
+            // Start uploading loose files immediately if present
+            if (looseFiles.length > 0) {
+                uploadFn(looseFiles, folderId, currentItems);
+            }
 
-                if (!entry) {
-                    console.log("[INFO] No entry for this item — likely NOT a real file (probably a web image/link)");
-                    continue;
-                }
-
-                if (entry.isFile) {
-                    console.log("[INFO] entry.isFile = true, treating as real file");
-                    const file = item.getAsFile();
-                    if (file) fileList.push(file);
-                } else if (entry.isDirectory) {
-                    console.log("[INFO] entry.isDirectory = true, reading folder recursively");
-                    await readDirectory(entry);
+            // Process each dropped folder independently so each gets its own session & conflict check
+            let hasFolders = false;
+            for (const dirEntry of folderEntries) {
+                const currentFolderFiles = await readDirectory(dirEntry);
+                if (currentFolderFiles.length > 0) {
+                    hasFolders = true;
+                    uploadFn(currentFolderFiles, folderId, currentItems);
                 }
             }
 
-            console.log("[DEBUG] fileList after real-file check:", fileList);
-
-            if (fileList.length > 0) {
-                console.log(`[PATH: REAL FILES] Starting upload for ${fileList.length} files...`);
-                checkAndUpload(fileList, currentFolderId, items);
+            if (looseFiles.length > 0 || hasFolders) {
                 return;
             }
-
-            console.log("[PATH: NO REAL FILES FOUND] Moving to URL/web-image extraction...");
 
             // Handle dropped Google Images / Web Links
             let imageUrl = e.dataTransfer.getData("text/uri-list") || e.dataTransfer.getData("text/plain");
             const htmlData = e.dataTransfer.getData("text/html");
 
-            console.log("[DEBUG] text/uri-list or text/plain result:", imageUrl);
-            console.log("[DEBUG] text/html result:", htmlData);
-
             if (htmlData) {
                 const srcMatch = htmlData.match(/src=["'](data:image\/[^"']+|https?:\/\/[^"']+)["']/i);
-                console.log("[DEBUG] regex match on text/html:", srcMatch);
                 if (srcMatch && srcMatch[1]) {
                     imageUrl = decodeHtmlEntities(srcMatch[1]);
-                    console.log("[INFO] imageUrl overwritten from html src match:", imageUrl);
                 }
             }
 
-            console.log("[DEBUG] FINAL imageUrl to be used:", imageUrl);
-
             if (!imageUrl) {
-                console.log("[EXIT] No imageUrl could be extracted at all. Nothing to upload.");
                 return;
             }
 
@@ -144,67 +225,49 @@ function DragAndDrop({ isModalOpen = false }) {
                 let blob = null;
 
                 const tryFetch = async (url) => {
-                    console.log("[FETCH ATTEMPT] trying URL:", url);
                     const res = await fetch(url);
-                    console.log("[FETCH RESPONSE] ok:", res.ok, "| status:", res.status);
 
                     if (!res.ok) {
-                        console.log("[FETCH FAIL] Response not ok, throwing");
                         throw new Error("Bad response");
                     }
 
                     const contentType = res.headers.get("content-type") || "";
-                    console.log("[FETCH RESPONSE] content-type:", contentType);
 
                     if (!contentType.startsWith("image/")) {
-                        console.log("[FETCH FAIL] content-type is not image/*, throwing");
                         throw new Error("Not an image");
                     }
 
                     const contentLength = parseInt(res.headers.get("content-length") || "0");
-                    console.log("[FETCH RESPONSE] content-length:", contentLength);
-
                     const MAX_SIZE = 20 * 1024 * 1024; // 20MB safety cap
                     if (contentLength && contentLength > MAX_SIZE) {
-                        console.log("[FETCH FAIL] Too large based on header, throwing");
                         throw new Error("Too large");
                     }
 
                     const fetchedBlob = await res.blob();
-                    console.log("[FETCH RESULT] blob size:", fetchedBlob.size, "| blob type:", fetchedBlob.type);
 
                     if (fetchedBlob.size > MAX_SIZE) {
-                        console.log("[FETCH FAIL] Too large based on actual blob size, throwing");
                         throw new Error("Too large");
                     }
                     if (!fetchedBlob.type.startsWith("image/")) {
-                        console.log("[FETCH FAIL] blob type is not image/*, throwing");
                         throw new Error("Not an image");
                     }
 
-                    console.log("[FETCH SUCCESS] Valid image blob obtained");
                     return fetchedBlob;
                 };
 
                 if (imageUrl.startsWith("data:")) {
-                    console.log("[PATH] imageUrl is a data: URL");
                     blob = await tryFetch(imageUrl);
                 } else if (imageUrl.startsWith("http://") || imageUrl.startsWith("https://")) {
-                    console.log("[PATH] imageUrl is a normal http(s) URL — trying direct fetch first");
                     try {
                         blob = await tryFetch(imageUrl);
                     } catch (directErr) {
-                        console.log("[DIRECT FETCH FAILED]", directErr.message, "— falling back to proxy");
                         try {
                             const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(imageUrl)}`;
                             blob = await tryFetch(proxyUrl);
                         } catch (proxyErr) {
-                            console.log("[PROXY FETCH ALSO FAILED]", proxyErr.message);
                             blob = null;
                         }
                     }
-                } else {
-                    console.log("[PATH] imageUrl doesn't match data: or http(s):, unknown format:", imageUrl);
                 }
 
                 if (blob) {
@@ -212,47 +275,45 @@ function DragAndDrop({ isModalOpen = false }) {
                     const file = new File([blob], `google_image_${Date.now()}.${fileExt}`, {
                         type: blob.type
                     });
-                    console.log("[FINAL] Uploading constructed file:", file.name, file.size, file.type);
-                    checkAndUpload([file], currentFolderId, items);
-                } else {
-                    console.warn("[FINAL] Could not fetch dropped image — source likely blocks cross-origin access, or proxy failed");
+                    uploadFn([file], folderId, currentItems);
                 }
             } catch (err) {
                 console.error("[UNEXPECTED ERROR] Failed to extract dropped image:", err);
             }
         };
 
-        const handleDragLeave = (e) => {
-            e.preventDefault();
-            // If relatedTarget is null, the mouse has physically left the browser window
-            if (!e.relatedTarget) {
-                setIsDragging(false);
-            }
-        };
-
         const handleMouseMove = () => {
-            // mousemove ONLY fires when the user is NOT dragging a file.
-            // If this fires while isDragging is true, it means they hit ESC or canceled the drag!
-            if (isDragging) {
+            if (dragCounterRef.current > 0) {
+                dragCounterRef.current = 0;
                 setIsDragging(false);
             }
         };
 
+        const handleWindowBlur = () => {
+            dragCounterRef.current = 0;
+            setIsDragging(false);
+        };
+
+        window.addEventListener("dragenter", handleDragEnter);
         window.addEventListener("dragover", handleDragOver);
-        window.addEventListener("drop", handleDrop);
         window.addEventListener("dragleave", handleDragLeave);
+        window.addEventListener("drop", handleDrop);
         window.addEventListener("mousemove", handleMouseMove);
+        window.addEventListener("blur", handleWindowBlur);
 
         return () => {
+            window.removeEventListener("dragenter", handleDragEnter);
             window.removeEventListener("dragover", handleDragOver);
-            window.removeEventListener("drop", handleDrop);
             window.removeEventListener("dragleave", handleDragLeave);
+            window.removeEventListener("drop", handleDrop);
             window.removeEventListener("mousemove", handleMouseMove);
+            window.removeEventListener("blur", handleWindowBlur);
         };
-    }, [addFiles, currentFolderId, isDragging, isModalOpen, isSearchMode]);
+    }, []);
 
     useEffect(() => {
         if (isModalOpen) {
+            dragCounterRef.current = 0;
             setIsDragging(false);
         }
     }, [isModalOpen]);
@@ -260,7 +321,7 @@ function DragAndDrop({ isModalOpen = false }) {
     return (
         <>
             {isDragging && !isModalOpen && !isSearchMode && (
-                <div className="drag-and-drop-single-box">
+                <div className="drag-and-drop-single-box" style={{ pointerEvents: "none" }}>
                     <div className="drag-and-drop-img">
                         <InteractiveIcon defaultIcon={DragAndDropIcon} />
                     </div>

@@ -11,8 +11,16 @@ import useResponsive from "../../../hooks/useResponsive";
 function AdminSearchBar({ searchBarOpen, setSearchBarOpen }) {
     const { searchQuery, setSearchQuery } = useAdmin();
     const searchRef = useRef(null);
+    const inputRef = useRef(null);
     const [localSearch, setLocalSearch] = useState(searchQuery || "");
     const { isMobile } = useResponsive();
+
+    // Auto-focus input when search bar opens
+    useEffect(() => {
+        if (searchBarOpen) {
+            inputRef.current?.focus();
+        }
+    }, [searchBarOpen]);
 
     //  close on the esc key 
     useEffect(() => {
@@ -66,6 +74,8 @@ function AdminSearchBar({ searchBarOpen, setSearchBarOpen }) {
                             </span>
 
                             <Form.Control
+                                ref={inputRef}
+                                autoFocus
                                 name="adminSearch"
                                 type="text"
                                 autoComplete="off"

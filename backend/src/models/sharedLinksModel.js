@@ -30,6 +30,10 @@ const sharedLinkSchema = new mongoose.Schema({
     is_expired: {
         type: Boolean,
         default: false
+    },
+    notified_expire_date: {
+        type: Date,
+        default: null
     }
 
 }, { versionKey: false, timestamps: true });

@@ -39,6 +39,7 @@ function SearchResults({ setSearchBarOpen, showViewButtons, view, setView }) {
         } else if (key === "date") {
             nextFilters.dateFrom = null;
             nextFilters.dateTo = null;
+            nextFilters.date = null;
         }
 
 
@@ -49,7 +50,8 @@ function SearchResults({ setSearchBarOpen, showViewButtons, view, setView }) {
             nextFilters.ownerFilter ||
             nextFilters.location ||
             nextFilters.dateFrom ||
-            nextFilters.dateTo;
+            nextFilters.dateTo ||
+            nextFilters.date;
         if (!hasRemainingFilters) {
             clearSearch();
             if (setSearchBarOpen) setSearchBarOpen(false);
@@ -176,7 +178,7 @@ function SearchResults({ setSearchBarOpen, showViewButtons, view, setView }) {
                         </button>
                     </div>
                 )}
-                {searchFilters.dateFrom && searchFilters.dateTo && (
+                {searchFilters.dateFrom && searchFilters.dateTo ? (
                     <div className="search-suggestion-filter-content">
                         <span className="search-suggestion-label">Date</span>
                         <button className="search-suggestion-chip">
@@ -190,6 +192,22 @@ function SearchResults({ setSearchBarOpen, showViewButtons, view, setView }) {
                             </span>
                         </button>
                     </div>
+                ) : (
+                    searchFilters.date && (
+                        <div className="search-suggestion-filter-content">
+                            <span className="search-suggestion-label">Date</span>
+                            <button className="search-suggestion-chip">
+                                {searchFilters.date === "AnyTime" ? "Any time" : searchFilters.date}
+                                <span className="btn-only-icon" onClick={(e) => { e.stopPropagation(); handleRemoveFilter("date"); }} >
+                                    <InteractiveIcon
+                                        defaultIcon={closeIcon}
+                                        width={16}
+                                        height={16}
+                                    />
+                                </span>
+                            </button>
+                        </div>
+                    )
                 )}
                 {/* {selectedIds.size === 1 && (
                     <div className="search-suggestion-filter-content">

@@ -46,7 +46,7 @@ const uploadSchema = mongoose.Schema({
         type: Number,
         default: null
     },
-    
+
     // total nested size specifically for folders (prevents double-counting in storage quotas)
     totalSize: {
         type: Number,
@@ -119,6 +119,13 @@ const uploadSchema = mongoose.Schema({
         default: false
     },
 
+    //  this is for the building here the ancestore array for every item
+    ancestorIds: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Upload",
+        default: []
+    }],
+
 
     //  here when user delete any file or folder then it will go to the trash page
     isTrashed: {
@@ -130,6 +137,12 @@ const uploadSchema = mongoose.Schema({
     trashedAt: {
         type: Date,
         default: null
+    },
+
+    //  this s for when some child trash directly 
+    directly_trashed: {
+        type: Boolean,
+        default: false
     },
 
     replacesFileId: {
@@ -172,6 +185,7 @@ uploadSchema.index({ owner: 1, isShared: 1 })
 //  trashed faster wuery here
 uploadSchema.index({ owner: 1, isTrashed: 1 })
 uploadSchema.index({ trashedAt: 1, isTrashed: 1 })
+uploadSchema.index({ owner: 1, isTrashed: 1, directly_trashed: 1 })
 
 
 uploadSchema.index({ sha256: 1 })
@@ -191,8 +205,8 @@ uploadSchema.index({ createdAt: -1 })
 uploadSchema.index({ fileType: 1 })
 uploadSchema.index({ ancestorIds: 1 })
 uploadSchema.index(
-  { name: 1 },
-  { collation: { locale: "en", strength: 2 } }
+    { name: 1 },
+    { collation: { locale: "en", strength: 2 } }
 )
 const Upload = mongoose.model("Upload", uploadSchema)
 

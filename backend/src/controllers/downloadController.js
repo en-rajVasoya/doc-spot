@@ -27,16 +27,41 @@ if (!fs.existsSync(ZIPS_DIR)) {
 
 const zipJobsMap = new Map()
 
+// ============================================================
+// ZIP WORKER CONCURRENCY LIMITER (MAX 5)
+// ============================================================
+const MAX_CONCURRENT_ZIP_WORKERS = 5
+let activeZipWorkers = 0
+const zipWorkerQueue = []
+
+const acquireZipSlot = () => {
+    if (activeZipWorkers < MAX_CONCURRENT_ZIP_WORKERS) {
+        activeZipWorkers++
+        return Promise.resolve()
+    }
+    return new Promise(resolve => {
+        zipWorkerQueue.push(resolve)
+    })
+}
+
+const releaseZipSlot = () => {
+    activeZipWorkers--
+    if (zipWorkerQueue.length > 0) {
+        activeZipWorkers++
+        const next = zipWorkerQueue.shift()
+        next()
+    }
+}
+
 const nowMs = () => Date.now()
 
-const storage = getStorage()
-
 const cleanupOldZips = async () => {
-    const TWO_HOURS = 2 * 60 * 60 * 1000
+    const storage = getStorage()
+    const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000
     const now = Date.now()
 
     for (const [zipId, job] of zipJobsMap.entries()) {
-        if (job.createdAt && (now - job.createdAt) > TWO_HOURS) {
+        if (job.createdAt && (now - job.createdAt) > TWENTY_FOUR_HOURS) {
             if (job.zipKey) {
                 await storage.deleteZipFile(job.zipKey)
                 console.log(`[CLEANUP] Deleted old zip: ${zipId}`)
@@ -54,69 +79,55 @@ const collectFilesFromFolders = async (folderIds, pathPrefixMap = {}, includeTra
 
     const objectIds = folderIds.map(id => new mongoose.Types.ObjectId(id))
 
-    const results = await uploadModel.aggregate([
-        { $match: { _id: { $in: objectIds } } },
-        {
-            $graphLookup: {
-                from: "uploads",
-                startWith: "$_id",
-                connectFromField: "_id",
-                connectToField: "parent",
-                as: "allDescendants",
-                restrictSearchWithMatch: {
-                    ...(!includeTrash && { isTrashed: { $ne: true } }),
-                    $or: [
-                        { type: "folder" },
-                        { type: "file", uploadStatus: "completed" }
-                    ]
-                }
-            }
-        },
-        {
-            $project: {
-                name: 1,
-                type: 1,
-                fileSize: 1,
-                allDescendants: 1
-            }
-        }
-    ])
+    // fetch all descendants of ANY of these folders in one query
+    const matchConditions = {
+        ancestorIds: { $in: objectIds },
+        ...(!includeTrash && { isTrashed: { $ne: true } }),
+        $or: [
+            { type: "folder" },
+            { type: "file", uploadStatus: "completed" }
+        ]
+    }
 
+    const allDescendants = await uploadModel.find(matchConditions)
+        .select("name type fileSize storagePath parent ancestorIds")
+        .lean()
+
+    // also fetch the root folders themselves (for their names)
+    const rootFolders = await uploadModel.find({ _id: { $in: objectIds } })
+        .select("name").lean()
+    const rootNameMap = new Map(rootFolders.map(r => [r._id.toString(), r.name]))
+
+    // group descendants by which root folder they belong to
     const pathMap = new Map()
+    for (const rootId of objectIds) {
+        const rootIdStr = rootId.toString()
+        pathMap.set(rootIdStr, pathPrefixMap[rootIdStr] ?? rootNameMap.get(rootIdStr))
+    }
+
+    // sort descendants by depth (ancestorIds.length) so we always
+    // resolve a folder's path AFTER its own parent's path is known
+    const sortedDescendants = [...allDescendants].sort(
+        (a, b) => (a.ancestorIds?.length || 0) - (b.ancestorIds?.length || 0)
+    )
+
     const fileList = []
 
-    for (const root of results) {
-        const rootPrefix = pathPrefixMap[root._id.toString()] ?? root.name
-        pathMap.set(root._id.toString(), rootPrefix)
-
-        const folders = root.allDescendants.filter(d => d.type === "folder")
-        const files = root.allDescendants.filter(d => d.type === "file")
-
-        let remaining = [...folders]
-        let attempts = 0
-
-        while (remaining.length > 0 && attempts < 200) {
-            attempts++
-            const stillPending = []
-            for (const folder of remaining) {
-                const parentPath = pathMap.get(folder.parent.toString())
-                if (parentPath !== undefined) {
-                    pathMap.set(folder._id.toString(), path.join(parentPath, folder.name))
-                } else {
-                    stillPending.push(folder)
-                }
+    for (const doc of sortedDescendants) {
+        if (doc.type === "folder") {
+            const parentPath = pathMap.get(doc.parent.toString())
+            if (parentPath !== undefined) {
+                pathMap.set(doc._id.toString(), path.join(parentPath, doc.name))
             }
-            remaining = stillPending
-        }
-
-        for (const file of files) {
-            if (!file.storagePath) continue
-            const parentPath = pathMap.get(file.parent.toString()) || rootPrefix
-            fileList.push({
-                storageKey: file.storagePath,
-                archiveName: path.join(parentPath, file.name),
-                fileSize: file.fileSize
-            })
+        } else if (doc.type === "file" && doc.storagePath) {
+            const parentPath = pathMap.get(doc.parent.toString())
+            if (parentPath !== undefined) {
+                fileList.push({
+                    storageKey: doc.storagePath,
+                    archiveName: path.join(parentPath, doc.name),
+                    fileSize: doc.fileSize
+                })
+            }
         }
     }
 
@@ -124,13 +135,25 @@ const collectFilesFromFolders = async (folderIds, pathPrefixMap = {}, includeTra
 }
 
 // ─── helper: fork zip worker and wire up events ───────────────────────────────
-const startZipWorker = (zipId, zipKey, fileList, folderName) => {
+const startZipWorker = async (zipId, zipKey, fileList, folderName) => {
+    // Wait here if 5 zip jobs are already running
+    await acquireZipSlot()
+
     const workerStartMs = nowMs()
     console.log(`[ZIP][${zipId}] Worker spawn start | files=${fileList.length} | name=${folderName}`)
     const child = fork(path.join(__dirname, "../workers/zipWorker.js"))
 
     const currentJob = zipJobsMap.get(zipId)
     if (currentJob) currentJob.childProcess = child
+
+    // ensure releaseZipSlot is only called ONCE per job
+    let isReleased = false
+    const safeRelease = () => {
+        if (!isReleased) {
+            isReleased = true
+            releaseZipSlot()
+        }
+    }
 
     child.send({ fileList, zipKey })
 
@@ -167,10 +190,12 @@ const startZipWorker = (zipId, zipKey, fileList, folderName) => {
             })
             const totalSec = ((nowMs() - workerStartMs) / 1000).toFixed(1)
             console.log(`[ZIP][${zipId}] Ready | size=${msg.fileSize} bytes | files=${msg.fileCount} | worker=${msg.elapsedMs}ms | total=${totalSec}s`)
+            safeRelease()
         }
         if (msg.type === "error") {
             zipJobsMap.set(zipId, { status: "error", error: msg.error })
             console.error(`[ZIP][${zipId}] Failed - ${msg.error}`)
+            safeRelease()
         }
     })
 
@@ -181,16 +206,19 @@ const startZipWorker = (zipId, zipKey, fileList, folderName) => {
                 zipJobsMap.set(zipId, { status: "error", error: "Zip worker crashed" })
             }
         }
+        safeRelease()
     })
 
     child.on("error", (err) => {
         console.error("[ZIP WORKER ERROR]", err)
+        safeRelease()
     })
 }
 
 // function to downlaod files
 export const downloadFile = async (req, res) => {
     try {
+        const storage = getStorage()
         const { id } = req.params
         const permission = await checkDownloadPermission(req, id);
         if (!permission) {
@@ -206,8 +234,13 @@ export const downloadFile = async (req, res) => {
 
         let fileStreamResult
         try {
-            fileStreamResult = await storage.getFileStream(fileData.storagePath, rangeHeader)
+            const cleanStoragePath = fileData.storagePath?.replace(/^[/\\]+/, "").replace(/\\/g, "/")
+            fileStreamResult = await storage.getFileStream(cleanStoragePath, rangeHeader)
         } catch (err) {
+            console.error("[DOWNLOAD STREAM ERROR]:", err.message, {
+                storagePath: fileData.storagePath,
+                rangeHeader
+            })
             return res.status(404).json({ success: false, message: "File not found on server" })
         }
 
@@ -253,7 +286,7 @@ export const downloadFolder = async (req, res) => {
         const includeTrash = folderData.isTrashed === true;
 
         const fileList = await collectFilesFromFolders([id], {
-            [id.toString()]: ""   
+            [id.toString()]: ""
         }, includeTrash);
 
         console.log(`[ZIP][folder:${id}] File list ready | files=${fileList.length} | collectMs=${nowMs() - collectStartMs}`)
@@ -379,6 +412,7 @@ export const getZipStatus = async (req, res) => {
 // function to download zip
 export const downloadZip = async (req, res) => {
     try {
+        const storage = getStorage()
         const { zip_id } = req.params
         const job = zipJobsMap.get(zip_id)
 
@@ -418,6 +452,7 @@ export const downloadZip = async (req, res) => {
 // function to delete zip
 export const deleteZip = async (req, res) => {
     try {
+        const storage = getStorage()
         const { zip_id } = req.params
 
         const job = zipJobsMap.get(zip_id)

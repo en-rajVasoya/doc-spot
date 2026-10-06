@@ -20,6 +20,7 @@ import closeIcon from "@images/icon/close-icon.svg"
 import UserAvatar from "../layout/UserAvatar.jsx";
 
 import useResponsive from '../../hooks/useResponsive';
+import CopyLinkSection from "./CopyLinkSection.jsx";
 
 //  helper to copy link 
 import { generateShareLinks } from "../../utils/generateShareLinks.js";
@@ -29,9 +30,9 @@ import { useSocket } from "../../context/SocketContext.jsx";
 const BASE_URL = import.meta.env.VITE_API_URL?.replace(/\/api\/?$/, "") || "";
 
 
-function ShareUserModal({ data, onClose }) {
+function ShareUserModal({ data, onClose, setModal }) {
     const [loading, setLoading] = useState(true);
-    const { searchUsersApi, unshareItemApi, shareItemApi, selectedIds, getSuggestedUsersApi, updateSharedWith, suggestedUsers, sharedUsersData, loadSharedUsers, clearSharedUsers } = useFileExplorer()
+    const { searchUsersApi, unshareItemApi, shareItemApi, selectedIds, getSuggestedUsersApi, updateSharedWith, suggestedUsers, suggestedHasMore, sharedUsersData, loadSharedUsers, clearSharedUsers } = useFileExplorer()
 
     const { user } = useAuth()
     const { showNotification } = useNotification()
@@ -42,6 +43,7 @@ function ShareUserModal({ data, onClose }) {
 
     const owner = sharedUsersData.owner
     const sharedWith = sharedUsersData.sharedWith
+    const inheritedFolderOwner = sharedUsersData.inheritedFolderOwner
 
 
     // // safely handle if data is an array (multiple items selected) or object (single item)
@@ -56,6 +58,8 @@ function ShareUserModal({ data, onClose }) {
     // shake animation state for when user clicks outside the modal
     const [shake, setShake] = useState(false)
     const modalRef = useRef(null)
+    const mobileToggleRef = useRef(null)
+    const desktopToggleRef = useRef(null)
 
     // search inputs and search results
     const [searchTerm, setSearchTerm] = useState("")
@@ -63,9 +67,6 @@ function ShareUserModal({ data, onClose }) {
 
     // selected users to add (map of userId => { user, permission })
     const [selectedUsers, setSelectedUsers] = useState(new Map())
-
-    // default permission dropdown state
-    const [permission, setPermission] = useState("viewer")
 
     // tracks if link is "restricted" (people with access) or "public" (anyone)
     const [accessType, setAccessType] = useState("restricted")
@@ -75,15 +76,41 @@ function ShareUserModal({ data, onClose }) {
     const [linkExpiry, setLinkExpiry] = useState(false)
     const [passwordProtect, setPasswordProtect] = useState(false)
     const [password, setPassword] = useState("")
+    const [savedPassword, setSavedPassword] = useState("")
     const [passwordShow, setPasswordShow] = useState(false)
 
     const [isFocused, setIsFocused] = useState(false);
     const [passwordError, setPasswordError] = useState(false);
 
+    // default permission dropdown state
+    const [permission, setPermission] = useState("viewer")
+
+    //  this state for when user update user permisison on the child item
+    const [inheritedConfirmModal, setInheritedConfirmModal] = useState(null)
+
 
 
     //  this state is used for the suggested user show in this modal when user click on the input
     const [inputFocused, setInputFocused] = useState(false)
+    const suggestedPageRef = useRef(1)
+    const [loadingMore, setLoadingMore] = useState(false)
+    const [activeIndex, setActiveIndex] = useState(-1)
+    const itemRefs = useRef([])
+
+    useEffect(() => {
+        setActiveIndex(-1)
+    }, [searchTerm, inputFocused, searchResults])
+
+    useEffect(() => {
+        if (activeIndex >= 0) {
+            itemRefs.current[activeIndex]?.scrollIntoView({ block: "nearest" })
+        }
+    }, [activeIndex])
+
+
+    //  here this two state for the if anyy existing copy link exist 
+    const [existingLinkInfo, setExistingLinkInfo] = useState(null);
+    const [loadingLinkInfo, setLoadingLinkInfo] = useState(true);
 
 
     // automatically fetch the existing shared users for this item when modal opens
@@ -95,6 +122,58 @@ function ShareUserModal({ data, onClose }) {
         // clear when modal unmounts / itemId changes
         return () => clearSharedUsers();
     }, [itemId]);
+
+
+    //  this use effect for the fetching the exsiting copy link if any exist in backend
+    useEffect(() => {
+        if (!itemId) return
+
+        const fetchLinkInfo = async () => {
+            try {
+                const res = await axiosApi.get(`/links/info?item_id=${itemId}`)
+                if (res.data?.success && res.data?.exists) {
+                    const info = res.data.data
+                    setExistingLinkInfo(info)
+
+                    // Pre-fill dropdowns and checkboxes based on existing settings
+                    setAccessType(info.is_public ? "public" : "restricted")
+                    setPasswordProtect(Boolean(info.has_password))
+                    if (info.password) {
+                        setPassword(info.password)
+                        setSavedPassword(info.password)
+                    } else {
+                        setPassword("")
+                        setSavedPassword("")
+                    }
+
+                    if (info.expire_date) {
+                        setLinkExpiry(true)
+                        const expireDate = new Date(info.expire_date);
+                        const now = new Date();
+                        const diffTime = Math.max(0, expireDate - now);
+                        const diffMinutes = Math.round(diffTime / (1000 * 60));
+                        const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+                        const matchedOption = expiryDayOption.find(opt => parseInt(opt.value) === diffDays)
+                            || expiryDayOption.find(opt => parseInt(opt.value) >= diffDays)
+                            || expiryDayOption[0];
+                        setExpiryDay(matchedOption)
+                    }
+                } else {
+                    setExistingLinkInfo(null)
+                    setAccessType("restricted")
+                    setPasswordProtect(false)
+                    setLinkExpiry(false)
+                    setExpiryDay(null)
+                }
+            } catch (err) {
+                console.error("Error fetching existing link info:", err);
+            }
+        }
+
+        fetchLinkInfo()
+
+    }, [itemId])
+
 
 
     // run search api automatically when user types in the search bar
@@ -117,10 +196,17 @@ function ShareUserModal({ data, onClose }) {
 
     //  when share user modal opens so thsi will fetch suggested users here
     useEffect(() => {
-        getSuggestedUsersApi()
-    }, [])
+        if (!itemId) return
+        suggestedPageRef.current = 1
+        getSuggestedUsersApi(itemId, 1)
+    }, [itemId])
 
 
+
+    //  thi fucntino is used for the when user change the permision to child item 
+    const handleConfirmInheritedChange = async () => {
+        if (!inheritedConfirmModal) return
+    }
 
     // Helper to generate a random 8-character numeric password to bypass the strict backend validator!
     const generateRandomPassword = () => {
@@ -153,14 +239,20 @@ function ShareUserModal({ data, onClose }) {
     // checks if the currently logged-in user is the owner of the item
     const isOwner = owner && user && String(owner.userId) === String(user._id);
 
-
+console.log("data : ", data)
+console.log("allSelectedItems[0]:",allSelectedItems[0])
+console.log("sharedWith : ",sharedWith)
     // Get current user's permission for this item
     const currentUserEntry = sharedWith.find(s => String(s.userId || s._id) === String(user?._id))
-    const currentPermission = data?.permission || allSelectedItems[0]?.permission || (isOwner ? "owner" : currentUserEntry?.permission)
-
+    console.log("currentUserEntry :",currentUserEntry)
+    const currentPermission = sharedUsersData.permission
+    || data?.permission
+    || allSelectedItems[0]?.permission
+    || (isOwner ? "owner" : currentUserEntry?.permission)
+console.log("currentPermission : ", currentPermission)
     // Allow sharing if user is Owner OR Editor
     const canShare = isOwner || currentPermission === "editor" || currentPermission === "owner";
-
+console.log("canShare :",canShare)
 
     // Fixed: React-Select portal click
     const handleOutsideClick = (e) => {
@@ -185,56 +277,74 @@ function ShareUserModal({ data, onClose }) {
         }
     }
 
+    //  this will help in the ading the all users in the copy link 
+    const buildUpdatedUserIds = ({ add = null, remove = null } = {}) => {
+        let ids = [
+            ...sharedWith.map(s => s.userId || s._id),
+            ...Array.from(selectedUsers.keys()),
+            owner?.userId || owner?._id,
+            user?._id
+        ].filter(Boolean)
+        if (add) ids.push(add)
+        if (remove) ids = ids.filter(id => String(id) !== String(remove))
+        return Array.from(new Set(ids.map(id => String(id))))
+    }
 
     // adds a user from search results to the selected list
-    const handleSelectUser = (user) => {
+    const handleSelectUser = async (user) => {
+        // Bypass the pending stage and instantly share
+        /*
         setSelectedUsers(prev => {
             const next = new Map(prev)
             // default their permission to whatever is in the main dropdown
             next.set(user._id, { user, permission })
             return next
         })
+        */
+
         // clear search box after selecting
         setSearchTerm("")
         setSearchResults([])
         setInputFocused(false)
+        setActiveIndex(-1)
+        document.activeElement?.blur()
+
+        //  when user is selected from search bar so instant share with the other user
+        const itemIds = allSelectedIds.length > 1 ? allSelectedIds : [itemId]
+        await shareItemApi(itemIds, [user._id], "viewer")
+
+        // instantly refresh the modal's sharedWith list so they appear in the main list
+        // (Handled by the share_added socket listener now to save API calls)
+
+        if (existingLinkInfo && accessType === "restricted") {
+            await saveLinkSettings({
+                user_ids: buildUpdatedUserIds({ add: user._id }),
+                skipToast: true
+            })
+        }
     }
 
 
     // removes a user from the newly selected list (clicking the 'X' button)
-    const handleRemoveSelected = (userId) => {
+    const handleRemoveSelected = async (userId) => {
         setSelectedUsers(prev => {
             const next = new Map(prev)
             next.delete(userId)
             return next
         })
-    }
 
-
-    // final share action when the "Share" button is clicked
-    const handleShare = async () => {
-        if (selectedUsers.size === 0) return
-
-        const viewerIds = []
-        const editorIds = []
-
-        // separate the selected users by their chosen permissions
-        selectedUsers.forEach(({ user, permission }) => {
-            if (permission === "viewer") viewerIds.push(user._id)
-            else editorIds.push(user._id)
-        })
-
-        // handle both single and multi-select sharing
+        //  instant remove user when user close icon click
         const itemIds = allSelectedIds.length > 1 ? allSelectedIds : [itemId]
+        await unshareItemApi(itemIds, [userId])
 
-        // trigger the backend share APIs for each role
-        if (viewerIds.length > 0) await shareItemApi(itemIds, viewerIds, "viewer")
-        if (editorIds.length > 0) await shareItemApi(itemIds, editorIds, "editor")
-
-        // clear the selection and close the modal
-        setSelectedUsers(new Map())
-        onClose()
+        if (existingLinkInfo && accessType === "restricted") {
+            await saveLinkSettings({
+                user_ids: buildUpdatedUserIds({ remove: userId }),
+                skipToast: true
+            })
+        }
     }
+
 
 
     // remove a user completely from the shared access list
@@ -242,68 +352,162 @@ function ShareUserModal({ data, onClose }) {
         const itemIds = allSelectedIds.length > 1 ? allSelectedIds : [itemId]
         await unshareItemApi(itemIds, [userId])
         // socket event (share_removed) will trigger loadSharedUsers automatically via context
+
+        if (existingLinkInfo && accessType === "restricted") {
+            await saveLinkSettings({
+                user_ids: buildUpdatedUserIds({ remove: userId }),
+                skipToast: true
+            })
+        }
     }
 
 
+    //  so here if link goes from private to the public here so null all public features
+    const handleAccessTypeChange = (newType) => {
+        setAccessType(newType)
+        if (newType === "public") {
+            setLinkExpiry(false)
+            setExpiryDay(null)
+            setPasswordProtect(false)
+            setPassword("")
+        }
+    }
 
-
-    //  this function is used when user copies  the link of shareing 
-    const handleCopyLink = async () => {
+    //  this fucntion is used for updaet copy link feature when it is update
+    const saveLinkSettings = async (overrides = {}) => {
         try {
-            if (allSelectedItems.length === 0) return
+            if (allSelectedItems.length === 0) return;
 
-            const generatedLinks = generateShareLinks(allSelectedItems)
+            //  if any thing updaet here so updaet other wise defualt value
+            const targetAccessType = overrides.accessType ?? accessType;
+            const targetLinkExpiry = overrides.linkExpiry ?? linkExpiry;
+            const targetExpiryDay = overrides.expiryDay ?? expiryDay;
+            const targetPasswordProtect = overrides.passwordProtect ?? passwordProtect;
+            const targetPassword = overrides.password ?? savedPassword;
+
+            let generatedLinks = []
+
+            //  if here links already exist then other wise dotn execute this block  
+            if (allSelectedItems.length === 1 && existingLinkInfo && existingLinkInfo.link && String(existingLinkInfo.item_id) === String(allSelectedItems[0]._id)) {
+                generatedLinks = [{
+                    link: existingLinkInfo.link,
+                    type: allSelectedItems[0].type,
+                    item_id: allSelectedItems[0]._id
+                }]
+            } else {
+                generatedLinks = generateShareLinks(allSelectedItems);
+            }
+
 
             const payload = {
                 links: generatedLinks,
-                is_public: accessType === "public",
-                user_ids: accessType === "restricted" ? (() => {
+                is_public: targetAccessType === "public",
+                user_ids: targetAccessType === "restricted" ? (overrides.user_ids ?? (() => {
                     const ids = [
                         ...sharedWith.map(s => s.userId),
                         ...Array.from(selectedUsers.keys()),
                         user._id
                     ];
                     return ids.length > 0 ? ids : [user._id];
-                })() : []
-
+                })()) : []
             };
 
-            // Only attach expire_date if they actually ticked the box
-            if (linkExpiry && expiryDay) {
+
+            if (targetLinkExpiry && targetExpiryDay) {
                 const date = new Date();
-                date.setDate(date.getDate() + parseInt(expiryDay.value));
-                // Format directly to YYYY-MM-DD for the strict validator
-                const yyyy = date.getFullYear();
-                const mm = String(date.getMonth() + 1).padStart(2, '0');
-                const dd = String(date.getDate()).padStart(2, '0');
-                payload.expire_date = `${yyyy}-${mm}-${dd}`;
+                date.setDate(date.getDate() + parseInt(targetExpiryDay.value));
+                payload.expire_date = date.toISOString();
+            } else {
+                payload.expire_date = "";
             }
 
-            // Only attach password if they actually ticked the box
-            if (passwordProtect) {
-                const isPasswordValid = [
-                    /[A-Z]/.test(password),
-                    /[a-z]/.test(password),
-                    /[0-9]/.test(password),
-                    /[!@#$%^&*?]/.test(password),
-                    password.length >= 8,
-                ].every(Boolean);
 
-                if (!password || !isPasswordValid) {
-                    setPasswordError(true);
-                    return;
+            if (targetAccessType === "public") {
+                if (targetPasswordProtect) {
+                    if (!targetPassword) {
+                        setPasswordError(true);
+                        return;
+                    }
+                    if (targetPassword) {
+                        const isPasswordValid = [
+                            /[A-Z]/.test(targetPassword),
+                            /[a-z]/.test(targetPassword),
+                            /[0-9]/.test(targetPassword),
+                            /[!@#$%^&*?]/.test(targetPassword),
+                            targetPassword.length >= 8,
+                        ].every(Boolean);
+                        if (!isPasswordValid) {
+                            setPasswordError(true);
+                            return;
+                        }
+                        payload.password = targetPassword;
+                    }
+                } else {
+                    payload.password = "";
                 }
-                payload.password = password;
             }
 
-            await axiosApi.post("/links/store", payload)
-            const linksText = generatedLinks.map(l => l.link).join(", ")
-            await navigator.clipboard.writeText(linksText)
-            showNotification("Link Copied", "success", "bottom-center")
+            const response = await axiosApi.post("/links/store", payload);
+
+            if (response.data?.success && response.data?.data?.[0]) {
+                const saved = response.data.data[0];
+                if (saved.password) {
+                    setSavedPassword(saved.password);
+                }
+                setExistingLinkInfo({
+                    _id: saved._id,
+                    item_id: saved.item_id,
+                    token: saved.token,
+                    link: saved.link,
+                    type: saved.type,
+                    is_public: saved.is_public,
+                    has_password: Boolean(saved.password),
+                    expire_date: saved.expire_date,
+                    is_expired: saved.is_expired,
+                });
+
+                if (existingLinkInfo && !overrides.skipToast) {
+                    showNotification("Access updated", "success", "bottom-center");
+                }
+            }
+
+            return generatedLinks;
+
         } catch (error) {
-            console.error("Error generating/copying link:", error)
+            console.error("Error saving link settings:", error);
+            showNotification("Failed to update link", "error", "bottom-center");
+            return null;
         }
     }
+
+    // copy link handler
+    // copy link handler
+    const handleCopyLink = async () => {
+        if (accessType === "public" && passwordProtect) {
+            // second time+: link already exists, so only the CONFIRMED (savedPassword) counts.
+            // if the visible field doesn't match it, user edited/cleared it without clicking "Set password" — block.
+            if (existingLinkInfo && password !== savedPassword) {
+                setPasswordError(true);
+                return;
+            }
+            // first time: no link yet, so whatever's typed must at least be non-empty
+            if (!existingLinkInfo && !password) {
+                setPasswordError(true);
+                return;
+            }
+        }
+
+        const generatedLinks = await saveLinkSettings({ skipToast: true });
+        if (!generatedLinks) return;
+
+        const linksText = generatedLinks.map(l => l.link).join(", ");
+        await navigator.clipboard.writeText(linksText);
+        showNotification("Link Copied", "success", "bottom-center");
+    };
+
+
+
+
 
     // options for brand new users you are adding
     const shareFileEditOptions = [
@@ -318,16 +522,29 @@ function ShareUserModal({ data, onClose }) {
         { value: "remove", label: "Remove from shared" },
     ];
 
+    // options for users with inherited access (disabled remove option)
+    const shareFileEditOptionsInherited = [
+        { value: "viewer", label: "Viewer" },
+        { value: "editor", label: "Editor" },
+        { value: "remove", label: "Remove from shared", isDisabled: true },
+    ];
+
     // link expiry preset options
     const expiryDayOption = [
+        // { value: "2m", label: "2 Minutes (Test)" },
         { value: "1", label: "1 Day" },
         { value: "7", label: "7 Day" },
         { value: "30", label: "30 Day" },
-
     ];
 
     if (loading) {
-        return <div className="p-3">Loading...</div>;
+        return (
+            <div className="loader-wrapper-box p-4">
+                <div className="cma-messages-are-loader-wrapper">
+                    <span className="loader"></span>
+                </div>
+            </div>
+        );
     }
     // Filter out users who already have access or are currently selected
     const filterOutExistingUsers = (usersToFilter) => {
@@ -341,6 +558,42 @@ function ShareUserModal({ data, onClose }) {
 
     const filteredSuggestedUsers = filterOutExistingUsers(suggestedUsers);
     const filteredSearchResults = filterOutExistingUsers(searchResults);
+
+    const visibleUsers = (inputFocused && canShare && searchTerm.trim().length === 0)
+        ? filteredSuggestedUsers
+        : (searchTerm.trim().length >= 2 ? filteredSearchResults : [])
+
+    const handleSuggestedScroll = async (e) => {
+        const el = e.currentTarget
+        const nearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 20
+        if (!nearBottom || !suggestedHasMore || loadingMore) return
+
+        setLoadingMore(true)
+        try {
+            const next = suggestedPageRef.current + 1
+            const result = await getSuggestedUsersApi(itemId, next)
+            if (result) suggestedPageRef.current = next
+        } finally {
+            setLoadingMore(false)
+        }
+    }
+
+    const handleKeyDown = (e) => {
+        if (visibleUsers.length === 0) return
+
+        if (e.key === "ArrowDown") {
+            e.preventDefault()
+            setActiveIndex(prev => (prev + 1) % visibleUsers.length)
+        } else if (e.key === "ArrowUp") {
+            e.preventDefault()
+            setActiveIndex(prev => (prev <= 0 ? visibleUsers.length - 1 : prev - 1))
+        } else if (e.key === "Enter" && activeIndex >= 0 && visibleUsers[activeIndex]) {
+            e.preventDefault()
+            handleSelectUser(visibleUsers[activeIndex])
+        } else if (e.key === "Escape") {
+            setInputFocused(false)
+        }
+    }
 
 
 
@@ -384,22 +637,33 @@ function ShareUserModal({ data, onClose }) {
                                             placeholder="Search by name or email..."
                                             value={searchTerm}
                                             onChange={(e) => setSearchTerm(e.target.value)}
+                                            onKeyDown={handleKeyDown}
                                             onFocus={() => setInputFocused(true)}
+                                            onClick={() => setInputFocused(true)}
                                             onBlur={() => setTimeout(() => setInputFocused(false), 200)}
                                             className='custom-form-control h-36'
                                             disabled={!canShare}
                                         />
                                     </div>
                                 </Form.Group>
-                                <h3 class="modal-title-sub">Shared with people</h3>
+                                <h3 className="modal-title-sub">Shared with people</h3>
 
-                                {/* show suggested users on focus with empty input */}
-                                {inputFocused && canShare && searchTerm.trim().length === 0 && filteredSuggestedUsers.length > 0 && (
-                                    <div className="input-dd">
+                                {/* Show the dropdown list for suggested users or search results */}
+                                {visibleUsers.length > 0 && (
+                                    <div
+                                        className="input-dd"
+                                        onScroll={handleSuggestedScroll}
+                                        onMouseDown={(e) => e.preventDefault()}
+                                    >
                                         <ul className="mb-0 py-2">
-                                            {/* mapping filtered suggested users */}
-                                            {filteredSuggestedUsers.slice(0, 5).map(user => (
-                                                <li key={user._id} onMouseDown={() => handleSelectUser(user)}>
+                                            {visibleUsers.map((user, index) => (
+                                                <li
+                                                    key={user._id}
+                                                    ref={el => itemRefs.current[index] = el}
+                                                    className={index === activeIndex ? "active-user" : ""}
+                                                    onMouseEnter={() => setActiveIndex(index)}
+                                                    onMouseDown={() => handleSelectUser(user)}
+                                                >
                                                     <div className="share-user-list-dd d-flex align-items-center cursor-pointer p-2">
                                                         <div className='profile-single-box'>
                                                             <UserAvatar user={user} />
@@ -411,30 +675,13 @@ function ShareUserModal({ data, onClose }) {
                                                     </div>
                                                 </li>
                                             ))}
-                                        </ul>
-                                    </div>
-                                )}
-                                {/* Show the dropdown list if we have search results */}
-                                {filteredSearchResults.length > 0 && searchTerm.trim().length >= 2 && (
-                                    <div className="input-dd">
-                                        <ul className="mb-0 py-2">
-                                            {/* mapping filtered search results */}
-                                            {filteredSearchResults.map(user => (
-                                                <li key={user._id} onMouseDown={() => handleSelectUser(user)}>
-                                                    <div className="share-user-list-dd d-flex align-items-center cursor-pointer p-2">
-                                                        {/* <InteractiveIcon
-                                                                defaultIcon={`${BASE_URL}${user.profilePic}`}
-                                                                width={48}
-                                                                height={48}
-                                                            /> */}
-                                                        <UserAvatar user={user} />
-                                                        <div className="ms-2 ps-1">
-                                                            <p className="user-name mb-0">{user.name}</p>
-                                                            <p className="user-email mb-0 small text-muted">{user.email}</p>
-                                                        </div>
+                                            {loadingMore && (
+                                                <li className="d-flex justify-content-center align-items-center py-2">
+                                                    <div className="cma-messages-are-loader-wrapper" style={{ transform: 'scale(0.8)', transformOrigin: 'center' }}>
+                                                        <span className="loader"></span>
                                                     </div>
                                                 </li>
-                                            ))}
+                                            )}
                                         </ul>
                                     </div>
                                 )}
@@ -445,7 +692,8 @@ function ShareUserModal({ data, onClose }) {
                                 <div className="share-user-shade2"></div>
 
                                 {/* Show the list of NEW users waiting to be shared */}
-                                {selectedUsers.size > 0 && (
+                                {/* [PENDING STAGE HIDDEN] */}
+                                {false && selectedUsers.size > 0 && (
                                     <>
                                         {/* mapping selected pending users */}
 
@@ -475,17 +723,15 @@ function ShareUserModal({ data, onClose }) {
                                                                     isSearchable={false}
                                                                     showIndicatorSeparator={false}
                                                                     value={shareFileEditOptions.find(opt => opt.value === permission)}
-                                                                    styles={{
-                                                                        control: (base) => ({ ...base, minWidth: '130px' }),
-                                                                        menu: (base) => ({ ...base, width: 'max-content', minWidth: '100%', right: 0 }),
-                                                                        option: (base) => ({ ...base, whiteSpace: 'nowrap' })
-                                                                    }}
-                                                                    onChange={(val) => {
+                                                                    onChange={async (val) => {
                                                                         setSelectedUsers(prev => {
                                                                             const next = new Map(prev);
                                                                             next.set(userId, { user, permission: val.value });
                                                                             return next;
                                                                         });
+                                                                        //  when user permission change so instant change
+                                                                        const itemIds = allSelectedIds.length > 1 ? allSelectedIds : [itemId]
+                                                                        await shareItemApi(itemIds, [userId], val.value)
                                                                     }}
                                                                     placeholder="Select permission"
                                                                 />
@@ -524,15 +770,39 @@ function ShareUserModal({ data, onClose }) {
                                         </li>
                                     )}
 
-                                    {/* mapping existing shared users */}
-                                    {/* {sharedWith.map(s => ( */}
-                                    {/* mapping existing shared users */}
+                                    {/* her ethis is for shwoing me the editor info */}
+                                    {inheritedFolderOwner && (String(inheritedFolderOwner.userId || inheritedFolderOwner._id)) !== String(owner?.userId || owner?._id) && (
+                                        <li>
+                                            <div className="share-user-list d-flex justify-content-between align-items-center">
+                                                <div className="d-flex align-items-center">
+                                                    <div className="share-user-profilepic">
+                                                        <UserAvatar user={inheritedFolderOwner} />
+                                                    </div>
+                                                    <div className="ms-2 ps-1">
+                                                        <p className="user-name mb-0">{inheritedFolderOwner.name}</p>
+                                                        <p className="user-email mb-0 small text-muted">{inheritedFolderOwner.email}</p>
+                                                    </div>
+                                                </div>
+                                                <p className="owner-tag mb-0">Folder Owner</p>
+                                            </div>
+                                        </li>
+                                    )}
+
+                                    {/* mapping existing shared users - sorted so logged-in user (You) appears right after Owner / Folder Owner */}
                                     {sharedWith
-                                        .filter(s => !owner || String(s.userId) !== String(owner.userId))
+                                        .filter(s => (!owner || String(s.userId) !== String(owner.userId)) && !selectedUsers.has(String(s.userId)))
+                                        .reverse() // Reverse so newest added users appear at the top
+                                        .sort((a, b) => {
+                                            const isASelf = String(a.userId) === String(user?._id);
+                                            const isBSelf = String(b.userId) === String(user?._id);
+                                            if (isASelf) return -1;
+                                            if (isBSelf) return 1;
+                                            return 0;
+                                        })
                                         .map(s => {
                                             const isUserOwner = String(s.userId) === String(owner?.userId);
                                             const isUserSelf = String(s.userId) === String(user?._id);
-                                            const isDisabled = s.inherited || !canShare || (!isOwner && (isUserOwner || isUserSelf));
+                                            const isDisabled = !canShare || (!isOwner && (isUserOwner || isUserSelf));
 
                                             return (
                                                 <li key={s.userId}>
@@ -547,34 +817,61 @@ function ShareUserModal({ data, onClose }) {
                                                             </div>
                                                         </div>
                                                         <div className="d-flex align-items-center gap-2">
-                                                            <Form.Group
-                                                                className="m-0"
-                                                                onClick={(e) => e.stopPropagation()}
-                                                                style={{ opacity: isDisabled ? 0.5 : 1, pointerEvents: isDisabled ? 'none' : 'auto' }}
-                                                            >
-                                                                <CustomSelect
-                                                                    isDisabled={isDisabled}
-                                                                    options={shareFileEditOptionsTwo}
-                                                                    isSearchable={false}
-                                                                    showIndicatorSeparator={false}
-                                                                    value={shareFileEditOptionsTwo.find(opt => opt.value === s.permission)}
-                                                                    styles={{
-                                                                        control: (base) => ({ ...base, minWidth: '130px' }),
-                                                                        menu: (base) => ({ ...base, width: 'max-content', minWidth: '100%', right: 0 }),
-                                                                        option: (base) => ({ ...base, whiteSpace: 'nowrap' })
-                                                                    }}
-                                                                    onChange={async (val) => {
-                                                                        if (val.value === "remove") {
-                                                                            handleUnshare(s.userId);
-                                                                            return;
-                                                                        }
-                                                                        const itemIdsToUpdate = allSelectedIds.length > 1 ? allSelectedIds : [itemId];
-                                                                        await shareItemApi(itemIdsToUpdate, [s.userId], val.value);
-                                                                        // sharedUsersData refreshes automatically via the share_added socket event in context
-                                                                    }}
-                                                                    placeholder="Select permission"
-                                                                />
-                                                            </Form.Group>
+                                                            {isDisabled ? (
+                                                                <p className="owner-tag mb-0" style={{ textTransform: "capitalize" }}>
+                                                                    {s.permission === "editor" ? "Editor" : "Viewer"}
+                                                                </p>
+                                                            ) : (
+                                                                <Form.Group
+                                                                    className="m-0"
+                                                                    onClick={(e) => e.stopPropagation()}
+                                                                >
+                                                                    <CustomSelect
+                                                                        options={(s.inherited || s.hasParentAccess) ? shareFileEditOptionsInherited : shareFileEditOptionsTwo}
+                                                                        isSearchable={false}
+                                                                        showIndicatorSeparator={false}
+                                                                        value={((s.inherited || s.hasParentAccess) ? shareFileEditOptionsInherited : shareFileEditOptionsTwo).find(opt => opt.value === s.permission)}
+                                                                        isOptionDisabled={(option) => option.isDisabled}
+                                                                        styles={{
+                                                                            control: (base) => ({ ...base, minWidth: '130px' }),
+                                                                            menu: (base) => ({ ...base, width: 'max-content', minWidth: '100%', right: 0 }),
+                                                                            option: (base, state) => ({
+                                                                                ...base,
+                                                                                whiteSpace: 'nowrap',
+                                                                                opacity: state.isDisabled ? 0.5 : 1,
+                                                                                cursor: state.isDisabled ? 'not-allowed' : 'pointer'
+                                                                            })
+                                                                        }}
+                                                                        onChange={async (val) => {
+                                                                            if (val.value === s.permission) return;
+                                                                            // Open InheritedShareModal via ModalManager
+
+                                                                            if (val.value === "remove") {
+                                                                                handleUnshare(s.userId);
+                                                                                return;
+                                                                            }
+                                                                            const itemIdsToUpdate = allSelectedIds.length > 1 ? allSelectedIds : [itemId];
+
+                                                                            //  if we are in the nested child of any root folder so open this modal for user conformation
+                                                                            if (inheritedFolderOwner) {
+                                                                                setModal({
+                                                                                    type: "ShareInheritedModel", // Opens your global modal
+                                                                                    data: {
+                                                                                        user: s,
+                                                                                        newPermission: val.value,
+                                                                                        itemIdsToUpdate: itemIdsToUpdate,
+                                                                                        folderName: allSelectedItems[0]?.name || allSelectedItems[0]?.originalname
+                                                                                    }
+                                                                                });
+                                                                                return; // Stop here and wait for the user to click Confirm in the modal
+                                                                            }
+
+                                                                            await shareItemApi(itemIdsToUpdate, [s.userId], val.value, true);
+                                                                        }}
+                                                                        placeholder="Select permission"
+                                                                    />
+                                                                </Form.Group>
+                                                            )}
                                                         </div>
                                                     </div>
                                                 </li>
@@ -586,565 +883,31 @@ function ShareUserModal({ data, onClose }) {
 
 
 
-                        {/* create link for MOBILE */}
-                        {isMobile ? (
-                            <div className="create-link-section create-link-section-mobile" style={{ pointerEvents: !canShare ? 'none' : 'auto', opacity: !canShare ? 0.6 : 1 }}>
-                                <div className="create-link-section-header">
-                                    <h3 className="modal-title-sub">Create Link</h3>
-                                </div>
-
-                                {/* Access Type */}
-                                <div className="create-link-items">
-                                    <div className="access-single-box">
-                                        <div className="access-single-wrapper">
-                                            <div className={`access-single-icon ${accessType === "public" ? "public-link" : ""}`}>
-                                                <InteractiveIcon
-                                                    defaultIcon={accessType === "public" ? publicLinkIcon : passwordIcon}
-                                                    width={24}
-                                                    alt=""
-                                                />
-                                            </div>
-                                            <div className="access-single-contetn">
-                                                <div className="access-single-dropdown-box">
-                                                    <span className="access-single-name">
-                                                        {accessType === "restricted" ? "People with access" : "Public link"}
-                                                    </span>
-                                                    <Dropdown className="magic-dropdown dropdown-no-arrow">
-                                                        <Dropdown.Toggle as="div" className="magic-dropdown__toggle">
-                                                            <span className="magic-dropdown__chevron-wrapper">
-                                                                <InteractiveIcon
-                                                                    defaultIcon={arrowDownIcon}
-                                                                    width={20}
-                                                                    alt=""
-                                                                    className="magic-dropdown__chevron-icon"
-                                                                />
-                                                            </span>
-                                                        </Dropdown.Toggle>
-
-                                                        <Dropdown.Menu align="start" className="magic-dropdown__menu">
-                                                            {/* Hide 'restricted' option if already restricted */}
-                                                            {accessType !== "restricted" && (
-                                                                <Dropdown.Item
-                                                                    className="magic-dropdown__item"
-                                                                    onClick={() => setAccessType("restricted")}
-                                                                >
-                                                                    People with access
-                                                                </Dropdown.Item>
-                                                            )}
-                                                            {/* Hide 'public' option if already public */}
-                                                            {accessType !== "public" && (
-                                                                <Dropdown.Item
-                                                                    className="magic-dropdown__item"
-                                                                    onClick={() => setAccessType("public")}
-                                                                >
-                                                                    Public link
-                                                                </Dropdown.Item>
-                                                            )}
-                                                        </Dropdown.Menu>
-                                                    </Dropdown>
-                                                </div>
-                                                <span className="access-single-sun-name">
-                                                    {accessType === "restricted"
-                                                        ? "People listed above have access."
-                                                        : "Anyone with the link."}
-                                                </span>
-                                            </div>
-                                        </div>
-                                        {accessType === "public" && (
-                                            <p className="modal-tag">View & Download</p>
-                                        )}
-                                    </div>
-                                </div>
-
-
-                                {/* Link Expiration Section: ONLY shows if the access type is set to Public */}
-                                {accessType === "public" && (
-                                    <div className={`create-link-items ${linkExpiry ? "" : "disable"}`}>
-                                        <div className="create-link-items-content">
-                                            <div className="form-check-group m-0">
-                                                <label htmlFor="Link-expirtation" style={{ cursor: 'pointer' }}>
-                                                    <InteractiveIcon defaultIcon={checkboxIcon} alt="" />
-                                                </label>
-                                                <input
-                                                    type="checkbox"
-                                                    className="checkbox"
-                                                    id="Link-expirtation"
-                                                    checked={linkExpiry}
-                                                    onChange={() => {
-                                                        // If unticked, clear the expiry date to null
-                                                        if (linkExpiry) {
-                                                            setExpiryDay(null)
-                                                        } else {
-                                                            // If ticked, set the default to '1 Day'
-                                                            setExpiryDay(expiryDayOption[0])
-                                                        }
-                                                        // toggle the checkbox boolean
-                                                        setLinkExpiry(prev => !prev)
-                                                    }}
-                                                />
-                                                <span
-                                                    className='form-label m-0'
-                                                    onClick={() => {
-                                                        if (linkExpiry) {
-                                                            setExpiryDay(null)
-                                                        } else {
-                                                            setExpiryDay(expiryDayOption[0])
-                                                        }
-                                                        setLinkExpiry(prev => !prev)
-                                                    }}
-                                                    style={{ cursor: 'pointer' }}
-                                                >
-                                                    Link expirtation
-                                                </span>
-                                            </div>
-
-                                            <div className="link-expirtation-day" onClick={(e) => e.stopPropagation()}>
-                                                {/* If checkbox is NOT ticked, just show simple text */}
-                                                {!linkExpiry ? (
-                                                    <p className="modal-tag">No expiration</p>
-                                                ) : (
-                                                    <Form.Group className="mb-0">
-                                                        <CustomSelect
-                                                            options={expiryDayOption}
-                                                            value={expiryDay}
-                                                            onChange={(val) => setExpiryDay(val)}
-                                                            placeholder="No expiration"
-                                                            showIndicatorSeparator={false}
-                                                            isSearchable={false}
-                                                            className="expiry-select"
-                                                        />
-                                                    </Form.Group>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Password Protect Section: ONLY shows if the access type is set to Public */}
-                                {accessType === "public" && (
-                                    <div className={`create-link-items ${passwordProtect ? "" : "disable"}`}>
-                                        <div className="create-link-items-content">
-                                            <div className="form-check-group m-0" onClick={generateRandomPassword}>
-                                                <label htmlFor="password-protect" style={{ cursor: 'pointer' }}>
-                                                    <InteractiveIcon defaultIcon={checkboxIcon} alt="" />
-                                                </label>
-                                                <input
-                                                    type="checkbox"
-                                                    className="checkbox"
-                                                    id="password-protect"
-                                                    checked={passwordProtect}
-                                                    onChange={() => {
-                                                        if (passwordProtect) setPassword("")
-                                                        setPasswordError(false)
-                                                        setPasswordProtect(prev => !prev)
-                                                    }}
-                                                />
-                                                <span
-                                                    className='form-label m-0'
-                                                    onClick={() => {
-                                                        if (passwordProtect) setPassword("")
-                                                        setPasswordError(false)
-                                                        setPasswordProtect(prev => !prev)
-                                                    }}
-                                                    style={{ cursor: 'pointer' }}
-                                                >
-                                                    Password protect
-                                                </span>
-                                            </div>
-
-
-                                        </div>
-                                        <div className="link-expirtation-day" onClick={(e) => e.stopPropagation()}>
-                                            {!passwordProtect ? (
-                                                <p className="modal-tag d-none">No password</p>
-                                            ) : (
-                                                <>
-                                                    <Form.Group className="mb-0 position-relative" controlId="formPassword">
-
-                                                        {/* Requirements box + strength bar */}
-                                                        {password.length > 0 && (() => {
-                                                            const checks = [
-                                                                /[A-Z]/.test(password),
-                                                                /[a-z]/.test(password),
-                                                                /[0-9]/.test(password),
-                                                                /[!@#$%^&*?]/.test(password),
-                                                                password.length >= 8,
-                                                            ];
-                                                            const passed = checks.filter(Boolean).length;
-                                                            const allPassed = checks.every(Boolean);
-                                                            const strengthClass = passed <= 2 ? "weak" : passed <= 4 ? "medium" : "strong";
-
-                                                            return (
-                                                                <>
-                                                                    {/* Requirements box */}
-                                                                    {!allPassed && isFocused && (
-                                                                        <div className="pwd-requirements-box">
-                                                                            <p className="pwd-req-title">Password requirements</p>
-                                                                            <ul className="pwd-req-list">
-                                                                                <li className={`pwd-req-item ${checks[0] ? "pass" : "fail"}`}>
-                                                                                    <span className="pwd-req-icon">{checks[0] ? "✓" : "✕"}</span>
-                                                                                    Password must include at least one uppercase letter.
-                                                                                </li>
-                                                                                <li className={`pwd-req-item ${checks[1] ? "pass" : "fail"}`}>
-                                                                                    <span className="pwd-req-icon">{checks[1] ? "✓" : "✕"}</span>
-                                                                                    Password must include at least one lowercase letter.
-                                                                                </li>
-                                                                                <li className={`pwd-req-item ${checks[2] ? "pass" : "fail"}`}>
-                                                                                    <span className="pwd-req-icon">{checks[2] ? "✓" : "✕"}</span>
-                                                                                    Password must include at least one number.
-                                                                                </li>
-                                                                                <li className={`pwd-req-item ${checks[3] ? "pass" : "fail"}`}>
-                                                                                    <span className="pwd-req-icon">{checks[3] ? "✓" : "✕"}</span>
-                                                                                    Password must include at least one special character.
-                                                                                </li>
-                                                                                <li className={`pwd-req-item ${checks[4] ? "pass" : "fail"}`}>
-                                                                                    <span className="pwd-req-icon">{checks[4] ? "✓" : "✕"}</span>
-                                                                                    Password must be at least eight characters long.
-                                                                                </li>
-                                                                            </ul>
-                                                                        </div>
-                                                                    )}
-                                                                </>
-                                                            );
-                                                        })()}
-
-                                                        {/* Input */}
-                                                        <div className={`form-control-single-icon${passwordError ? " has-error" : ""}`}>
-                                                            <InteractiveIcon
-                                                                defaultIcon={passwordShow ? viewIcon : viewHideIcon}
-                                                                alt=""
-                                                                className="form-right-icon"
-                                                                width={24}
-                                                                onClick={() => setPasswordShow(!passwordShow)}
-                                                            />
-                                                            <Form.Control
-                                                                type={passwordShow ? "text" : "password"}
-                                                                className={`custom-form-control h-34${passwordError ? " is-invalid" : ""}`}
-                                                                value={password}
-                                                                onChange={(e) => {
-                                                                    setPassword(e.target.value);
-                                                                    setPasswordError(false);
-                                                                }}
-                                                                onFocus={() => setIsFocused(true)}
-                                                                onBlur={() => setIsFocused(false)}
-                                                            />
-                                                            {/* Strength bar — input ke niche */}
-                                                            {password.length > 0 && (() => {
-                                                                const checks = [
-                                                                    /[A-Z]/.test(password),
-                                                                    /[a-z]/.test(password),
-                                                                    /[0-9]/.test(password),
-                                                                    /[!@#$%^&*?]/.test(password),
-                                                                    password.length >= 8,
-                                                                ];
-                                                                const passed = checks.filter(Boolean).length;
-                                                                const strengthClass = passed <= 2 ? "weak" : passed <= 4 ? "medium" : "strong";
-                                                                return (
-                                                                    <div className="pwd-strength-bar-wrapper">
-                                                                        {[1, 2, 3, 4, 5].map((i) => (
-                                                                            <div
-                                                                                key={i}
-                                                                                className={`pwd-strength-bar-segment ${i <= passed ? strengthClass : ""}`}
-                                                                            />
-                                                                        ))}
-                                                                    </div>
-                                                                );
-                                                            })()}
-                                                        </div>
-
-
-
-                                                    </Form.Group>
-
-                                                    <button className="btn-black btn-lg m-0" type="button" onClick={generateRandomPassword}>
-                                                        Generate
-                                                    </button>
-                                                </>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
-
-                            </div>
-                        ) : (
-                            <div className="create-link-section" style={{ pointerEvents: !canShare ? 'none' : 'auto', opacity: !canShare ? 0.6 : 1 }}>
-                                <div className="create-link-section-header">
-                                    <h3 className="modal-title-sub">Create Link</h3>
-                                </div>
-
-                                {/* Access Type */}
-                                <div className="create-link-items">
-                                    <div className="access-single-box">
-                                        <div className="access-single-wrapper">
-                                            <div className={`access-single-icon ${accessType === "public" ? "public-link" : ""}`}>
-                                                <InteractiveIcon
-                                                    defaultIcon={accessType === "public" ? publicLinkIcon : passwordIcon}
-                                                    width={24}
-                                                    alt=""
-                                                />
-                                            </div>
-                                            <div className="access-single-contetn">
-                                                <div className="access-single-dropdown-box">
-                                                    <span className="access-single-name">
-                                                        {accessType === "restricted" ? "People with access" : "Public link"}
-                                                    </span>
-                                                    <Dropdown className="magic-dropdown dropdown-no-arrow">
-                                                        <Dropdown.Toggle as="div" className="magic-dropdown__toggle">
-                                                            <span className="magic-dropdown__chevron-wrapper">
-                                                                <InteractiveIcon
-                                                                    defaultIcon={arrowDownIcon}
-                                                                    width={20}
-                                                                    alt=""
-                                                                    className="magic-dropdown__chevron-icon"
-                                                                />
-                                                            </span>
-                                                        </Dropdown.Toggle>
-
-                                                        <Dropdown.Menu align="start" className="magic-dropdown__menu">
-                                                            {/* Hide 'restricted' option if already restricted */}
-                                                            {accessType !== "restricted" && (
-                                                                <Dropdown.Item
-                                                                    className="magic-dropdown__item"
-                                                                    onClick={() => setAccessType("restricted")}
-                                                                >
-                                                                    People with access
-                                                                </Dropdown.Item>
-                                                            )}
-                                                            {/* Hide 'public' option if already public */}
-                                                            {accessType !== "public" && (
-                                                                <Dropdown.Item
-                                                                    className="magic-dropdown__item"
-                                                                    onClick={() => setAccessType("public")}
-                                                                >
-                                                                    Public link
-                                                                </Dropdown.Item>
-                                                            )}
-                                                        </Dropdown.Menu>
-                                                    </Dropdown>
-                                                </div>
-                                                <span className="access-single-sun-name">
-                                                    {accessType === "restricted"
-                                                        ? "People listed above have access."
-                                                        : "Anyone with the link."}
-                                                </span>
-                                            </div>
-                                        </div>
-                                        {accessType === "public" && (
-                                            <p className="modal-tag">View & Download</p>
-                                        )}
-                                    </div>
-                                </div>
-
-
-                                {/* Link Expiration Section: ONLY shows if the access type is set to Public */}
-                                {accessType === "public" && (
-                                    <div className={`create-link-items ${linkExpiry ? "" : "disable"}`}>
-                                        <div className="create-link-items-content">
-                                            <div className="form-check-group m-0">
-                                                <label htmlFor="Link-expirtation" style={{ cursor: 'pointer' }}>
-                                                    <InteractiveIcon defaultIcon={checkboxIcon} alt="" />
-                                                </label>
-                                                <input
-                                                    type="checkbox"
-                                                    className="checkbox"
-                                                    id="Link-expirtation"
-                                                    checked={linkExpiry}
-                                                    onChange={() => {
-                                                        // If unticked, clear the expiry date to null
-                                                        if (linkExpiry) {
-                                                            setExpiryDay(null)
-                                                        } else {
-                                                            // If ticked, set the default to '1 Day'
-                                                            setExpiryDay(expiryDayOption[0])
-                                                        }
-                                                        // toggle the checkbox boolean
-                                                        setLinkExpiry(prev => !prev)
-                                                    }}
-                                                />
-                                                <span
-                                                    className='form-label m-0'
-                                                    onClick={() => {
-                                                        if (linkExpiry) {
-                                                            setExpiryDay(null)
-                                                        } else {
-                                                            setExpiryDay(expiryDayOption[0])
-                                                        }
-                                                        setLinkExpiry(prev => !prev)
-                                                    }}
-                                                    style={{ cursor: 'pointer' }}
-                                                >
-                                                    Link expirtation
-                                                </span>
-                                            </div>
-
-                                            <div className="link-expirtation-day" onClick={(e) => e.stopPropagation()}>
-                                                {/* If checkbox is NOT ticked, just show simple text */}
-                                                {!linkExpiry ? (
-                                                    <p className="modal-tag">No expiration</p>
-                                                ) : (
-                                                    <Form.Group className="mb-0">
-                                                        <CustomSelect
-                                                            options={expiryDayOption}
-                                                            value={expiryDay}
-                                                            onChange={(val) => setExpiryDay(val)}
-                                                            placeholder="No expiration"
-                                                            showIndicatorSeparator={false}
-                                                            isSearchable={false}
-                                                            className="expiry-select"
-                                                        />
-                                                    </Form.Group>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Password Protect Section: ONLY shows if the access type is set to Public */}
-                                {accessType === "public" && (
-                                    <div className={`create-link-items ${passwordProtect ? "" : "disable"}`}>
-                                        <div className="create-link-items-content">
-                                            <div className="form-check-group m-0" onClick={generateRandomPassword}>
-                                                <label htmlFor="password-protect" style={{ cursor: 'pointer' }}>
-                                                    <InteractiveIcon defaultIcon={checkboxIcon} alt="" />
-                                                </label>
-                                                <input
-                                                    type="checkbox"
-                                                    className="checkbox"
-                                                    id="password-protect"
-                                                    checked={passwordProtect}
-                                                    onChange={() => {
-                                                        if (passwordProtect) setPassword("")
-                                                        setPasswordError(false)
-                                                        setPasswordProtect(prev => !prev)
-                                                    }}
-                                                />
-                                                <span
-                                                    className='form-label m-0'
-                                                    onClick={() => {
-                                                        if (passwordProtect) setPassword("")
-                                                        setPasswordError(false)
-                                                        setPasswordProtect(prev => !prev)
-                                                    }}
-                                                    style={{ cursor: 'pointer' }}
-                                                >
-                                                    Password protect
-                                                </span>
-                                            </div>
-
-                                            <div className="link-expirtation-day" onClick={(e) => e.stopPropagation()}>
-                                                {!passwordProtect ? (
-                                                    <p className="modal-tag d-none">No password</p>
-                                                ) : (
-                                                    <>
-                                                        <Form.Group className="mb-0 position-relative" controlId="formPassword">
-
-                                                            {/* Requirements box + strength bar */}
-                                                            {password.length > 0 && (() => {
-                                                                const checks = [
-                                                                    /[A-Z]/.test(password),
-                                                                    /[a-z]/.test(password),
-                                                                    /[0-9]/.test(password),
-                                                                    /[!@#$%^&*?]/.test(password),
-                                                                    password.length >= 8,
-                                                                ];
-                                                                const passed = checks.filter(Boolean).length;
-                                                                const allPassed = checks.every(Boolean);
-                                                                const strengthClass = passed <= 2 ? "weak" : passed <= 4 ? "medium" : "strong";
-
-                                                                return (
-                                                                    <>
-                                                                        {/* Requirements box */}
-                                                                        {!allPassed && isFocused && (
-                                                                            <div className="pwd-requirements-box">
-                                                                                <p className="pwd-req-title">Password requirements</p>
-                                                                                <ul className="pwd-req-list">
-                                                                                    <li className={`pwd-req-item ${checks[0] ? "pass" : "fail"}`}>
-                                                                                        <span className="pwd-req-icon">{checks[0] ? "✓" : "✕"}</span>
-                                                                                        Password must include at least one uppercase letter.
-                                                                                    </li>
-                                                                                    <li className={`pwd-req-item ${checks[1] ? "pass" : "fail"}`}>
-                                                                                        <span className="pwd-req-icon">{checks[1] ? "✓" : "✕"}</span>
-                                                                                        Password must include at least one lowercase letter.
-                                                                                    </li>
-                                                                                    <li className={`pwd-req-item ${checks[2] ? "pass" : "fail"}`}>
-                                                                                        <span className="pwd-req-icon">{checks[2] ? "✓" : "✕"}</span>
-                                                                                        Password must include at least one number.
-                                                                                    </li>
-                                                                                    <li className={`pwd-req-item ${checks[3] ? "pass" : "fail"}`}>
-                                                                                        <span className="pwd-req-icon">{checks[3] ? "✓" : "✕"}</span>
-                                                                                        Password must include at least one special character.
-                                                                                    </li>
-                                                                                    <li className={`pwd-req-item ${checks[4] ? "pass" : "fail"}`}>
-                                                                                        <span className="pwd-req-icon">{checks[4] ? "✓" : "✕"}</span>
-                                                                                        Password must be at least eight characters long.
-                                                                                    </li>
-                                                                                </ul>
-                                                                            </div>
-                                                                        )}
-                                                                    </>
-                                                                );
-                                                            })()}
-
-                                                            {/* Input */}
-                                                            <div className={`form-control-single-icon${passwordError ? " has-error" : ""}`}>
-                                                                <InteractiveIcon
-                                                                    defaultIcon={passwordShow ? viewIcon : viewHideIcon}
-                                                                    alt=""
-                                                                    className="form-right-icon"
-                                                                    width={24}
-                                                                    onClick={() => setPasswordShow(!passwordShow)}
-                                                                />
-                                                                <Form.Control
-                                                                    type={passwordShow ? "text" : "password"}
-                                                                    className={`custom-form-control h-34${passwordError ? " is-invalid" : ""}`}
-                                                                    value={password}
-                                                                    onChange={(e) => {
-                                                                        setPassword(e.target.value);
-                                                                        setPasswordError(false);
-                                                                    }}
-                                                                    onFocus={() => setIsFocused(true)}
-                                                                    onBlur={() => setIsFocused(false)}
-                                                                />
-                                                            </div>
-
-                                                            {/* Strength bar — input ke niche */}
-                                                            {password.length > 0 && (() => {
-                                                                const checks = [
-                                                                    /[A-Z]/.test(password),
-                                                                    /[a-z]/.test(password),
-                                                                    /[0-9]/.test(password),
-                                                                    /[!@#$%^&*?]/.test(password),
-                                                                    password.length >= 8,
-                                                                ];
-                                                                const passed = checks.filter(Boolean).length;
-                                                                const strengthClass = passed <= 2 ? "weak" : passed <= 4 ? "medium" : "strong";
-                                                                return (
-                                                                    <div className="pwd-strength-bar-wrapper">
-                                                                        {[1, 2, 3, 4, 5].map((i) => (
-                                                                            <div
-                                                                                key={i}
-                                                                                className={`pwd-strength-bar-segment ${i <= passed ? strengthClass : ""}`}
-                                                                            />
-                                                                        ))}
-                                                                    </div>
-                                                                );
-                                                            })()}
-
-                                                        </Form.Group>
-
-                                                        <button className="btn-black btn-lg m-0" type="button" onClick={generateRandomPassword}>
-                                                            Generate
-                                                        </button>
-                                                    </>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
-
-                            </div>
-                        )}
-
+                        {/* Render CopyLinkSection component */}
+                        <CopyLinkSection
+                            accessType={accessType}
+                            setAccessType={handleAccessTypeChange}
+                            expiryDay={expiryDay}
+                            setExpiryDay={setExpiryDay}
+                            linkExpiry={linkExpiry}
+                            setLinkExpiry={setLinkExpiry}
+                            passwordProtect={passwordProtect}
+                            setPasswordProtect={setPasswordProtect}
+                            password={password}
+                            setPassword={setPassword}
+                            savedPassword={savedPassword}
+                            setSavedPassword={setSavedPassword}
+                            passwordShow={passwordShow}
+                            setPasswordShow={setPasswordShow}
+                            isFocused={isFocused}
+                            setIsFocused={setIsFocused}
+                            passwordError={passwordError}
+                            setPasswordError={setPasswordError}
+                            canShare={canShare}
+                            isMobile={isMobile}
+                            saveLinkSettings={saveLinkSettings}
+                            existingLinkInfo={existingLinkInfo}
+                        />
 
                     </Modal.Body>
 
@@ -1154,12 +917,11 @@ function ShareUserModal({ data, onClose }) {
                             Copy link
                         </button>
                         <div className="modal-footer-btn-group">
-                            <button className="btn-secondary btn-lg m-0" onClick={onClose}>Cancel</button>
+                            <button className="btn-secondary btn-lg m-0" onClick={onClose}>Close</button>
                             {/* Button is disabled if there are no specific users selected in the list (meaning nothing new to save) */}
                             <button
                                 className="btn-black btn-lg m-0"
-                                onClick={handleShare}
-                                disabled={selectedUsers.size === 0}
+                                onClick={onClose}
                             >
                                 Done
                             </button>
@@ -1173,29 +935,4 @@ function ShareUserModal({ data, onClose }) {
 }
 
 export default ShareUserModal
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

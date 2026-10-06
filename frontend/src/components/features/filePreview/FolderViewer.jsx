@@ -794,7 +794,7 @@ function FolderViewer({ folder, contents = [], isPublic = false, view: viewProp 
                             <button className="dropdown-item">
                                 <span className="d-flex align-items-center">
                                     <InteractiveIcon defaultIcon={downloadIcon} className="me-2" width={20} height={20} alt="" />
-                                    Download
+                                    {selectedIds.size > 1 ? "Download All" : "Download"}
                                 </span>
                             </button>
                         </li>

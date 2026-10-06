@@ -1,50 +1,60 @@
 import uploadModel from "#models/uploadModel";
 
-//  1) checking here if user have this current folder or file permsioon t oaccess it or not
-// helper function
+// 1) check user's permission on an item — owner/editor/viewer, or null
+//    "closest ancestor wins" — item itself is closest, root is furthest
 export const getUserPermission = async (userId, itemId) => {
-    let current = await uploadModel.findById(itemId)
-        .select("owner parent sharedWith")
+    const item = await uploadModel.findById(itemId).select("owner parent ancestorIds sharedWith")
+    if (!item) return null
 
-    while (current) {
-        //  owner has always full access
-        if (current.owner.toString() === userId.toString()) return "owner"
+    // build the chain from closest to furthest: [itemId, ...ancestorsId reversed]
+    const chain = [item._id, ...[...(item.ancestorIds || [])].reverse()]
 
-        //  if not owner then find the userId
-        const match = current.sharedWith?.find(
+    // Fetch item and all ancestors in a single query
+    const candidates = await uploadModel.find({
+        _id: { $in: chain }
+    }).select("_id owner sharedWith").lean()
+
+    // map for quick lookup by id
+    const candidateMap = new Map(candidates.map(c => [c._id.toString(), c]))
+
+    // Check permissions from closest item to root
+    for (const id of chain) {
+        const doc = candidateMap.get(id.toString())
+        if (!doc) continue
+
+        if (doc.owner.toString() === userId.toString()) return "owner"
+
+        const match = doc.sharedWith?.find(
             s => s.userId.toString() === userId.toString()
         )
-
-        //  return permission 
         if (match) return match.permission
-
-        //  if this file is parent then stop here
-        if (!current.parent) break
-
-        //  if file or folder has a parent then return that folder permission
-        current = await uploadModel.findById(current.parent)
-            .select("owner parent sharedWith")
     }
+
     return null
 }
 
 
-
-
-
-
-//  this fucntion is for when ser shared oen folder so all insdie the folder icon will change here in front end 
+// 2) check if item is inside any shared tree (for frontend shared icon)
 export const checkIsSharedTree = async (itemId) => {
-    let current = await uploadModel.findById(itemId).select("parent isShared sharedWith");
-    while (current) {
-        // If this specific folder is shared, the whole tree inside it is shared
-        if (current.isShared || (current.sharedWith && current.sharedWith.length > 0)) {
-            return true;
-        }
-        // Stop if we reach the root
-        if (!current.parent) break;
-        // Move up to the next parent
-        current = await uploadModel.findById(current.parent).select("parent isShared sharedWith");
+    const item = await uploadModel.findById(itemId).select("isShared sharedWith ancestorIds")
+    if (!item) return false
+
+    // Return true if item itself is shared
+    if (item.isShared || (item.sharedWith && item.sharedWith.length > 0)) {
+        return true
     }
-    return false;
+
+    // no ancestors — nothing above to check
+    if (!item.ancestorIds || item.ancestorIds.length === 0) return false
+
+    // Check if any ancestor folder is shared
+    const sharedAncestor = await uploadModel.findOne({
+        _id: { $in: item.ancestorIds },
+        $or: [
+            { isShared: true },
+            { "sharedWith.0": { $exists: true } }
+        ]
+    }).select("_id")
+
+    return Boolean(sharedAncestor)
 }

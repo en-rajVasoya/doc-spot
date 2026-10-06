@@ -17,12 +17,7 @@ function TrashHeaderToolbar({ setModal, searchBarOpen, setSearchBarOpen }) {
 
     //  restore button
     const handleRestore = async () => {
-        for (const id of selectedArray) {
-            await restoreItemApi(id, true)
-        }
-        const message = selectedArray.length > 1 ? "Items restored successfully" : "Item restored successfully"
-        showNotification(message, "success", "bottom-center")
-        setSelectedIds(new Set())
+        await restoreItemApi(selectedArray)
     }
 
     // ##################################################

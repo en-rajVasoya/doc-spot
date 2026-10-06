@@ -6,27 +6,28 @@ const getKey = () => {
 }
 
 const optionalAuth = async (req, res, next) => {
+    const hasShareToken = Boolean(req.query.token || req.body?.token)
+
     try {
-        let token = req.cookies.auth_token;
-        if (!token && req.headers.authorization && req.headers.authorization.startsWith("Bearer")) {
-            token = req.headers.authorization.split(" ")[1];
+        let token = req.cookies.doc_auth_token || req.cookies.auth_token
+        if (!token && req.headers.authorization?.startsWith("Bearer ")) {
+            token = req.headers.authorization.split(" ")[1]
         }
 
         if (token) {
             const payload = await V3.decrypt(token, getKey())
-
-            if (payload.exp && new Date(payload.exp) < new Date()) {
-                return res.status(401).json({ message: "Token expired, please login again" })
-            }
-
-            req.user = payload.id;
+            req.user = { _id: payload.id }
+            return next()
         }
-
-
-    } catch (_) {
-        // no valid token, just continue
+    } catch (err) {
+        // Bad or expired cookie - ignore and fall through below
     }
-    next();
-};
+
+    // 1. If public share link, allow guest through
+    if (hasShareToken) return next()
+
+    // 2. If private download with missing/expired cookie, return 401 to trigger refresh!
+    return res.status(401).json({ message: "Please refresh token or login" })
+}
 
 export default optionalAuth

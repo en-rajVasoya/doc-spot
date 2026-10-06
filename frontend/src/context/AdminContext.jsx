@@ -157,6 +157,31 @@ export function AdminAuthProvider({ children }) {
         }
     };
 
+    //  when import user modal open so get all the user info in there 
+    const getUserInfo = async () => {
+        try {
+            const res = await axiosApi.get("/admin/user_info")
+            return res.data?.users || [];
+        } catch (error) {
+            console.error("Get user info error:", error);
+            return [];
+
+        }
+    }
+
+    //  when admin import csv file 
+    const importUsers = async (payload) => {
+        try {
+            const res = await axiosApi.post("/admin/import_users", payload);
+            if (res.data?.inserted > 0) {
+                fetchUsers();
+            }
+            return res.data;
+        } catch (error) {
+            throw error;
+        }
+    };
+
 
     //  here this function is used for the when user select on the main check box so select all users here
     const toggleSelectAll = () => {
@@ -223,6 +248,8 @@ export function AdminAuthProvider({ children }) {
                 allMatchingIds,
                 selectAllAcrossPages,
                 checkAvailability,
+                importUsers,
+                getUserInfo
             }}>
             {children}
         </AdminContext.Provider>

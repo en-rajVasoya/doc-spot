@@ -2,7 +2,7 @@
 /* eslint-disable no-unused-vars */
 
 
-import { createContext, useContext, useState, useRef, useMemo, useEffect  } from "react";
+import { createContext, useContext, useState, useRef, useMemo, useEffect } from "react";
 import { generateFingerprintBatch } from "../utils/fileHash.js"
 import axiosApi from "../utils/api.js"
 // import { data, replace } from "react-router-dom";
@@ -15,17 +15,20 @@ import { useUploadCancel } from "../hooks/upload/useUploadCancel.js";
 import { useUploadConflict } from "../hooks/upload/useUploadConflict.js";
 
 import { useAuth } from "./AuthContext.jsx";
+import { useSocket } from "./SocketContext.jsx";
 
 const UploadContext = createContext()
 
 const LARGE_UPLOAD_THRESHOLD = 100
 const BATCH_SIZE = 50
 const SMALL_FILE_THRESHOLD = 1 * 1024 * 1024
+let sessionCounter = 0
 
 
 export function UploadProvider({ children }) {
 
-    const {user} = useAuth()
+    const { user } = useAuth()
+    const { socket } = useSocket()
     const prevUserIdRef = useRef(user?._id)
 
     const onUploadCompleteRef = useRef(null)
@@ -63,13 +66,46 @@ export function UploadProvider({ children }) {
 
 
 
+
+    //  virus scanning
+    const updateScanStatusById = (fileId, changes) => {   // NEW
+        for (const [sessionId, filesMap] of sessionMapsRef.current.entries()) {
+            for (const [filekey, f] of filesMap.entries()) {
+                if (f.id && String(f.id) === String(fileId)) {
+                    updateFile(sessionId, filekey, changes, f.status)
+                    return
+                }
+            }
+        }
+    }
+
+    useEffect(() => {
+        if (!socket) return
+        const handleScanComplete = ({ fileId, status, message }) => {
+            if (status === "infected") {
+                updateScanStatusById(fileId, {
+                    scanStatus: "infected",
+                    status: "blocked",
+                    message: message || "Virus detected! File has been permanently deleted."
+                })
+            } else if (status === "clean") {
+                updateScanStatusById(fileId, {
+                    scanStatus: "clean"
+                })
+            }
+        }
+        socket.on("scan_complete", handleScanComplete)
+        return () => socket.off("scan_complete", handleScanComplete)
+    }, [socket])
+
+
     //  here reset the upload panel when user logges out 
     useEffect(() => {
         const currentUserId = user?._id
         const prevUserId = prevUserIdRef.current
 
         // if user logged out or user logged in as a diffrent user
-        if(!currentUserId || (prevUserId && currentUserId !== prevUserId)){
+        if (!currentUserId || (prevUserId && currentUserId !== prevUserId)) {
             closeAllSessions()
             setSessions([])
             setIsPanelOpen(false)
@@ -149,7 +185,11 @@ export function UploadProvider({ children }) {
 
     const cancelScanning = () => {
         scanCancelledRef.current = true
-        setSessions(prev => prev.filter(s => !s.isScanning), true)
+        setSessions(prev => {
+            const updated = prev.filter(s => !s.isScanning)
+            if (updated.length === 0) setIsPanelOpen(false)
+            return updated
+        }, true)
     }
 
     const isScanningCancelled = () => scanCancelledRef.current
@@ -166,7 +206,7 @@ export function UploadProvider({ children }) {
         console.log(`[SESSION START] files: ${totalFiles}`)
 
         const totalBytes = Array.from(selectedFiles).reduce((sum, f) => sum + f.size, 0)
-        const sessionId = Date.now()
+        const sessionId = `${Date.now()}_${++sessionCounter}`
         const newSession = {
             id: sessionId,
             name: isFolder ? selectedFiles[0].webkitRelativePath.split("/")[0] : null,
@@ -181,6 +221,8 @@ export function UploadProvider({ children }) {
             error: 0,
             uploading: 0,
             prepared: 0,
+            checked: 0,
+            isPreparing: true,
             percent: 0,
             files: [],
         }
@@ -378,7 +420,6 @@ export function UploadProvider({ children }) {
                         queue.push(f)
                         queuedInThisAdd.add(key)
                     } else {
-                        console.log(`[QUEUE] pushed: ${f.file.name}`)
                         queue.push(f)
                         queuedInThisAdd.add(key)
                     }
@@ -392,6 +433,13 @@ export function UploadProvider({ children }) {
                 //     ))
                 // }
 
+                const checkedCount = Math.min(i + CHECK_BATCH_SIZE, allFileObjects.length);
+                setSessions(prev => prev.map(s =>
+                    s.id === sessionId
+                        ? { ...s, checked: checkedCount, prepared: checkedCount }
+                        : s
+                ))
+
                 // Yield to UI if needed
                 if (Date.now() - lastUiUpdate > 100) {
                     await new Promise(r => setTimeout(r, 0))
@@ -399,6 +447,7 @@ export function UploadProvider({ children }) {
                 }
             }
         } catch (error) {
+            setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, isPreparing: false } : s))
             // network failed during bulk check — mark all files as error
             allFileObjects.forEach(f => {
                 updateFile(sessionId, f.filekey, {
@@ -417,6 +466,7 @@ export function UploadProvider({ children }) {
         console.log(`[BULK CHECK] ${(performance.now() - checkStart).toFixed(1)}ms`)
 
         queue.push("DONE")
+        setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, isPreparing: false, prepared: totalFiles } : s))
         const workers = startUploadWorkers(sessionId)
         await Promise.all(workers)
         // onUploadComplete?.()

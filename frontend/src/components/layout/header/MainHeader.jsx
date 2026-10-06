@@ -14,7 +14,7 @@ import HeaderToolbar from './HeaderToolbar';
 import { Dropdown } from 'react-bootstrap';
 import { useAuth } from '../../../context/AuthContext';
 import Tooltip from '../Tooltip.jsx';
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import SearchBar from './SearchBar.jsx';
 import TrashHeaderToolbar from '../../features/trash/TrashHeaderToolbar.jsx';
 import { useFileExplorer } from '../../../context/FileExplorerContext.jsx';
@@ -32,6 +32,9 @@ import { useSearch } from '../../../context/SearchContext.jsx';
 import userManagementIcon from "@images/icon/user-management-icon.svg";
 import useResponsive from "../../../hooks/useResponsive.js";
 import backIcon from "@images/icon/arrow-left-outline-icon.svg";
+import importIcon from "@images/icon/import-icon.svg";
+import clockIcon from "@images/icon/clock-icon.svg";
+import settingIcon from "@images/icon/setting-icon.svg";
 
 
 
@@ -39,8 +42,11 @@ import backIcon from "@images/icon/arrow-left-outline-icon.svg";
 //  getiing backend url for getting profile pic of user
 const BASE_URL = import.meta.env.VITE_API_URL?.replace(/\/api\/?$/, "") || "";
 
-function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobileSidebarNavclick, isAdmin }) {
+function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobileSidebarNavclick, isAdmin, disableSearch, hideSearch }) {
     const { isMobile } = useResponsive();
+    const location = useLocation();
+
+    const isSearchDisabled = Boolean(disableSearch || hideSearch || location.pathname === "/profile" || location.pathname === "/settings");
 
     const { logout, user } = useAuth()
     const navigate = useNavigate()
@@ -98,12 +104,12 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
         if (isTrash) {
             navigate("/trash-dashboard", { state: { highlightId: metadata.itemId } });
         } else {
-            const targetRoute = metadata.parentId
-                ? `/dashboard/folder/${metadata.parentId}`
-                : (isShare ? "/shared-with-me" : "/dashboard");
+            const targetRoute = isShare
+                ? "/shared-with-me"
+                : (metadata.parentId ? `/dashboard/folder/${metadata.parentId}` : "/dashboard");
 
-            navigate(targetRoute);
-            if (metadata.itemId) triggerHighlight(metadata.itemId);
+            navigate(targetRoute, { state: { highlightId: metadata.itemId } });
+
         }
 
         setIsNotificationOpen(false);
@@ -153,6 +159,7 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                             setSearchBarOpen(false); // Closes search bar if open
                         }
                         navigate("/dashboard");      // Goes to dashboard
+
                     }}>
                         {isMobile ? (
                             <InteractiveIcon
@@ -183,7 +190,7 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                 ) : isAdmin ? (
                     <AdminHeaderToolbar setModal={setModal} searchBarOpen={searchBarOpen} setSearchBarOpen={setSearchBarOpen} />
                 ) : (
-                    <HeaderToolbar setModal={setModal} searchBarOpen={searchBarOpen} setSearchBarOpen={setSearchBarOpen} />
+                    <HeaderToolbar setModal={setModal} searchBarOpen={searchBarOpen} setSearchBarOpen={setSearchBarOpen} disableSearch={isSearchDisabled} />
 
                 )}
 
@@ -279,10 +286,36 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                             <>
 
                                 <li className="d-flex align-items-center justify-content-center ">
-                                    <button className="btn-only-icon border-0 " onClick={() => setSearchBarOpen(prev => !prev)}>
-                                        <InteractiveIcon defaultIcon={searchIcon} width={24} alt="Search" />
+                                    <button
+                                        className={`btn-only-icon border-0 ${isSearchDisabled ? "disabled-action-btn" : ""}`}
+                                        onClick={!isSearchDisabled ? () => setSearchBarOpen(prev => !prev) : undefined}
+                                        disabled={isSearchDisabled}
+                                    >
+                                        <InteractiveIcon
+                                            defaultIcon={searchIcon}
+                                            width={24}
+                                            alt="Search"
+                                            className={isSearchDisabled ? "disabled-action-btn" : ""}
+                                        />
                                     </button>
                                 </li>
+
+                                {isAdmin && (
+                                    <li className="d-flex align-items-center justify-content-center ms-3">
+                                        <button
+                                            type="button"
+                                            className="btn-only-icon border-0"
+                                            onClick={() => setModal({ type: "importUserModal" })}
+                                        >
+                                            <InteractiveIcon 
+                                                defaultIcon={importIcon} 
+                                                width={24} 
+                                                alt="Import User" 
+                                            />
+                                        </button>
+                                    </li>
+                                )}
+
                                 {!isAdmin && (
                                     <li><div className="divider"></div></li>
                                 )}
@@ -366,11 +399,25 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                                                                     className={`notification-message ${!notification.isRead ? "notification-message-unread" : ""}`}
                                                                 >
                                                                     <div className="notification-message-user">
-                                                                        <UserAvatar user={notification.actor} />
+                                                                        {notification.type === "link_expiring" || notification.type === "link_expired" ? (
+                                                                            <span className='notification-link_expiring-icon'>
+                                                                                <InteractiveIcon
+                                                                                    defaultIcon={clockIcon}
+                                                                                    alt=""
+                                                                                    width={20}
+                                                                                />
+                                                                            </span>
+                                                                        ) : (
+                                                                            <UserAvatar user={notification.actor} />
+                                                                        )}
                                                                         <div className='notification-message-content-wrapper'>
                                                                             <div className='notification-message-name-date'>
                                                                                 <strong className="notification-message-name">
-                                                                                    {notification.actor?.name}
+                                                                                    {notification.type === "link_expiring"
+                                                                                        ? "Link Expiration Warning"
+                                                                                        : notification.type === "link_expired"
+                                                                                            ? "Link Expired"
+                                                                                            : notification.actor?.name}
                                                                                 </strong>
                                                                                 <button className='btn-only-icon'
                                                                                     onClick={(e) => handleDeleteSingle(e, notification._id)}
@@ -384,7 +431,11 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
 
                                                                             </div>
 
-                                                                            <div className='notification-message-text' dangerouslySetInnerHTML={{ __html: notification.message }} />
+                                                                            <div className='notification-message-text' dangerouslySetInnerHTML={{
+                                                                                __html: notification.type === "link_expiring" && notification.metadata?.expireDate
+                                                                                    ? `The public link for your ${notification.metadata.itemType} <b>"${notification.metadata.itemName}"</b> is expiring at <b>${new Date(notification.metadata.expireDate).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}</b>.`
+                                                                                    : notification.message
+                                                                            }} />
 
 
                                                                             <small className="notification-message-time">
@@ -439,6 +490,19 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                                 {!isAdmin && (
                                     <li>
                                         <div className="divider" />
+                                    </li>
+                                )}
+                                {/* btn-text-icon */}
+                                {isAdmin && (
+                                    <li className="me-2">
+                                        <button
+                                            type="button"
+                                            className="btn-secondary  btn-lg m-0"
+                                            onClick={() => setModal({ type: "importUserModal" })}
+                                        >
+                                            {/* <img src={importIcon} width={22} alt="" /> */}
+                                            <span>Import User</span>
+                                        </button>
                                     </li>
                                 )}
                                 <li>
@@ -498,6 +562,17 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                                                         />
                                                         <span className='item-name'>Edit Profile</span>
                                                     </Dropdown.Item>
+                                                    <Dropdown.Item className="dropdown-item d-flex align-items-center"
+                                                        onClick={() => navigate("/settings")}
+                                                    >
+                                                        <InteractiveIcon
+                                                            defaultIcon={settingIcon}
+                                                            width={24}
+                                                            height={24}
+                                                            alt="Settings"
+                                                        />
+                                                        <span className='item-name'>Settings</span>
+                                                    </Dropdown.Item>
                                                     <Dropdown.Item className="dropdown-item d-flex align-items-center" onClick={handleLogout}>
                                                         <InteractiveIcon
                                                             defaultIcon={logOutIcon}
@@ -532,6 +607,17 @@ function MainHeader({ setModal, setSearchBarOpen, searchBarOpen, isTrash, onMobi
                                                             alt="Edit Profile"
                                                         />
                                                         <span className='item-name'>Edit Profile</span>
+                                                    </Dropdown.Item>
+                                                    <Dropdown.Item className="dropdown-item d-flex align-items-center"
+                                                        onClick={() => navigate("/settings")}
+                                                    >
+                                                        <InteractiveIcon
+                                                            defaultIcon={settingIcon}
+                                                            width={24}
+                                                            height={24}
+                                                            alt="Settings"
+                                                        />
+                                                        <span className='item-name'>Settings</span>
                                                     </Dropdown.Item>
                                                     <Dropdown.Item className="dropdown-item d-flex align-items-center" onClick={handleLogout}>
                                                         <InteractiveIcon

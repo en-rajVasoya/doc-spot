@@ -27,11 +27,12 @@ import fileIcon from "@images/svgs/media/file-icon-18.svg";
 import txtFile from "@images/svgs/media/txt-file-icon-18.svg";
 import useResponsive from "../../../hooks/useResponsive.js";
 import backIcon from "@images/icon/arrow-left-outline-icon.svg";
+import listFolder1Icon from "@images/svgs/list/SF1.svg";
 
 
 function SearchBar({ searchBarOpen, setSearchBarOpen }) {
-    const { searchApi, clearSearch, searchLoading, searchResults, isSearchMode, searchFilters } = useSearch();
-    const { searchUsersApi, openFolder, getSuggestedUsersApi, suggestedUsers  } = useFileExplorer();
+    const { searchApi, clearSearch, purgeSearchCache, searchLoading, searchResults, isSearchMode, searchFilters } = useSearch();
+    const { searchUsersApi, openFolder, getSuggestedUsersApi, suggestedUsers } = useFileExplorer();
     const [filePreview, setFilePreview] = useState(null);
     const [fileType, setFileType] = useState(null);
     const [owner, setOwner] = useState(null);
@@ -57,7 +58,7 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
     const suggestionCacheRef = useRef({});
     const { isMobile, isTablet, isDesktop } = useResponsive();
 
-    // Auto-focus input when searchBarOpen changes to true
+    // Auto-fo   input when searchBarOpen changes to true
     useEffect(() => {
         if (searchBarOpen) {
             const timer = setTimeout(() => {
@@ -70,7 +71,7 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
     // ##################################################
     // ---- Fetch Suggested Users for Specific Person ---
     // ##################################################
-   useEffect(() => {
+    useEffect(() => {
         if (showSelectPerson) {
             const updateOptions = (usersList) => {
                 const options = usersList.map((u) => ({
@@ -165,13 +166,6 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
         setShowSuggestions(true);
 
 
-        //  check cache first here if already searched in this session no api call for the suggestion result
-        if (suggestionCacheRef.current[searchText]) {
-            setSuggestionResults(suggestionCacheRef.current[searchText])
-            setSuggestionLoading(false)
-            return
-        }
-
         if (debounceRef.current) clearTimeout(debounceRef.current);
 
         debounceRef.current = setTimeout(async () => {
@@ -184,14 +178,41 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
 
             try {
                 setSuggestionLoading(true);
+                const requestParams = { query: searchText };
+                if (fileType?.value) requestParams.fileType = fileType.value;
+                if (owner?.value) requestParams.ownerFilter = owner.value;
+                if (location?.value) requestParams.location = location.value;
+                
+                let dateFrom = null;
+                let dateTo = null;
+                if (date?.value === "Today") {
+                    const today = new Date();
+                    dateFrom = today.toLocaleDateString("en-CA");
+                    dateTo = today.toLocaleDateString("en-CA");
+                } else if (date?.value === "Last10") {
+                    const d = new Date();
+                    d.setDate(d.getDate() - 10);
+                    dateFrom = d.toLocaleDateString("en-CA");
+                    dateTo = new Date().toLocaleDateString("en-CA");
+                } else if (date?.value === "Last30") {
+                    const d = new Date();
+                    d.setDate(d.getDate() - 30);
+                    dateFrom = d.toLocaleDateString("en-CA");
+                    dateTo = new Date().toLocaleDateString("en-CA");
+                } else if (date?.value === "CustomDate" && selectedDate?.length >= 1) {
+                    dateFrom = selectedDate[0].toLocaleDateString("en-CA");
+                    dateTo = selectedDate[1] ? selectedDate[1].toLocaleDateString("en-CA") : selectedDate[0].toLocaleDateString("en-CA");
+                }
+                if (dateFrom) requestParams.dateFrom = dateFrom;
+                if (dateTo) requestParams.dateTo = dateTo;
+                if (selectedPersons.length) requestParams.personIds = JSON.stringify(selectedPersons.map(p => p.value));
+
                 const { data } = await axiosApi.get("/search/filter", {
-                    params: { query: searchText },
+                    params: requestParams,
                     signal: controller.signal
                 });
 
                 const results = data.results || []
-                //  save to cache
-                suggestionCacheRef.current[searchText] = results
                 setSuggestionResults(results);
             } catch (error) {
                 if (error.name === "CanceledError" || error.code === "ERR_CANCELED") return;
@@ -209,7 +230,7 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
                 suggestionAbortRef.current.abort();
             }
         };
-    }, [searchText, searchBarOpen, clearSearch]);
+    }, [searchText, searchBarOpen, clearSearch, fileType, owner, location, date, selectedDate, selectedPersons]);
 
 
     //  when user will cick on remove the filter  in content view so remove also here that in search bar
@@ -217,8 +238,11 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
     // ---- STEP 5: Sync inputs with active filters -----
     // ##################################################
     useEffect(() => {
-        // 1. Sync Search Text
+        // Sync Search Text only when the global query actually changes (not when search bar opens)
         setSearchText(searchFilters.query || "");
+    }, [searchFilters.query]);
+
+    useEffect(() => {
         // 2. Sync File Type
         if (!searchFilters.fileType) {
             setFileType(null);
@@ -271,7 +295,7 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
                 setShowRangePicker(false);
             }
         }
-    }, [searchFilters]);
+    }, [searchFilters, searchBarOpen]);
 
 
 
@@ -322,11 +346,11 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
 
         //  when user have empty input boxed and press enter here so search won happens here 
         const hasText = searchText.trim().length > 0;
-        const hasFileType = fileType && fileType.value !== "Any";
+        const hasFileType = !!fileType;
         const hasOwner = owner && owner.value !== "Any";
         const hasLocation = location && location.value !== "Any";
-        const hasDate = date && date.value !== "Any";
-        // If the box is empty AND they haven't picked any advanced filters, do nothing!
+        const hasDate = !!date;
+        // If the box is empty AND no filters are selected, do nothing!
         if (!hasText && !hasFileType && !hasOwner && !hasLocation && !hasDate) {
             return;
         }
@@ -368,8 +392,7 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
             }
         }
 
-        const selectedFileType = (fileType?.value?.toLowerCase() === "any") ? null : (fileType?.value || null)
-
+        const selectedFileType = fileType?.value || null;
 
         const params = new URLSearchParams();
         if (searchText.trim()) params.set("search", searchText.trim());
@@ -384,6 +407,9 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
         setIsOpen(false);
         setShowSuggestions(false);
         setSearchBarOpen(false);
+
+        // Clear the search cache when explicitly performing a new search
+        if (purgeSearchCache) purgeSearchCache();
 
         // Always navigate with params (replaces the old if-block entirely)
         navigate(`/dashboard?${params.toString()}`, {
@@ -410,6 +436,7 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
         setLocation(null);
         setSearchText("");
         setShowSuggestions(false);
+        suggestionCacheRef.current = {};
 
         if (searchLoading) {
             clearSearch();
@@ -434,6 +461,7 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
         setDate(null);
         // setTags([]);
         setIsOpen(false);
+        suggestionCacheRef.current = {};
     };
 
 
@@ -459,25 +487,25 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
     };
 
     const fileTypeOptions = [
-        { value: "Any", label: "Any", icon: fileIcon },
+        // { value: "Any", label: "Any", icon: fileIcon },
         { value: "Photo", label: "Photo", icon: imgFile },
         { value: "PDF", label: "PDF", icon: pdfFile },
         { value: "Video", label: "Video", icon: videoFile },
         { value: "Zip", label: "Zip", icon: zipFile },
         { value: "Documents", label: "Documents", icon: txtFile },
         { value: "Spreadsheets", label: "Spreadsheets", icon: fileIcon },
-        { value: "Folder", label: "Folder", icon: navFolderIcon },
+        { value: "Folder", label: "Folder", icon: listFolder1Icon },
     ];
 
     const ownerOptions = [
-        { value: "Anyone", label: "Anyone" },
+        // { value: "Anyone", label: "Anyone" },
         { value: "owner-by-me", label: "Owner by me" },
         { value: "not-owner-by-me", label: "Not owner by me" },
         { value: "specific-person", label: "Specific person" },
     ];
 
     const dateOptions = [
-        { value: "AnyTime", label: "Any time" },
+        // { value: "AnyTime", label: "Any time" },
         { value: "Today", label: "Today" },
         { value: "Last10", label: "Last 10 days" },
         { value: "Last30", label: "Last 30 days" },
@@ -623,7 +651,7 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
                                                                 ? getFolderIcon(
                                                                     item.color,
                                                                     "list",
-                                                                    item.isShared,
+                                                                    item.isSharedWithMe || item.isShared || (item.sharedWith && item.sharedWith.length > 0),
                                                                 )
                                                                 : getFileIcon(item.name)
 

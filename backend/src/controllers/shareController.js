@@ -16,29 +16,35 @@ import { sharedItemReperent } from "#utils/sharedItemReparent";
 // 2)  remove user from share 
 //  here if owner remove user from shared then all nested files and folder permission will be revoke here
 const removeUserFromSubtree = async (parentId, userId) => {
-    const children = await uploadModel.find({ parent: parentId })
+    // find ALL descendants at any depth in ONE query
+    const descendants = await uploadModel.find({
+        ancestorIds: parentId,
+        "sharedWith.userId": userId
+    }).select("_id sharedWith")
 
-    //  getting all childrean here of folder
-    for (const child of children) {
-        const hasDirectShare = child.sharedWith?.some(
-            s => s.userId.toString() === userId.toString()
+    if (descendants.length === 0) return
+
+    const bulkOps = descendants.map(doc => {
+        const remaining = doc.sharedWith.filter(
+            s => s.userId.toString() !== userId.toString()
         )
-
-        // if user has permsiion of childrean then remove it 
-        if (hasDirectShare) {
-            child.sharedWith = child.sharedWith.filter(
-                s => s.userId.toString() !== userId.toString()
-            )
-            child.isShared = child.sharedWith.length > 0
-            await child.save()
+        return {
+            updateOne: {
+                filter: { _id: doc._id },
+                update: {
+                    $set: {
+                        sharedWith: remaining,
+                        isShared: remaining.length > 0
+                    }
+                }
+            }
         }
+    })
 
-        //  in childrean if there is a folder then call this function recursively
-        if (child.type === "folder") {
-            await removeUserFromSubtree(child._id, userId)
-        }
-    }
+    await uploadModel.bulkWrite(bulkOps)
 }
+
+
 
 // 3) share folder or file with other users (Bulk Supported)
 export const shareItem = async (req, res) => {
@@ -73,7 +79,7 @@ export const shareItem = async (req, res) => {
         }
 
         // ########################################
-        //  ------- STEP - 3 - Verify item ownership and verify targeted usr
+        //  ------- STEP - 3 - Verify item ownership and verify targeted user
         //  ##########################################
 
         //  so now here owner and editor can both share items here 
@@ -116,7 +122,17 @@ export const shareItem = async (req, res) => {
         //  --- STEP - 4 - logic for sharing
         //  ########################################################
 
-        //  when sharing if previous permission is there so remove previus permission and add new
+        // so when child item permission chnaged so no notification will oges
+        const priorAccessMap = new Map()
+
+        for (const item of authorizedItems) {
+            for (const uid of targetUserIds) {
+                const priorPermission = await getUserPermission(uid, item._id)
+                priorAccessMap.set(`${item._id}_${uid}`, priorPermission !== null)
+            }
+        }
+
+        //  when sahring if is there any previous permision so deelte it
         await uploadModel.updateMany(
             { _id: { $in: authorizedItemIds } },   // first get all items
             {
@@ -126,7 +142,7 @@ export const shareItem = async (req, res) => {
             }
         )
 
-        //  add user with selected permission and mark item as shared
+        //  after deleting the old permision add a new permission
         await uploadModel.updateMany(
             { _id: { $in: authorizedItemIds } },
             {
@@ -140,6 +156,20 @@ export const shareItem = async (req, res) => {
             }
         )
 
+        //  if owner or editor changes other user permision so that user override any child permision
+        if (req.body.applyToChildren) {
+            await uploadModel.updateMany(
+                { ancestorIds: { $in: authorizedItemIds } },
+                { $pull: { sharedWith: { userId: { $in: targetUserIds } } } }
+            )
+
+            //  if that item is sahred with is zero so update the flag
+            await uploadModel.updateMany(
+                { ancestorIds: { $in: authorizedItemIds }, sharedWith: { $size: 0 } },
+                { $set: { isShared: false } }
+            )
+        }
+
         //  #####################################################################
         //  --- STEP - 4.5 - send notification BEll
         // ######################################################################
@@ -149,12 +179,10 @@ export const shareItem = async (req, res) => {
         targetUserIds.forEach(uid => {
             authorizedItems.forEach(item => {
                 // Check if user already had access to this item
-                const alreadyShared = item.sharedWith?.some(
-                    s => s.userId.toString() === uid.toString()
-                )
+                const hadAccessBefore = priorAccessMap.get(`${item._id}_${uid}`)
 
                 // only send notification if new user previus user will not recive here 
-                if (!alreadyShared) {
+                if (!hadAccessBefore) {
                     const itemTypeName = item.type === "folder" ? "folder" : "file"
                     notificationDocs.push({
                         recipient: uid,
@@ -182,7 +210,9 @@ export const shareItem = async (req, res) => {
             const populatedActor = {
                 _id: req.user._id,
                 name: req.user.name,
-                profilePic: req.user.profilePic
+                profilePic: req.user.profilePic,
+                compressed_profile_pic: req.user.compressed_profile_pic,
+                thumbnail_profile_pic: req.user.thumbnail_profile_pic
             }
 
             // 3 socket evet to notfication to other users
@@ -205,16 +235,7 @@ export const shareItem = async (req, res) => {
         //  --- STEP - 5 - send scoket event
         // ######################################################################
 
-        //  send each user socket event 
-        targetUserIds.forEach(uid => {
-            req.emitToUser(uid.toString(), "share_added", {
-                itemIds: authorizedItemIds,
-                message: `${authorizedItemIds.length} item(s) shared with you`,
-            })
-        })
-
-
-        // notify all users that share or un share added here
+        // notify all users and collaborators that share added
         authorizedItems.forEach(item => {
             const allCollaboratorIds = new Set();
             if (item.owner) allCollaboratorIds.add(item.owner.toString());
@@ -229,6 +250,7 @@ export const shareItem = async (req, res) => {
             allCollaboratorIds.forEach(uid => {
                 req.emitToUser(uid, "share_added", {
                     itemIds: [item._id],
+                    senderId: currentUserId.toString(),
                     message: `${authorizedItems.length} item(s) shared`,
                 });
             });
@@ -383,23 +405,52 @@ export const unshareItem = async (req, res) => {
         }
 
 
+        // // ##########################################################
+        // // ── STEP 5: Send each editor socket event ────────────────────────
+        // // ######################################################### 
+
+        // // notify each editor that their uploaded items have been moved to root
+        // editorItemsMap.forEach((items, editorId) => {
+        //     items.forEach(({ itemId, oldParent, movedItem }) => {
+        //         req.emitToUser(editorId, "item_moved", {
+        //             itemId,
+        //             oldParent,
+        //             newParent: null,
+        //             movedItem
+        //         })
+        //     })
+        // })
+
+        // // notify all collaborators (Owner, Editors, Viewers, and unshared users) with accurate accessRevoked flags
+        // authorizedItems.forEach(item => {
+        //     const allCollaboratorIds = new Set();
+        //     if (item.owner) allCollaboratorIds.add(item.owner.toString());
+        //     if (Array.isArray(item.sharedWith)) {
+        //         item.sharedWith.forEach(s => {
+        //             const uid = typeof s === 'object' ? (s.userId?._id || s.userId || s._id) : s;
+        //             if (uid) allCollaboratorIds.add(uid.toString());
+        //         });
+        //     }
+        //     safeUserIdsToUnshare.forEach(uid => allCollaboratorIds.add(uid.toString()));
+        //     allCollaboratorIds.add(currentUserId.toString());
+
+        //     const unsharedSet = new Set(safeUserIdsToUnshare.map(id => id.toString()))
+
+        //     allCollaboratorIds.forEach(uid => {
+        //         const revoked = unsharedSet.has(uid.toString())
+        //         console.log(`[Backend shareController] Emitting share_removed to uid=${uid} | accessRevoked=${revoked} | itemId=${item._id}`)
+        //         req.emitToUser(uid, "share_removed", {
+        //             itemIds: [item._id],
+        //             accessRevoked: revoked
+        //         });
+        //     });
+        // });
+
         // ##########################################################
         // ── STEP 5: Send each editor socket event ────────────────────────
         // ######################################################### 
 
-        // notify each editor that their uploaded items have been moved to root
-        editorItemsMap.forEach((items, editorId) => {
-            items.forEach(({ itemId, oldParent, movedItem }) => {
-                req.emitToUser(editorId, "item_moved", {
-                    itemId,
-                    oldParent,
-                    newParent: null,
-                    movedItem
-                })
-            })
-        })
-
-        // notify all collaborators (Owner, Editors, Viewers, and unshared users) with accurate accessRevoked flags
+        // notify all collaborators (Owner, Editors, Viewers, and unshared users) about reparented items and share removal
         authorizedItems.forEach(item => {
             const allCollaboratorIds = new Set();
             if (item.owner) allCollaboratorIds.add(item.owner.toString());
@@ -412,6 +463,21 @@ export const unshareItem = async (req, res) => {
             safeUserIdsToUnshare.forEach(uid => allCollaboratorIds.add(uid.toString()));
             allCollaboratorIds.add(currentUserId.toString());
 
+            // 1. Emit item_moved to all collaborators so the file leaves the folder view for everyone
+            editorItemsMap.forEach((items) => {
+                items.forEach(({ itemId, oldParent, movedItem }) => {
+                    allCollaboratorIds.forEach(uid => {
+                        req.emitToUser(uid, "item_moved", {
+                            itemId,
+                            oldParent,
+                            newParent: null,
+                            movedItem
+                        });
+                    });
+                });
+            });
+
+            // 2. Emit share_removed for the folder
             const unsharedSet = new Set(safeUserIdsToUnshare.map(id => id.toString()))
 
             allCollaboratorIds.forEach(uid => {
@@ -423,6 +489,9 @@ export const unshareItem = async (req, res) => {
                 });
             });
         });
+
+
+
 
         // ── STEP 6: Response ────────────────────────────────────
         res.json({ success: true, message: "Access removed" });
@@ -473,28 +542,53 @@ export const getSharedUsers = async (req, res) => {
         // Create a Map (like a dictionary) to store unique users who have access.
         // Using a Map prevents duplicate users if someone was shared on both a parent folder AND a child file.
         const allSharedUsersMap = new Map();
+        let inheritedFolderOwner = null;
 
         // We only reveal the full list of shared users if the person requesting it is the actual "owner"
         if (permission === "owner" || permission === "editor") {
-            // Start checking from the specific item the user clicked on
-            let currentId = itemId;
+            // fetch item itself + all ancestors in ONE query, closest-to-furthest order
+            const chainIds = [itemId, ...(targetItem.ancestorIds || []).slice().reverse()]
 
-            // Climb the folder tree to grab ALL users (Loops as long as currentId exists)
-            while (currentId) {
-                // Fetch the current item (file/folder) and populate the profile details of anyone it is shared with
-                const currentItem = await uploadModel.findById(currentId)
-                    .populate("sharedWith.userId", "name email profilePic thumbnail_profile_pic compressed_profile_pic");
+            const chainDocs = await uploadModel.find({ _id: { $in: chainIds } })
+                .populate("owner", "name email profilePic thumbnail_profile_pic compressed_profile_pic")
+                .populate("sharedWith.userId", "name email profilePic thumbnail_profile_pic compressed_profile_pic")
 
-                // If the item doesn't exist (failsafe), stop climbing the tree
-                if (!currentItem) break;
+            const chainMap = new Map(chainDocs.map(d => [d._id.toString(), d]))
 
-                // Check if this specific item has anyone in its sharedWith array
+            // Collect all user IDs who are shared on ANY ancestor folder
+            const ancestorSharedUserIds = new Set();
+            for (const cid of chainIds) {
+                if (cid.toString() === itemId.toString()) continue; // skip the current child item
+                const ancestor = chainMap.get(cid.toString());
+                if (ancestor?.sharedWith) {
+                    ancestor.sharedWith.forEach(s => {
+                        const uid = s.userId?._id || s.userId;
+                        if (uid) ancestorSharedUserIds.add(uid.toString());
+                    });
+                }
+            }
+
+            // walk closest -> furthest, same order/logic as the old while loop
+            for (const cid of chainIds) {
+                const currentItem = chainMap.get(cid.toString())
+                if (!currentItem) continue
+
+                const isAncestor = cid.toString() !== itemId.toString()
+
+                if (isAncestor) {
+                    inheritedFolderOwner = {
+                        userId: currentItem.owner._id,
+                        name: currentItem.owner.name,
+                        email: currentItem.owner.email,
+                        profilePic: currentItem.owner.profilePic,
+                        thumbnail_profile_pic: currentItem.owner.thumbnail_profile_pic,
+                        compressed_profile_pic: currentItem.owner.compressed_profile_pic
+                    };
+                }
+
                 if (currentItem.sharedWith && currentItem.sharedWith.length > 0) {
-                    // Loop through every user it is shared with
                     for (const s of currentItem.sharedWith) {
-                        // If the user exists and we haven't already added them to our Map
                         if (s.userId && !allSharedUsersMap.has(s.userId._id.toString())) {
-                            // Add them to the Map with their details
                             allSharedUsersMap.set(s.userId._id.toString(), {
                                 userId: s.userId._id,
                                 name: s.userId.name,
@@ -502,24 +596,34 @@ export const getSharedUsers = async (req, res) => {
                                 profilePic: s.userId.profilePic,
                                 thumbnail_profile_pic: s.userId.thumbnail_profile_pic,
                                 compressed_profile_pic: s.userId.compressed_profile_pic,
-                                permission: s.permission, // "viewer" or "editor"
-                                // Compare the ID of the folder we are currently checking against the original item the user clicked.
-                                // If they are different, it means we climbed up the tree, so this access is "inherited".
-                                inherited: currentId.toString() !== itemId.toString()
+                                permission: s.permission,
+                                inherited: isAncestor,
+                                hasParentAccess: ancestorSharedUserIds.has(s.userId._id.toString()),
+                                inheritedFolderId: isAncestor ? cid : null,
+                                inheritedFolderName: isAncestor ? currentItem.name : null
                             });
                         }
                     }
                 }
-                // Move up the tree: set the current ID to the parent folder's ID to check it in the next loop iteration
-                currentId = currentItem.parent;
             }
+
+        } else if (permission === "viewer") {
+            // here add the viewers own information to show 
+            allSharedUsersMap.set(requesterId.toString(), {
+                userId: req.user._id,
+                name: req.user.name,
+                email: req.user.email,
+                permission: "viewer"
+            })
         }
+
+
 
         // Convert our Map of unique users back into a standard Array
         const sharedWith = Array.from(allSharedUsersMap.values());
 
         // Send the final response to the frontend containing the owner details and the array of shared users
-        res.json({ success: true, owner: ownerData, sharedWith })
+        res.json({ success: true, owner: ownerData, inheritedFolderOwner, sharedWith, permission })
 
     } catch (error) {
         // If any code above crashes, catch the error and return a 500 Server Error
@@ -588,49 +692,69 @@ export const checkPermission = (...allowedRoles) => {
 export const getSuggestedUsers = async (req, res) => {
     try {
         const currentUserID = req.user._id;
+        const { itemId } = req.query
 
-        // 1 get the users that current user have shared history here
-        const recentSharedUserIds = await uploadModel.distinct("sharedWith.userId", {
-            owner: currentUserID
-        })
+        const page = Math.max(parseInt(req.query.page) || 1, 1)
+        const limit = Math.min(parseInt(req.query.limit) || 10, 30)
+        const skip = (page - 1) * limit
+        const needed = limit + 1   // one extra row tells us if there is a next page
 
-        let suggestedUsers = []
+        const USER_FIELDS = "name email profilePic thumbnail_profile_pic compressed_profile_pic"
 
-        //  2. Fetch those recent users' details - 10 most
-        if (recentSharedUserIds.length > 0) {
-            suggestedUsers = await userModel.find({
-                _id: { $in: recentSharedUserIds },
-                is_active: { $ne: false }
-            })
-                .select("name email profilePic thumbnail_profile_pic compressed_profile_pic")
-                .limit(10)
+
+        // 1. users to exclude: me + owner + everyone who already has access (incl. inherited)
+        const excludeIds = new Set([currentUserID.toString()])
+
+
+        if (itemId) {
+            const item = await uploadModel.findById(itemId).select("ancestorIds")
+            if (item) {
+                const chainIds = [itemId, ...(item.ancestorIds || [])]
+                const chainDocs = await uploadModel.find({ _id: { $in: chainIds } }).select("owner sharedWith")
+                chainDocs.forEach(doc => {
+                    if (doc.owner) excludeIds.add(doc.owner.toString())
+                    doc.sharedWith?.forEach(s => s.userId && excludeIds.add(s.userId.toString()))
+                })
+            }
         }
 
 
-        // 3 if we have less then 10 users in the shared user so rest show alphabatically users 
-        if (suggestedUsers.length < 10) {
-            const limitNeeded = 10 - suggestedUsers.length;
+        // 2. "recent" users = people I have shared with before (minus excluded)
+        const recentIdsRaw = await uploadModel.distinct("sharedWith.userId", { owner: currentUserID })
+        const recentIds = recentIdsRaw.filter(id => !excludeIds.has(id.toString()))
 
-            // collect all ids we already have so we dont fetch this users here
-            const existingIds = suggestedUsers.map(u => u._id.toString())
+        const recentUsers = recentIds.length
+            ? await userModel.find({ _id: { $in: recentIds }, is_active: { $ne: false } })
+                .select(USER_FIELDS)
+                .sort({ name: 1, _id: 1 })
+            : []
 
-            // also exclude the current logged in user here
-            existingIds.push(currentUserID.toString())
+        const recentCount = recentUsers.length
+
+        // 3. treat it as ONE list: recent first, then everyone else alphabetically
+        let users = recentUsers.slice(skip, skip + needed)
+
+        if (users.length < needed) {
+            const alphaSkip = Math.max(skip - recentCount, 0)
+            const notIn = [...excludeIds, ...recentUsers.map(u => u._id.toString())]
 
             const alphabeticalUsers = await userModel.find({
-                _id: { $nin: existingIds },
+                _id: { $nin: notIn },
                 is_active: { $ne: false }
             })
-                .select("name email profilePic thumbnail_profile_pic compressed_profile_pic")
-                .sort({ name: 1 })
-                .limit(limitNeeded)
+                .select(USER_FIELDS)
+                .sort({ name: 1, _id: 1 })
+                .skip(alphaSkip)
+                .limit(needed - users.length)
 
-            // 4. Combine recent users (top) with alphabetical users (bottom)
-            suggestedUsers = [...suggestedUsers, ...alphabeticalUsers]
+            users = [...users, ...alphabeticalUsers]
         }
 
-        return res.json({ success: true, users: suggestedUsers })
+        // 4. trim the extra row and report hasMore
+        const hasMore = users.length > limit
+        if (hasMore) users = users.slice(0, limit)
 
+        return res.json({ success: true, users, hasMore, page })
     } catch (error) {
         logger.error(error)
         res.status(500).json({ success: false, message: error.message })

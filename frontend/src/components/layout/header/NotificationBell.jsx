@@ -175,12 +175,24 @@ function NotificationBell() {
                                                 {notif.actor?.name?.[0]?.toUpperCase() || "?"}
                                             </span>
                                         )} */}
-                                         <UserAvatar user={notif.actor} />
+                                        {notif.type === "link_expiring" || notif.type === "link_expired" ? (
+                                            <span style={{ fontSize: "28px", marginRight: "12px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                                {notif.type === "link_expired" ? "⌛" : "⏰"}
+                                            </span>
+                                        ) : (
+                                            <UserAvatar user={notif.actor} />
+                                        )}
                                     </div>
 
                                     {/* Message + time */}
                                     <div className="notif-content">
-                                        <p className="notif-message">{notif.message}</p>
+                                        {notif.type === "link_expiring" && notif.metadata?.expireDate ? (
+                                            <p className="notif-message" dangerouslySetInnerHTML={{ 
+                                                __html: `The public link for your ${notif.metadata.itemType} "${notif.metadata.itemName}" is expiring at <b>${new Date(notif.metadata.expireDate).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}</b>.`
+                                            }} />
+                                        ) : (
+                                            <p className="notif-message">{notif.message}</p>
+                                        )}
                                         <span className="notif-time">
                                             {formatTime(notif.createdAt)}
                                         </span>

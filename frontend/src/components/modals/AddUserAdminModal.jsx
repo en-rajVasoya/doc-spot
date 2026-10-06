@@ -190,7 +190,7 @@ function AddUserAdminModal({ onClose, setModal }) {
         if (!password.trim()) newErrors.password = "Password is required.";
         const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
         if (!passwordRegex.test(password)) {
-            newErrors.password = "Password must be 8 chars, 1 uppercase, and 1 special symbol.";
+            newErrors.password = "Password must be 8 chars, 1 uppercase, 1 special symbol, and no spaces.";
         }
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!email.trim() || !emailRegex.test(email.trim())) {

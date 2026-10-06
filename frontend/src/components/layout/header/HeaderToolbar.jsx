@@ -1013,7 +1013,7 @@ import { useFileExplorer } from "../../../context/FileExplorerContext";
 import { useDownload } from "../../../context/DownloadContext";
 import { useSearch } from "../../../context/SearchContext";
 
-function HeaderToolbar({ setModal, searchBarOpen, setSearchBarOpen }) {
+function HeaderToolbar({ setModal, searchBarOpen, setSearchBarOpen, disableSearch }) {
     const { selectedIds, setSelectedIds, items, changeColorApi, isViewerOnly } = useFileExplorer();
     const { downloadFile, downloadFolder, downloadMultiple } = useDownload();
     const { isSearchMode, searchResults } = useSearch();
@@ -1021,14 +1021,21 @@ function HeaderToolbar({ setModal, searchBarOpen, setSearchBarOpen }) {
     const displayItems = isSearchMode ? searchResults : items;
     const selectedArray = Array.from(selectedIds);
     const selectedItem = displayItems.find(item => item._id === selectedArray[0]);
-
     const hasFolder =
         selectedArray.length > 0 &&
         selectedArray.every(id => displayItems.find(i => i._id === id)?.type === "folder");
 
-    const isItemViewerOnly = isViewerOnly || selectedArray.some(id => {
+    const isItemViewerOnly = selectedArray.some(id => {
         const item = displayItems.find(i => i._id === id);
-        return item?.permission === "viewer";
+        if (!item) return true;
+
+        // If the item has an explicit permission set (e.g., "editor" or "viewer"), use it
+        if (item.permission) {
+            return item.permission === "viewer";
+        }
+
+        // Otherwise, fall back to the current folder's permission
+        return isViewerOnly;
     });
 
     const isDisabled = selectedIds.size === 0;
@@ -1251,11 +1258,11 @@ function HeaderToolbar({ setModal, searchBarOpen, setSearchBarOpen }) {
                 className={`d-flex align-items-center gap-2 ${action.disabled ? "disabled-action-btn" : "enabled-action-text"}`}
                 onClick={() => { if (!action.disabled) action.onClick && action.onClick(); }}
             >
-                <InteractiveIcon 
-                    defaultIcon={action.icon} 
-                    alt={action.label} 
-                    width={22} 
-                    className={!action.disabled ? "enabled-action-icon" : ""} 
+                <InteractiveIcon
+                    defaultIcon={action.icon}
+                    alt={action.label}
+                    width={22}
+                    className={!action.disabled ? "enabled-action-icon" : ""}
                     customStyle={action.disabled ? { opacity: 1 } : {}}
                 />
                 <span style={action.disabled ? { opacity: 1, color: "var(--dark-87)" } : {}}>{action.label}</span>
@@ -1271,11 +1278,11 @@ function HeaderToolbar({ setModal, searchBarOpen, setSearchBarOpen }) {
                         className={`d-flex align-items-center gap-2 dropdown-item ${action.disabled ? "disabled-action-btn" : "enabled-action-text"}`}
                         onClick={() => { if (!action.disabled) setMobileColorOpen(prev => !prev); }}
                     >
-                        <InteractiveIcon 
-                            defaultIcon={action.icon} 
-                            alt={action.label} 
-                            width={22} 
-                            className={!action.disabled ? "enabled-action-icon" : ""} 
+                        <InteractiveIcon
+                            defaultIcon={action.icon}
+                            alt={action.label}
+                            width={22}
+                            className={!action.disabled ? "enabled-action-icon" : ""}
                             customStyle={action.disabled ? { opacity: 1 } : {}}
                         />
                         <span style={action.disabled ? { opacity: 1, color: "var(--dark-87)" } : {}}>{action.label}</span>
@@ -1314,11 +1321,11 @@ function HeaderToolbar({ setModal, searchBarOpen, setSearchBarOpen }) {
                     }
                 }}
             >
-                <InteractiveIcon 
-                    defaultIcon={action.icon} 
-                    alt={action.label} 
-                    width={22} 
-                    className={!action.disabled ? "enabled-action-icon" : ""} 
+                <InteractiveIcon
+                    defaultIcon={action.icon}
+                    alt={action.label}
+                    width={22}
+                    className={!action.disabled ? "enabled-action-icon" : ""}
                     customStyle={action.disabled ? { opacity: 1 } : {}}
                 />
                 <span style={action.disabled ? { opacity: 1, color: "var(--dark-87)" } : {}}>{action.label}</span>
@@ -1357,7 +1364,7 @@ function HeaderToolbar({ setModal, searchBarOpen, setSearchBarOpen }) {
                                                             {isMobileDevice ? (
                                                                 <span className="me-1" onClick={() => setMobileMoreOpen(true)}>
                                                                     <Tooltip text="More" placement="bottom">
-                                                                        <InteractiveIcon defaultIcon={moreIcon} alt="More" width={18} height={24}/>
+                                                                        <InteractiveIcon defaultIcon={moreIcon} alt="More" width={18} height={24} />
                                                                     </Tooltip>
                                                                 </span>
                                                             ) : (
@@ -1370,7 +1377,7 @@ function HeaderToolbar({ setModal, searchBarOpen, setSearchBarOpen }) {
                                                                     <Dropdown.Toggle className="no-border-btn more-toggle">
                                                                         <Tooltip text="More" placement="bottom">
                                                                             <span className="btn-only-icon">
-                                                                                <InteractiveIcon defaultIcon={moreIcon} alt="More" width={18} height={24}  />
+                                                                                <InteractiveIcon defaultIcon={moreIcon} alt="More" width={18} height={24} />
                                                                             </span>
                                                                         </Tooltip>
                                                                     </Dropdown.Toggle>
@@ -1397,8 +1404,18 @@ function HeaderToolbar({ setModal, searchBarOpen, setSearchBarOpen }) {
 
                                     {!isMobileDevice && (
                                         <li className="d-flex align-items-center justify-content-center">
-                                            <button className="header-search-btn" onClick={() => setSearchBarOpen(prev => !prev)}>
-                                                <InteractiveIcon defaultIcon={searchIconWhite} alt="Search" width={24} height={24} />
+                                            <button
+                                                className={`header-search-btn ${disableSearch ? "disabled-action-btn" : ""}`}
+                                                onClick={!disableSearch ? () => setSearchBarOpen(prev => !prev) : undefined}
+                                                disabled={disableSearch}
+                                            >
+                                                <InteractiveIcon
+                                                    defaultIcon={searchIconWhite}
+                                                    alt="Search"
+                                                    width={24}
+                                                    height={24}
+                                                    className={disableSearch ? "disabled-action-btn" : ""}
+                                                />
                                             </button>
                                         </li>
                                     )}

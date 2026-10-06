@@ -32,18 +32,17 @@ function App() {
 
 
   return (
-    <SearchProvider>
-      <UploadProvider>
-        <DownloadProvider>
-          <SocketProvider>
+    <SocketProvider>
+      <SearchProvider>
+        <UploadProvider>
+          <DownloadProvider>
             <BellNotificationProvider>
               <AppRoutes />
             </BellNotificationProvider>
-          </SocketProvider>
-        </DownloadProvider>
-
-      </UploadProvider>
-    </SearchProvider>
+          </DownloadProvider>
+        </UploadProvider>
+      </SearchProvider>
+    </SocketProvider>
   )
 }
 export default App

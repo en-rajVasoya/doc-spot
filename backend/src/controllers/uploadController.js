@@ -1,4 +1,5 @@
 
+
 import fs from "fs";
 import path from "path"
 import multer from "multer"
@@ -30,20 +31,22 @@ import chunkModel from "#models/chunkModel";
 
 // helper 
 // import { releaseFd } from "../middleware/chunkUploadMiddleware.js";
-import { getUserPermission } from "#utils/userPermissionUtil";
+import { getUserPermission, checkIsSharedTree } from "#utils/userPermissionUtil";
 import { cleanupUploadResources } from "../middleware/chunkUploadMiddleware.js";
 import { checkFileSecurity } from "../utils/fileSecurityCheck.js";
 
 import { addToScanQueue } from "../virusTotal/scanQueue.js";
-import { scanFileWithVirusTotal } from "../virusTotal/virusTotalWorker.js";
+// import { scanFileWithVirusTotal } from "../virusTotal/virusTotalWorker.js";
 import { scanFileWithClamAV } from "../virusTotal/clamAVWorker.js";
+
+// Top-level MAX_SCAN_SIZE removed — calculated dynamically inside completeUpload and uploadSmallBatch
 
 //  utils - helper
 import { logger } from "#utils/logger";
 import { updateParentFolderTimestamps } from "#utils/parentFolderTimestamp";
 import { getAbsolutePath } from "#utils/pathHelper";
 import { updateFolderSizeTree } from "#utils/getFolderSizeHelper";
-
+import { notifySharedUsers } from "#utils/userNotification";
 
 
 
@@ -83,7 +86,12 @@ export const initUpload = async (req, res) => {
     // -------------------------------------------------------------------------
     // --- STEP 1: Extract basic upload information from the incoming request
     // -------------------------------------------------------------------------
-    const { fileName, fingerprint, fileSize, fileType, totalChunks, parent, fileHeader, replacesFileId } = req.body;
+    let { fileName, fingerprint, fileSize, fileType, totalChunks, parent, fileHeader, replacesFileId } = req.body;
+    
+    // Fix string "null" from frontend form data
+    if (parent === "null" || parent === "undefined") {
+        parent = null;
+    }
     const owner = req.user._id;
 
     // Ignore empty keep files used for maintaining folder structures
@@ -94,8 +102,9 @@ export const initUpload = async (req, res) => {
     // -------------------------------------------------------------------------
     // --- STEP 2: Verify Permissions (If uploading inside a specific folder)
     // -------------------------------------------------------------------------
+    let parentFolder = null
     if (parent) {
-      const parentFolder = await uploadModel.findById(parent).select("isTrashed sharedWith owner parent")
+      parentFolder = await uploadModel.findById(parent).select("isTrashed sharedWith owner parent ancestorIds")
       if (!parentFolder) {
         return res.status(404).json({ success: false, message: "Parent folder not found" });
       }
@@ -178,10 +187,12 @@ export const initUpload = async (req, res) => {
     // -------------------------------------------------------------------------
     // --- STEP 6: Save the new file record to MongoDB
     // -------------------------------------------------------------------------
+    const parentObjId = parent && mongoose.Types.ObjectId.isValid(parent) ? new mongoose.Types.ObjectId(parent) : (parent || null);
     let fileData = await uploadModel.create({
       name: fileName,
       type: "file",
-      parent: parent || null,
+      parent: parentObjId,
+      ancestorIds: parentFolder ? [...(parentFolder.ancestorIds || []), parentObjId] : [],
       owner,
       fingerprint,
       uploadId,
@@ -274,6 +285,9 @@ export const completeUpload = async (req, res) => {
     // ---------------------------------------------------------------------------
     // --- STEP 5: Update mongo record for item from uploading to completed
     // ---------------------------------------------------------------------------
+    const isScanEnabled = process.env.ENABLE_VIRUS_SCAN === "true";
+    const maxAllowedBytes = (parseInt(process.env.CLAMAV_MAX_FILE_SIZE_MB, 10) || 10) * 1024 * 1024;
+    const initialScanStatus = (isScanEnabled && record.fileSize <= maxAllowedBytes) ? "scanning" : "clean";
     await uploadModel.updateOne(
       { uploadId, owner },
       {
@@ -281,6 +295,7 @@ export const completeUpload = async (req, res) => {
         storagePath: newRelativePath,
         lastActivity: new Date(),
         s3_uplaod_id: null, // clear this out since session is done - aws will give null
+        scanStatus: initialScanStatus
       }
     );
 
@@ -367,26 +382,8 @@ export const completeUpload = async (req, res) => {
       // Update parent folder modified timestamps recursively so in sorting this will help
       await updateParentFolderTimestamps(record.parent);
 
-      //  find that parent folder info like shared with info 
-      let currentParent = await uploadModel.findById(record.parent).select("sharedWith parent owner")
-
-      //  now goes to bottom to top to find main parent folder and shared with info
-      while (currentParent) {
-        if (currentParent.owner) {
-          //  socket event for owner screen
-          req.emitToUser(currentParent.owner.toString(), "item_uploaded", { folderId: record.parent, newItem: formattedRecord })
-        }
-        if (currentParent.sharedWith?.length > 0) {
-          //  socket event for shared people 
-          currentParent.sharedWith.forEach(s => {
-            req.emitToUser(s.userId.toString(), "item_uploaded", { folderId: record.parent, newItem: formattedRecord })
-          })
-          break
-        }
-        //  if no ither parent find so this is root break the loop here
-        if (!currentParent.parent) break
-        currentParent = await uploadModel.findById(currentParent.parent).select("sharedWith parent owner")
-      }
+      // Find parent folder and notify all users in the hierarchy
+      await notifySharedUsers(record.parent, "item_uploaded", { folderId: String(record.parent), newItem: formattedRecord }, req.emitToUser);
     } else {
       req.emitToUser(record.owner.toString(), "item_uploaded", { folderId: null, newItem: formattedRecord });
     }
@@ -395,7 +392,7 @@ export const completeUpload = async (req, res) => {
     // --- STEP - 7 - After item uplaoded completed so delete that specific item chunk schema
     // ---------------------------------------------------------------------------
     await chunkModel.deleteMany({ uploadId })
-    res.json({ success: true, id: record._id })
+    res.json({ success: true, id: record._id, scanStatus: initialScanStatus })
 
 
 
@@ -408,10 +405,12 @@ export const completeUpload = async (req, res) => {
     //   addToScanQueue(record._id.toString(), () => scanFileWithVirusTotal(record._id, newPath, record.fileSize, owner.toString()))
     // })
 
-    // clam av here
-    // setImmediate(() => {
-    //   addToScanQueue(record._id.toString(), () => scanFileWithClamAV(record._id, newPath, record.fileSize, owner.toString()))
-    // })
+    // ClamAV scanning
+    if (isScanEnabled && record.fileSize <= maxAllowedBytes) {
+      setImmediate(() => {
+        addToScanQueue(record._id.toString(), () => scanFileWithClamAV(record._id, record.storagePath, record.fileSize, record.owner ? record.owner.toString() : owner.toString()))
+      })
+    }
 
   } catch (error) {
     logger.error(error);
@@ -457,6 +456,9 @@ export const uploadSmallBatch = async (req, res) => {
     const metadata = JSON.parse(req.body.metadata);
     const parentId = metadata[0]?.parentId || null;
 
+    const isScanEnabled = process.env.ENABLE_VIRUS_SCAN === "true";
+    const maxAllowedBytes = (parseInt(process.env.CLAMAV_MAX_FILE_SIZE_MB, 10) || 10) * 1024 * 1024;
+
 
     //  get the storage AWS or local
     const storage = getStorage();
@@ -466,8 +468,9 @@ export const uploadSmallBatch = async (req, res) => {
     // ---------------------------------------------------------------------
 
     // 1) if user uploading inside the folder so check permission is this trash or not 
+    let parentFolder = null;
     if (parentId) {
-      const parentFolder = await uploadModel.findById(parentId).select("isTrashed");
+      parentFolder = await uploadModel.findById(parentId).select("isTrashed ancestorIds");
       if (parentFolder && parentFolder.isTrashed) {
         return res.status(400).json({
           success: false,
@@ -540,6 +543,12 @@ export const uploadSmallBatch = async (req, res) => {
     //  ---------------------------------------------------------------------
     // --- STEP - 8 - Loop through all files and uplaod
     // ---------------------------------------------------------------------
+    const parentObjId = parentId && mongoose.Types.ObjectId.isValid(parentId) ? new mongoose.Types.ObjectId(parentId) : (parentId || null);
+    const uploadAncestorIds = parentFolder
+      ? [...(parentFolder.ancestorIds || []), parentObjId]
+      : [];
+
+
     for (let i = 0; i < req.files.length; i++) {
       const file = req.files[i];
       const fileIndex = parseInt(file.fieldname.split("_")[1]);
@@ -590,13 +599,15 @@ export const uploadSmallBatch = async (req, res) => {
 
 
       //  5) We are pushing object in to array when all complet so we can bult write to the mongodb
+      const itemParentId = meta.parentId && mongoose.Types.ObjectId.isValid(meta.parentId) ? new mongoose.Types.ObjectId(meta.parentId) : (meta.parentId || null);
       pendingDbRecords.push({
         insertOne: {
           document: {
             _id: fileId,
             name: meta.fileName,
             type: "file",
-            parent: meta.parentId || null,
+            parent: itemParentId,
+            ancestorIds: uploadAncestorIds,
             owner,
             fingerprint: meta.fingerprint,
             uploadId,
@@ -605,6 +616,7 @@ export const uploadSmallBatch = async (req, res) => {
             storagePath: relativeStoragePath,
             totalChunks: 1,
             uploadStatus: "completed",
+            scanStatus: (isScanEnabled && meta.fileSize <= maxAllowedBytes) ? "scanning" : "clean",
             replacesFileId: meta.replacesFileId || null  // add replacesFileId here
           }
         }
@@ -624,7 +636,12 @@ export const uploadSmallBatch = async (req, res) => {
       }
 
       //  in result we are sending resposne that thsi file is already uplaoded
-      results.push({ fingerprint: meta.fingerprint, status: "completed", id: fileId });
+      results.push({
+        fingerprint: meta.fingerprint,
+        status: "completed",
+        id: fileId,
+        scanStatus: (isScanEnabled && meta.fileSize <= maxAllowedBytes) ? "scanning" : "clean"
+      });
     }
 
     //  ---------------------------------------------------------------------
@@ -754,19 +771,19 @@ export const uploadSmallBatch = async (req, res) => {
     //   })
     // })
 
-    //  clamav 
-    // setImmediate(() => {
-    //   finalResults.forEach(async (result) => {
-    //     if(result.status === "completed" && result.id){
-    //       const record = await uploadModel.findById(result.id).select("storagePath fileSize owner")
-    //       if(record){
-    //         // Using ClamAV for fast local scanning
-    //         addToScanQueue(result.id.toString(), () => scanFileWithClamAV(result.id, record.storagePath, record.fileSize, owner.toString()))
-    //       }
-
-    //     }
-    //   })
-    // })
+    // ClamAV scanning for small batches
+    if (isScanEnabled) {
+      setImmediate(() => {
+        results.forEach(async (result) => {
+          if (result.status === "completed" && result.id && result.scanStatus === "scanning") {
+            const record = await uploadModel.findById(result.id).select("storagePath fileSize owner");
+            if (record && record.fileSize <= maxAllowedBytes) {
+              addToScanQueue(result.id.toString(), () => scanFileWithClamAV(result.id, record.storagePath, record.fileSize, owner.toString()));
+            }
+          }
+        });
+      });
+    }
 
   } catch (error) {
     logger.error(error);
@@ -783,14 +800,18 @@ export const createFoldersBulk = async (req, res) => {
     const owner = req.user._id;
 
     // check permissions and trash status for the parent folder
+    let parentFolder = null;
+    let parentObjId = null;
     if (parentId) {
-      const parentFolder = await uploadModel.findById(parentId).select("isTrashed");
+      parentFolder = await uploadModel.findById(parentId).select("isTrashed ancestorIds");
       if (parentFolder && parentFolder.isTrashed) {
         return res.status(400).json({
           success: false,
           message: "Cannot create folders in a trashed folder"
         });
       }
+
+      parentObjId = mongoose.Types.ObjectId.isValid(parentId) ? new mongoose.Types.ObjectId(parentId) : parentId;
 
       const permission = await getUserPermission(owner, parentId)
       if (!permission || !["owner", "editor"].includes(permission)) {
@@ -811,16 +832,31 @@ export const createFoldersBulk = async (req, res) => {
       levels[depth].push(folder)
     })
 
+
+    // this is for the if replace file id is there then create new record here for root folder only
     // get sorted depth levels — shallow first
     const depthKeys = Object.keys(levels).map(Number).sort((a, b) => a - b)
 
-    // this is for the if replace file id is there then create new record here for root folder only
+    // NEW: Get the base ancestors from the parent folder we fetched at the top
+    const baseAncestors = parentFolder
+      ? [...(parentFolder.ancestorIds || []), parentObjId]
+      : [];
+
+    //  check if fodle rparent is shared with other user so fodler icon change
+    const isParentShared = parentId ? await checkIsSharedTree(parentId) : false
+
+    // NEW: Track ancestors as we climb deeper
+    const pathToAncestors = {};
+    if (parentId) pathToAncestors[""] = baseAncestors;
+
+
     if (replacesFileId) {
       const rootFolder = folders.find(f => f.folderPath.split("/").length === 1)
       const newRootFolder = await uploadModel.create({
         name: rootFolder.name,
         type: "folder",
-        parent: parentId || null,
+        parent: parentObjId || null,
+        ancestorIds: baseAncestors,
         owner: req.user._id,
         uploadStatus: null,
         replacesFileId: replacesFileId
@@ -841,7 +877,12 @@ export const createFoldersBulk = async (req, res) => {
       const bulkOps = foldersToProcess.map(folder => {
         const parentObjectId = folder.parentPath
           ? pathToId[folder.parentPath] || null
-          : parentId || null
+          : parentObjId || null
+
+        // find out the fodler ancestor
+        const parentAncestors = folder.parentPath
+          ? pathToAncestors[folder.parentPath] || []
+          : baseAncestors;
 
         //  here checking like is this root folder or not
         const isRootFolder = folder.folderPath.split("/").length === 1
@@ -860,9 +901,11 @@ export const createFoldersBulk = async (req, res) => {
                 name: folder.name,
                 type: "folder",
                 parent: parentObjectId,
+                ancestorIds: parentAncestors,
                 owner: req.user._id,
                 uploadStatus: null,
-                replacesFileId: isRootFolder ? replacesFileId || null : null
+                replacesFileId: isRootFolder ? replacesFileId || null : null,
+                isShared: isParentShared
               }
             },
             upsert: true
@@ -900,6 +943,8 @@ export const createFoldersBulk = async (req, res) => {
         })
         if (match) {
           pathToId[match.folderPath] = created._id
+          const parentAncestors = match.parentPath ? pathToAncestors[match.parentPath] || [] : baseAncestors;
+          pathToAncestors[match.folderPath] = [...parentAncestors, created._id];
         }
       })
     }
@@ -916,6 +961,10 @@ export const createFoldersBulk = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 }
+
+
+
+
 
 export const checkFilesBulk = async (req, res) => {
   try {
@@ -981,26 +1030,42 @@ export const cancelUpload = async (req, res) => {
     const record = await uploadModel.findOne({
       uploadId,
       owner,
-      uploadStatus: { $ne: "completed" } // Safety: don't cancel completed files
+      $or: [
+        { uploadStatus: { $ne: "completed" } },           // mid-upload case (existing)
+        { uploadStatus: "completed", scanStatus: "scanning" }   // NEW: still-scanning case
+      ]
     })
     if (!record) {
       return res.status(404).json({ success: false, message: "uploadModel not found or already completed" })
     }
 
-    // release fd and clear cache first
-    // releaseFd(uploadId)
-    // clearUploadCache(uploadId)
-    // clearWriteQueue(uploadId)
+    // release fd and clear cache first (only relevant for mid-upload, harmless no-op otherwise)
     await cleanupUploadResources(uploadId)
 
     const storage = getStorage();
-    await storage.cancelUpload(
-      record.storagePath,
-      record.s3_uplaod_id,
-      uploadId // This 3rd argument triggers cleanupUploadResources() in your localDiskStorage file!
-    );
 
-
+    if (record.uploadStatus === "completed") {
+      // file already fully written — delete final storagePath, respect refCount
+      if (record.storagePath) {
+        await uploadModel.updateMany(
+          { storagePath: record.storagePath },
+          { $inc: { refCount: -1 } }
+        );
+        const remainingCount = await uploadModel.countDocuments({
+          storagePath: record.storagePath,
+          _id: { $ne: record._id }
+        });
+        if (remainingCount === 0) {
+          await storage.deleteFile(record.storagePath);
+        }
+      }
+      if (record.parent && record.fileSize) {
+        await updateFolderSizeTree(record.parent, -record.fileSize)
+      }
+    } else {
+      // mid-upload case — existing logic
+      await storage.cancelUpload(record.storagePath, record.s3_uplaod_id, uploadId)
+    }
 
     await Promise.all([
       chunkModel.deleteMany({ uploadId }),
@@ -1011,10 +1076,13 @@ export const cancelUpload = async (req, res) => {
 
   } catch (error) {
     logger.error(error);
-    console.error("cancelUpload error:", error)
+    // console.error("cancelUpload error:", error)
     res.status(500).json({ success: false, message: error.message })
   }
 }
+
+
+
 
 export const cancelFolderUpload = async (req, res) => {
   try {
@@ -1054,21 +1122,11 @@ export const cancelFolderUpload = async (req, res) => {
 
     // STEP 2 — recursively delete everything under rootFolderId
     if (rootFolderId) {
-      const toDelete = []
-      const queue = [rootFolderId]
-
-      // BFS to collect all nested folder and file IDs
-      while (queue.length > 0) {
-        const currentParent = queue.shift()
-        const children = await uploadModel.find({ parent: currentParent, owner }).select("_id type uploadId storagePath")
-
-        for (const child of children) {
-          toDelete.push(child)
-          if (child.type === "folder") {
-            queue.push(child._id)
-          }
-        }
-      }
+      // with ancestor id we can delet eall parent adn whoel fodler 
+      const toDelete = await uploadModel.find({
+        ancestorIds: rootFolderId,
+        owner
+      }).select("_id type uploadId storagePath")
 
       // Delegate the physical deletion of all completely uploaded files to the storage service
       await Promise.all(
@@ -1099,7 +1157,7 @@ export const cancelFolderUpload = async (req, res) => {
 
   } catch (error) {
     logger.error(error);
-    console.error("cancelFolderUpload error:", error)
+    // console.error("cancelFolderUpload error:", error)
     res.status(500).json({ success: false, message: error.message })
   }
 }
@@ -1154,38 +1212,37 @@ export const completeFolderReplace = async (req, res) => {
       await updateParentFolderTimestamps(newFolder.parent);
     }
 
-    // now after upload done of new folder delete whole old folder recursively with refCount safety
-    const deleteRecursive = async (parentId) => {
-      const children = await uploadModel.find({ parent: parentId });
-      for (const child of children) {
-        if (child.type === "folder") {
-          await deleteRecursive(child._id);
-        } else if (child.type === "file" && child.storagePath) {
-          // Decrement refCount on any remaining copies
-          await uploadModel.updateMany(
-            { storagePath: child.storagePath },
-            { $inc: { refCount: -1 } }
-          );
+    const children = await uploadModel.find({ ancestorIds: replacesFileId });
 
-          // Check if any other user's document still references this storagePath
-          const remainingCount = await uploadModel.countDocuments({
-            storagePath: child.storagePath,
-            _id: { $ne: child._id }
-          });
+    for (const child of children) {
+      if (child.type === "file" && child.storagePath) {
+        await uploadModel.updateMany(
+          { storagePath: child.storagePath },
+          { $inc: { refCount: -1 } }
+        );
 
-          if (remainingCount === 0) {
-            await storage.deleteFile(child.storagePath);
-          }
+        const remainingCount = await uploadModel.countDocuments({
+          storagePath: child.storagePath,
+          _id: { $ne: child._id }
+        });
+
+        if (remainingCount === 0) {
+          await storage.deleteFile(child.storagePath);
         }
-        await uploadModel.deleteOne({ _id: child._id });
       }
-    };
+    }
 
-    //  delete all nested containes of folder
-    await deleteRecursive(replacesFileId)
+    await uploadModel.deleteMany({ ancestorIds: replacesFileId });
 
     //  now delete root levl folder here
     await uploadModel.deleteOne({ _id: replacesFileId })
+
+    // when user replaec folder so when other users is vieing that folder ehre so socket event 
+    await notifySharedUsers(newFolderId, "folder_replaced", {
+      oldFolderId: String(replacesFileId),
+      newFolderId: String(newFolderId),
+      parentId: newFolder.parent ? String(newFolder.parent) : null
+    }, req.emitToUser)
 
     res.json({ success: true })
 
@@ -1253,6 +1310,9 @@ export const notifyUploadComplete = async (req, res) => {
             folder.storagePath = `/${folder.storagePath}`
           }
         }
+        const isParentShared = parentId ? await checkIsSharedTree(parentId) : false;
+        folder.isShared = folder.isShared || isParentShared;
+        folder.isSharedWithMe = isParentShared || (folder.owner?._id?.toString() !== currentUserID.toString());
         newItems = [folder]
       }
     } else {
@@ -1358,3 +1418,26 @@ export const notifyUploadComplete = async (req, res) => {
     res.status(500).json({ success: false, message: error.message })
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

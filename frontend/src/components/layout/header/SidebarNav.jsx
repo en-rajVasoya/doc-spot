@@ -19,6 +19,7 @@ import arrowUp from "@images/icon/arrow-up.svg";
 import logOutIcon from "@images/icon/power.svg";
 import editUserIcon from "@images/icon/edit-user-icon.svg";
 import userManagementIcon from "@images/icon/user-management-icon.svg";
+import settingIcon from "@images/icon/setting-icon.svg";
 
 const navItems = [
     { icon: navFolderIcon, label: "My Docspot", to: "/dashboard" },
@@ -140,6 +141,19 @@ export default function SidebarNav({ isSidebarNavOpen, closeSidebar, isAdmin }) 
                                             alt="Edit Profile"
                                         />
                                         <span className='item-name'>Edit Profile</span>
+                                    </div>
+
+                                    <div
+                                        className="custom-menu-item d-flex align-items-center"
+                                        onClick={() => { navigate("/settings"); if (closeSidebar) closeSidebar(); setShowProfileMenu(false); }}
+                                    >
+                                        <InteractiveIcon
+                                            defaultIcon={settingIcon}
+                                            width={24}
+                                            height={24}
+                                            alt="Settings"
+                                        />
+                                        <span className='item-name'>Settings</span>
                                     </div>
 
                                     <div

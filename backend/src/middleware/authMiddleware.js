@@ -8,7 +8,7 @@ const getKey = () => {
 
 const authMiddleware = async (req, res, next) => {
     try {
-        let token = req.cookies.auth_token;
+        let token = req.cookies.doc_auth_token || req.cookies.auth_token;
         if (!token && req.headers.authorization && req.headers.authorization.startsWith("Bearer")) {
             token = req.headers.authorization.split(" ")[1];
         }
@@ -18,6 +18,11 @@ const authMiddleware = async (req, res, next) => {
         }
 
         const payload = await V3.decrypt(token, getKey())
+
+        //Reject refresh tokens being used as access tokens
+        if (payload.type === "refresh") {
+            return res.status(401).json({ message: "Invalid token type" });
+        }
 
         if (payload.exp && new Date(payload.exp) < new Date()) {
             return res.status(401).json({ message: "Token expired, please login again" })

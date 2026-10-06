@@ -13,12 +13,13 @@ import { useTrash } from '../../context/TrashContext'
 import ModifiedContent from '../layout/header/ModifiedContent';
 
 function TrashDashboard() {
-    const { clearSelection, sortedItems, sortBy, setSortBy, sortOrder, setSortOrder, selectedIds, setSelectedIds } = useTrash()
+    const { clearSelection, sortedItems, sortBy, setSortBy, sortOrder, setSortOrder, selectedIds, setSelectedIds, isRestoring } = useTrash()
     const [view, setView] = useState("grid")
     const [modals, setModals] = useState([])
     const setModal = (modalData) => {
         if (modalData === null) {
             setModals(prev => prev.slice(0, -1));
+            clearSelection();
         } else {
             setModals(prev => [...prev, modalData]);
         }
@@ -60,6 +61,13 @@ useEffect(() => {
 
     return (
         <>
+            {isRestoring && (
+                <div className="modal-backdrop fade show d-flex align-items-center justify-content-center">
+                    <div className="cma-messages-are-loader-wrapper">
+                        <span className="loader"></span>
+                    </div>
+                </div>
+            )}
             <div className="page-wrapper all-page-search-bar" >
                 <div className='content-wrapper-main'>
 

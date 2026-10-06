@@ -345,7 +345,7 @@ export default function ImageViewer({ file }) {
     const [drag, setDrag] = useState(false);
     const [loaded, setLoaded] = useState(false);
     const [ready, setReady] = useState(false);
-    const [err, setErr] = useState(true);
+    const [err, setErr] = useState(false);
     const [fitScale, setFitScale] = useState(1);
     const [tooBig, setTooBig] = useState(false);
     const [pinchData, setPinchData] = useState(null);

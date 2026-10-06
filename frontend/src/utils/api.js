@@ -41,14 +41,15 @@ axiosApi.interceptors.response.use(
 
     // Check if the requested URL is a public or auth-check route
     const isPublicOrAuthCheck =
-      originalRequest.url.includes("/auth/me") ||
+      // originalRequest.url.includes("/auth/me") ||
       originalRequest.url.includes("/auth/login") ||
       originalRequest.url.includes("/auth/register") ||
       originalRequest.url.includes("/auth/forgot_password") ||
       originalRequest.url.includes("/auth/reset_password") ||
       originalRequest.url.includes("/refresh_token") ||
       originalRequest.url.includes("/logout") ||
-      originalRequest.url.includes("/share");
+      originalRequest.url.includes("/links/access") ||
+      originalRequest.url.includes("/links/verify_password");
 
     // only handle 401 for protected routes (skip if retried or public/auth-check)
     if (
@@ -82,6 +83,12 @@ axiosApi.interceptors.response.use(
       } catch (refreshError) {
         isRefreshing = false;
         processQueue(refreshError); // Tell the queue it failed so they don't freeze
+
+        //  auto logged out if servern return the 401
+        const status = refreshError.response?.status;
+        if (status === 401 || status === 403) {
+          window.dispatchEvent(new Event("auth-expired"));
+        }
         return Promise.reject(refreshError);
       }
     }

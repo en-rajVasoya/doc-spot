@@ -10,18 +10,25 @@ const hashFile = async (file) => {
   return `spot-${name}-${file.size}-${hash}`;
 };
 
+
+
+
 self.onmessage = async (e) => {
   const { files, batchId } = e.data;
 
   const results = await Promise.all(
-    files.map(async (file) => {
+    files.map(async ({ file, filekey }) => {
       try {
         const fingerprint = await hashFile(file);
-        const filekey = file.webkitRelativePath || file.name;
         return { success: true, fingerprint, filekey };
       } catch (err) {
-        const filekey = file.webkitRelativePath || file.name;
-        return { success: false, filekey, error: err.message };
+        console.error("hashFile failed:", file.name, err);
+        return {
+          success: false,
+          filekey,
+          fingerprint: `spot-${encodeURIComponent(file.name.trim())}-${file.size}-${file.lastModified}`,
+          error: err.message
+        };
       }
     })
   );

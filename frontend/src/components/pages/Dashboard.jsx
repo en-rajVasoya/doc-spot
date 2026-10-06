@@ -72,7 +72,7 @@ function Dashboard() {
   // ##################################################
   // ---- STEP 2: Propagate display state to components
   // ##################################################
-  const displayItems = isSearchMode ? sortedSearchResults : (loading ? [] : items)
+  const displayItems = isSearchMode ? sortedSearchResults : items
   const displayLoading = isSearchMode ? searchLoading : loading
   const displayError = isSearchMode ? searchError : error
 
@@ -97,6 +97,7 @@ function Dashboard() {
   const setModal = (modalData) => {
     if (modalData === null) {
       setModals(prev => prev.slice(0, -1));
+      clearSelection();
     } else {
       setModals(prev => [...prev, modalData]);
     }
@@ -147,7 +148,7 @@ function Dashboard() {
     const location = params.get("location");
     const personIds = params.get("personIds");
 
-    if (!query && !fileType && !owner && !location && !dateFrom && !dateTo && !personIds) return;
+    if (!query && !fileType && !owner && !location && !dateFrom && !dateTo && !personIds && !date) return;
 
     searchApi({
       query: query || null,

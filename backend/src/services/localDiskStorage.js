@@ -139,11 +139,15 @@ export const localDiskStorage = {
     // -------------------------------------------------------------
     getFileStream: async (storagePath, range) => {
         const absPath = getAbsolutePath(storagePath);
-        if (!absPath || !fs.existsSync(absPath)) {
+        if (!absPath) throw new Error("File not found on disk");
+
+        let stat;
+        try {
+            stat = await fs.promises.stat(absPath);
+        } catch {
             throw new Error("File not found on disk");
         }
 
-        const stat = fs.statSync(absPath);
         const fileSize = stat.size;
 
         if (!range) {

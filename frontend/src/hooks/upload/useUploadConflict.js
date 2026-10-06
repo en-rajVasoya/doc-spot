@@ -32,12 +32,25 @@ const generateUniqueName = (originalName, existingItems) => {
 export function useUploadConflict(addFiles) {
     //  here this is for the confilick file or folder name like replace all or keep both
     const [conflictModalData, setConflictModalData] = useState(null)
-    const pendingUploadRef = useRef(null)   //here for storing pending upload while modal is open
+    const pendingUploadRef = useRef(null)   // here for storing pending upload while modal is open
+    const conflictQueueRef = useRef([])     // queue for handling multiple conflicting items (e.g. multiple dropped folders)
 
 
     //  here this is for like same file name or folder name exist in current directory or not 
     const checkAndUpload = (selectedFiles, parentId, items) => {
         if (!items || items.length === 0) {
+            addFiles.current(selectedFiles, parentId)
+            return
+        }
+
+        // At root level (!parentId), only check conflicts against items owned by the current user.
+        // Ignore items shared with the user by others.
+        // Inside folders (parentId exists), check all items as usual.
+        const targetItems = !parentId
+            ? items.filter(i => !i.isSharedWithMe)
+            : items
+
+        if (!targetItems || targetItems.length === 0) {
             addFiles.current(selectedFiles, parentId)
             return
         }
@@ -50,15 +63,28 @@ export function useUploadConflict(addFiles) {
         if (isFolder) {
             // for folder only check root folder name
             const rootFolderName = selectedFiles[0].webkitRelativePath.split("/")[0]
-            const existingFolder = items.find(i => i.name === rootFolderName && i.type === "folder")
+            const existingFolder = targetItems.find(i => i.name === rootFolderName && i.type === "folder")
 
             if (existingFolder) {
                 // if folder already exist same name modal open now
-                pendingUploadRef.current = { selectedFiles, parentId, isFolder: true, items }
-                setConflictModalData({
+                const conflictItem = {
+                    selectedFiles,
+                    parentId,
+                    isFolder: true,
+                    items: targetItems,
                     conflicts: [rootFolderName],
                     replaceMap: { [rootFolderName]: existingFolder._id }
-                })
+                }
+
+                if (!pendingUploadRef.current) {
+                    pendingUploadRef.current = conflictItem
+                    setConflictModalData({
+                        conflicts: [rootFolderName],
+                        replaceMap: { [rootFolderName]: existingFolder._id }
+                    })
+                } else {
+                    conflictQueueRef.current.push(conflictItem)
+                }
                 return
             }
         } else {
@@ -67,19 +93,29 @@ export function useUploadConflict(addFiles) {
             const replaceMap = {}
 
             selectedFiles.forEach(file => {
-                const existing = items.find(i => i.name === file.name && i.type === "file")
-                console.log("checking file", file.name, "found existing", existing)
+                const existing = targetItems.find(i => i.name === file.name && i.type === "file")
                 if (existing) {
                     conflicts.push(file.name)
                     replaceMap[file.name] = existing._id
                 }
             })
-            console.log("conflicts", conflicts)
 
             if (conflicts.length > 0) {
-                //  how modal here
-                pendingUploadRef.current = { selectedFiles, parentId, isFolder: false, items }
-                setConflictModalData({ conflicts, replaceMap })
+                const conflictItem = {
+                    selectedFiles,
+                    parentId,
+                    isFolder: false,
+                    items: targetItems,
+                    conflicts,
+                    replaceMap
+                }
+
+                if (!pendingUploadRef.current) {
+                    pendingUploadRef.current = conflictItem
+                    setConflictModalData({ conflicts, replaceMap })
+                } else {
+                    conflictQueueRef.current.push(conflictItem)
+                }
                 return
             }
         }
@@ -94,25 +130,25 @@ export function useUploadConflict(addFiles) {
         if (!choice || !pendingUploadRef.current) {
             setConflictModalData(null)
             pendingUploadRef.current = null
+            conflictQueueRef.current = []
             return
         }
 
-        const { selectedFiles, parentId, items } = pendingUploadRef.current
+        const { selectedFiles, parentId, items, isFolder } = pendingUploadRef.current
         const { replaceMap } = conflictModalData
 
         if (choice === "replace") {
             addFiles.current(selectedFiles, parentId, replaceMap)
         } else {
-            if (pendingUploadRef.current.isFolder) {
+            if (isFolder) {
                 // rename the root folder segment in every file's webkitRelativePath
                 const originalRootName = selectedFiles[0].webkitRelativePath.split("/")[0]
                 const newRootName = generateUniqueName(originalRootName, items)
 
                 const renamedFiles = selectedFiles.map(file => {
-                    const newPath = file.webkitRelativePath.replace(
-                        new RegExp(`^${originalRootName}/`),
-                        `${newRootName}/`
-                    )
+                    const parts = file.webkitRelativePath.split("/")
+                    parts[0] = newRootName
+                    const newPath = parts.join("/")
                     const renamedFile = new File([file], file.name, { type: file.type })
                     Object.defineProperty(renamedFile, "webkitRelativePath", {
                         value: newPath,
@@ -140,8 +176,18 @@ export function useUploadConflict(addFiles) {
             }
         }
 
-        setConflictModalData(null)
-        pendingUploadRef.current = null
+        // Process next queued conflict if any exists
+        if (conflictQueueRef.current.length > 0) {
+            const nextItem = conflictQueueRef.current.shift()
+            pendingUploadRef.current = nextItem
+            setConflictModalData({
+                conflicts: nextItem.conflicts,
+                replaceMap: nextItem.replaceMap
+            })
+        } else {
+            setConflictModalData(null)
+            pendingUploadRef.current = null
+        }
     }
 
 

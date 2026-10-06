@@ -39,8 +39,8 @@ const mimeToType = (mime = "") => {
 
 // Resolve viewer type from MIME, filename, or URL
 const resolveType = (file) => {
-    if (file.file_type) {
-        const fromMime = mimeToType(file.file_type);
+    if (file.fileType) {
+        const fromMime = mimeToType(file.fileType);
         if (fromMime) return fromMime;
     }
     if (file.name) {
@@ -137,7 +137,7 @@ function FilePreviewModal({ file, onClose }) {
                         {type === "text" && (
                             <OverlayTrigger placement="bottom" overlay={<Tooltip>{copied ? "Copied!" : "Copy"}</Tooltip>}>
                                 <button onClick={handleCopy} className="btn-hover-gray">
-                                   <InteractiveIcon
+                                    <InteractiveIcon
                                         defaultIcon={copied ? copiedIcon : copyIcon}
                                         width={24}
                                         alt=""
@@ -158,7 +158,7 @@ function FilePreviewModal({ file, onClose }) {
 
                         <OverlayTrigger placement="bottom" overlay={<Tooltip>Close</Tooltip>}>
                             <button onClick={onClose} className="btn-hover-gray">
-                               <InteractiveIcon
+                                <InteractiveIcon
                                     defaultIcon={closeIcon}
                                     width={24}
                                     alt=""

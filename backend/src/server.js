@@ -7,9 +7,9 @@ import app, { initializeSocket } from "./app.js"
 // ENVIRONMENT VARIABLES
 // ===================================
 const PORT = process.env.PORT || 3000
-// Local Development mkcert Certificates (Keep as backup)
-const LOCAL_SSL_KEY_PATH = path.join(path.resolve(), '192.168.1.112+2-key.pem')
-const LOCAL_SSL_CERT_PATH = path.join(path.resolve(), '192.168.1.112+2.pem')
+// Local Development mkcert Certificates 
+const LOCAL_SSL_KEY_PATH = path.join(path.resolve(), '192.168.1.160+2-key.pem')
+const LOCAL_SSL_CERT_PATH = path.join(path.resolve(), '192.168.1.160+2.pem')
 
 // Production Let's Encrypt Certificates
 const SSL_KEY_PATH = process.env.SSL_KEY_PATH || '/etc/letsencrypt/live/docspot.duckdns.org/privkey.pem'
@@ -123,6 +123,10 @@ process.on("exit", () => {
 httpServer.listen(PORT, () => {
     console.log("SERVER STARTED SUCCESSFULLY ")
 })
+
+// Prevent Node from closing kept-alive sockets prematurely under heavy upload load
+httpServer.keepAliveTimeout = 65000;
+httpServer.headersTimeout = 66000;
 
 // ===================================
 // ERROR HANDLER FOR SERVER

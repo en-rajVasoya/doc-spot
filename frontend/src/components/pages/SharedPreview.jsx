@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { useSearchParams, useNavigate, useLocation } from "react-router-dom"
 import { OverlayTrigger, Tooltip, Modal, Form } from "react-bootstrap"
 import ImageViewer from "../features/filePreview/ImageViewer"
@@ -23,9 +23,14 @@ import fileIcon from "@images/svgs/file.svg"
 import copyIcon from "@images/icon/copy.svg"
 import copiedIcon from "@images/icon/copied-icon.svg"
 
+import { io } from "socket.io-client"
+import { getRoute } from "../../utils/getRoutes.js"
+import SharedAccessDenied from "./SharedAccessDenied"
+
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
 const API = import.meta.env.DEV ? "" : import.meta.env.VITE_BACKEND_URL;
+const SOCKET_URL = import.meta.env.VITE_API_URL?.replace(/\/api\/?$/, "") || "";
 
 const MIME = {
     isPDF: (m) => m === "application/pdf",
@@ -131,13 +136,20 @@ function PasswordModal({ show, password, setPassword, passwordError, setPassword
     )
 }
 
-function FilePreview({ data, copied, setCopied, downloadFile }) {
+function FilePreview({ data, token, copied, setCopied, downloadFile }) {
     const file = data.data;
 
-    // FIX: Ensure storagePath has a leading slash so the viewer components 
-    // construct the URL correctly (e.g., domain/files/path instead of domainfiles/path)
-    if (file && file.storagePath && !file.storagePath.startsWith('/')) {
-        file.storagePath = '/' + file.storagePath;
+    // FIX: Ensure storagePath has a leading slash and includes the public share link token
+    if (file && file.storagePath) {
+        if (!file.storagePath.startsWith('/')) {
+            file.storagePath = '/' + file.storagePath;
+        }
+        if (token && !file.storagePath.includes("token=")) {
+            file.storagePath += `?token=${token}`;
+        }
+    }
+    if (file && file.url && token && !file.url.includes("token=")) {
+        file.url += (file.url.includes("?") ? "&" : "?") + `token=${token}`;
     }
 
     const fileUrl = data.redirect_url
@@ -252,6 +264,8 @@ function SharedPreview() {
     const [passwordVerified, setPasswordVerified] = useState(false)
     const [showPwd, setShowPwd] = useState(false)
 
+    const prevHasPasswordRef = useRef(null)
+
     // Helper to recursively ensure all file storagePaths have a leading slash
     const fixStoragePaths = (res) => {
         if (res.data && res.data.storagePath && !res.data.storagePath.startsWith('/')) {
@@ -289,23 +303,100 @@ function SharedPreview() {
             })
             .then(res => {
                 if (!res.success) {
-                    // here check the status code 401 and then redirect user to the login page 
                     if (res.is_login_required) {
                         const currentPath = location.pathname + location.search
                         navigate(`/?redirect=${encodeURIComponent(currentPath)}`)
-                        return; // return to prevent flashing the error before redirecting
+                        return;
                     }
                     setError(res)
-                } else if (res.password_required) {
+                    return
+                }
+
+                // private link → redirect straight to Shared With Me, skip preview entirely
+                if (!res.password_required && res.is_public === false) {
+                    const itemId = res.data?._id
+                    const parentId = res.type === "folder" ? itemId : res.data?.parent
+
+                    if (parentId) {
+                        navigate(`${getRoute.SHARED_WITH_ME}/folder/${parentId}`, {
+                            replace: true,
+                            state: { highlightId: itemId }
+                        })
+                    } else {
+                        navigate(getRoute.SHARED_WITH_ME, {
+                            replace: true,
+                            state: { highlightId: itemId }
+                        })
+                    }
+                    return
+                }
+
+                if (res.password_required) {
+                    prevHasPasswordRef.current = true
                     setShowPasswordModal(true)
                     setData(fixStoragePaths(res))
                 } else {
+                    prevHasPasswordRef.current = false
                     setData(fixStoragePaths(res))
                 }
             })
             .catch(() => setError("Something went wrong"))
             .finally(() => setLoading(false))
     }, [token])
+
+
+
+    // so in shared link w are using second socket
+    useEffect(() => {
+        if (!data || !token) return
+
+        const socket = io(SOCKET_URL, { withCredentials: true })
+
+        socket.emit("join_shared_link", token)
+
+        socket.on("shared_link_updated", (update) => {
+            if (update.token !== token) return
+
+            if (update.is_expired) {
+                setError({ is_expired: true, message: "This link has expired" })
+                setData(null)
+                return
+            }
+
+            const passwordJustEnabled = update.has_password && prevHasPasswordRef.current !== true
+            prevHasPasswordRef.current = update.has_password
+
+            if (update.has_password) {
+                if (passwordJustEnabled || update.password_changed) {
+                    setShowPasswordModal(true)
+                    setPasswordVerified(false)
+                    setPassword("")
+
+                }
+            } else {
+                setShowPasswordModal(false)
+                setPasswordVerified(false)
+
+                if (!data?.data && !data?.folder_data) {
+                    fetch(`${API}/api/links/access?token=${token}`, { credentials: "include" })
+                        .then(res => res.json())
+                        .then(res => {
+                            if (res.success) setData(fixStoragePaths(res))
+                        })
+                }
+            }
+
+            if (!update.is_public) {
+                setError({ message: "This link is no longer public" })
+                setData(null)
+            }
+        })
+
+        return () => {
+            socket.emit("leave_shared_link", token)
+            socket.disconnect()
+        }
+    }, [data, token])
 
     const handlePasswordSubmit = async () => {
         if (!password.trim()) {
@@ -352,40 +443,19 @@ function SharedPreview() {
 
     if (error) {
         return (
-            <div className="file-preview-backdrop d-flex align-items-center justify-content-center">
-                <div className="file-preview-modal p-5 text-center d-flex flex-column align-items-center justify-content-center" style={{ maxWidth: '440px', height: 'auto', minHeight: '300px', borderRadius: '24px' }}>
-                    <div className="mb-4" style={{ background: 'var(--red-10)', padding: '20px', borderRadius: '50%' }}>
-                        <InteractiveIcon defaultIcon={errorIcon} width={48} height={48} />
-                    </div>
-
-                    {/* Dynamic Title based on the flags coming from the backend */}
-                    <h3 className="mb-3" style={{ fontWeight: 600, color: 'var(--dark)' }}>
-                        {error.is_not_found ? "Link Not Found" :
-                            error.is_expired ? "Link Expired" :
-                                error.is_access_denied ? "Access Denied" :
-                                    "Something Went Wrong"}
-                    </h3>
-
-                    <p className="mb-4" style={{ color: 'var(--dark-50)', fontSize: '15px' }}>
-                        {error.is_access_denied
-                            ? `You are signed in as ${user?.email || "another user"}. You do not have permission to view this link.`
-                            : (error.message || error)
-                        }
-                    </p>
-
-                    {/* Switch Account button ONLY shows if they are logged into the wrong account */}
-                    {error.is_access_denied && (
-                        <button className="btn-black w-100" onClick={async () => {
-                            await logout();
-                            const currentPath = location.pathname + location.search;
-                            navigate(`/?redirect=${encodeURIComponent(currentPath)}`);
-                        }} style={{ padding: '12px', fontSize: '16px' }}>
-                            Switch account
-                        </button>
-                    )}
-                </div>
-            </div>
-        )
+            <SharedAccessDenied
+                error={error}
+                user={user}
+                onSwitchAccount={async () => {
+                    await logout();
+                    const currentPath = location.pathname + location.search;
+                    navigate(`/?redirect=${encodeURIComponent(currentPath)}`);
+                }}
+                onGoHome={() => {
+                    navigate(user ? "/dashboard" : "/");
+                }}
+            />
+        );
     }
 
 
@@ -406,7 +476,7 @@ function SharedPreview() {
     }
 
     if (data?.type === "file") {
-        return <FilePreview data={data} copied={copied} setCopied={setCopied} downloadFile={downloadFile} />
+        return <FilePreview data={data} token={token} copied={copied} setCopied={setCopied} downloadFile={downloadFile} />
     }
 
     if (data?.type === "folder") {

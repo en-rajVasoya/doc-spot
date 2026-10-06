@@ -86,10 +86,6 @@ function CopyModal({ data, onClose }) {
 
         if (lastClick.current[folder._id] && now - lastClick.current[folder._id] < 400) {
             setTrail(prev => [...prev, { id: folder._id, name: folder.name }]);
-        } else {
-            if (folder._id !== currentFolderId) {
-                setSelectedDestination(folder._id);
-            }
         }
 
         lastClick.current[folder._id] = now;
@@ -239,7 +235,7 @@ function CopyModal({ data, onClose }) {
                                             >
                                                 <div className="d-flex align-items-center">
                                                     <InteractiveIcon
-                                                        defaultIcon={getFolderIcon(folder.color, "list", folder.isShared)}
+                                                        defaultIcon={getFolderIcon(folder.color, "list", folder.isSharedWithMe || folder.isShared || (folder.sharedWith && folder.sharedWith.length > 0))}
                                                         width={32}
                                                         height={28}
                                                     />

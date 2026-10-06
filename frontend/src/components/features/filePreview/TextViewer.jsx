@@ -20,13 +20,24 @@ export default function TextViewer({ file, contentRef }) {
             ? `${FILE_BASE_URL}${file.storagePath}`
             : "");
 
+    const currentSize = file?.size || file?.fileSize || 0;
+    const isInitiallyTooBig = currentSize > MAX_SIZE;
+
     const [content, setContent] = useState("");
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(!isInitiallyTooBig);
     const [error, setError] = useState(null);
-    const [tooBig, setTooBig] = useState(false);
+    const [tooBig, setTooBig] = useState(isInitiallyTooBig);
 
     useEffect(() => {
         if (!src) return;
+
+        const currentSize = file?.size || file?.fileSize || 0;
+        if (currentSize > MAX_SIZE) {
+            setTooBig(true);
+            setLoading(false);
+            return;
+        }
+
         setLoading(true);
         setError(null);
         setTooBig(false);
@@ -44,6 +55,12 @@ export default function TextViewer({ file, contentRef }) {
             })
             .then(text => {
                 if (text === null) return;
+                const textBytes = new Blob([text]).size;
+                if (textBytes > MAX_SIZE) {
+                    setTooBig(true);
+                    setLoading(false);
+                    return;
+                }
                 setContent(text);
                 // parent ko content do copy ke liye
                 if (contentRef) contentRef.current = text;
@@ -53,10 +70,9 @@ export default function TextViewer({ file, contentRef }) {
                 setError("Could not load file.");
                 setLoading(false);
             });
-    }, [src]);
+    }, [src, file]);
 
     const ext = (file?.name || "").split(".").pop().toUpperCase();
-    const currentSize = file?.size || file?.fileSize || 0;
     const fileSizeMB = currentSize
         ? (currentSize / (1024 * 1024)).toFixed(1)
         : null;

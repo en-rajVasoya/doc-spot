@@ -1,41 +1,51 @@
 import uploadModel from "#models/uploadModel";
 import { logger } from "#utils/logger";
+import { emitToUser } from "../socket.js";
 
 //  this fucntion is for calculating the folder size adn update when move copy delete and upaldo here
-export const updateFolderSizeTree = async (folderId, sizeDifference) =>{
-    const visited = new Set();
-    const ancestorIds = [];
+export const updateFolderSizeTree = async (folderId, sizeDifference) => {
+    // If there is no size change, don't do anything
+    if (!sizeDifference || sizeDifference === 0) return;
+    
+    // Fetch the folder and its entire history in one go
+    const folder = await uploadModel.findById(folderId).select("ancestorIds");
+    if (!folder) return; // folder missing/deleted — stop safely
+    
+    // Combine its history with its own ID to get the complete path
+    const allIds = [...(folder.ancestorIds || []), folderId];
+    
+    // Update the size for EVERY folder in the path in ONE single database call!
+    await uploadModel.updateMany(
+        { _id: { $in: allIds } },
+        { $inc: { totalSize: sizeDifference } }
+    );
 
-    let currentId = folderId;
 
-    // STEP 1: Walk up the parent chain, collecting all ancestor IDs
-    // (in memory, just reading — no writes yet)
+    //  socket event to users where in fodler some size changes
+    try {
+        const docs = await uploadModel.find({ _id: { $in: allIds } })
+            .select("owner sharedWith.userId totalSize").lean();
+        const byId = new Map(docs.map(d => [String(d._id), d]));
 
-    while(currentId){
-        const idStr = currentId.toString();
+        const audience = new Set();
+        const perUser = new Map();
 
-        // if we've already seen this ID, it's a circular reference — stop
-        if (visited.has(idStr)) {
-            logger.error(`Circular folder reference detected while updating size, starting at folder ${folderId}`);
-            break;
+        for (const id of allIds) {
+            const d = byId.get(String(id));
+            if (!d) continue;
+            if (d.owner) audience.add(String(d.owner));
+            (d.sharedWith || []).forEach(s => s.userId && audience.add(String(s.userId)));
+            const update = { folderId: String(d._id), totalSize: d.totalSize };
+            audience.forEach(uid => {
+                if (!perUser.has(uid)) perUser.set(uid, []);
+                perUser.get(uid).push(update);
+            });
         }
 
-        visited.add(idStr);
-        ancestorIds.push(currentId);
+         // emit one batched event per user
+        perUser.forEach((updates, uid) => emitToUser(uid, "folder_size_updated", { updates }));
+    } catch (error) {
+        logger.error(`[folder_size_updated] emit failed: ${err.message}`);
 
-        // fetch just the parent field — lightweight read
-        const folder = await uploadModel.findById(currentId).select("parent");
-
-        if (!folder) break; // folder missing/deleted — stop safely
-        currentId = folder.parent;
-    }
-
-
-    // STEP 2: if we found any fodler, update all of them  in ONE databases call
-    if (ancestorIds.length > 0) {
-        await uploadModel.updateMany(
-            { _id: { $in: ancestorIds } },
-            { $inc: { totalSize: sizeDifference } }
-        );
     }
 }

@@ -453,14 +453,9 @@ function TrashContentView({ view, setModal, onItemRefsReady, dragRootRef }) {
 
                         {/* restore */}
                         <li onClick={async () => {
-                            const selectedArray = Array.from(selectedIds)
-                            for (const id of selectedArray) {
-                                await restoreItemApi(id, true)
-                            }
-                            const message = selectedArray.length > 1 ? "Items restored successfully" : "Item restored successfully"
-                            showNotification(message, "success", "bottom-center")
-                            setSelectedIds(new Set())
                             setItemContextMenu({ visible: false })
+                            const selectedArray = Array.from(selectedIds)
+                            await restoreItemApi(selectedArray)
                         }}>
                             <button className="dropdown-item">
                                 <span className="d-flex align-items-center">

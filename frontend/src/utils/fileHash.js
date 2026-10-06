@@ -14,6 +14,7 @@ worker.onmessage = (e) => {
 };
 
 worker.onerror = (err) => {
+  console.error("[WORKER CRASHED]:", err.message, err);
   pending.forEach(p => p([]));
   pending.clear();
 };
@@ -24,6 +25,10 @@ export function generateFingerprintBatch(files) {
   const batchId = batchCounter++;
   return new Promise((resolve) => {
     pending.set(batchId, resolve);
-    worker.postMessage({ files, batchId });
+    const filesWithKeys = files.map(file => ({
+      file,
+      filekey: file.webkitRelativePath || file.name
+    }));
+    worker.postMessage({ files: filesWithKeys, batchId });
   });
 }

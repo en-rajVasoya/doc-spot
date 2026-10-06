@@ -15,7 +15,7 @@ import { getAbsolutePath } from "../utils/pathHelper.js"
 // ============================================================
 
 // Prevents writing too many chunks at once to keep the hard disk fast.
-const MAX_CONCURRENT_WRITES = 15 
+const MAX_CONCURRENT_WRITES = 25
 let activeWrites = 0
 const globalWriteQueue = []
 
@@ -41,7 +41,7 @@ const releaseWriteSlot = () => {
     if (globalWriteQueue.length > 0) {
         activeWrites++
         const next = globalWriteQueue.shift()
-        next() 
+        next()
     }
 }
 
@@ -52,12 +52,31 @@ const releaseWriteSlot = () => {
 // ============================================================
 // Pool of open files. Opening/closing a file is slow. 
 // This opens the file once, writes all chunks, and closes at the end.
-const fdPool = new Map() 
+const fdPool = new Map()
 
+
+// Helper to verify if an FD is alive and valid in the OS
+const isFdAlive = (fd) => {
+    if (typeof fd !== "number" || fd < 0) return false
+    try {
+        fs.fstatSync(fd)
+        return true
+    } catch {
+        return false
+    }
+}
 
 // getFd: Get open file handle or open it if it's the first chunk
 const getFd = async (uploadId, storagePath) => {
     let entry = fdPool.get(uploadId) // Check cache to see if file is already open
+    // If handle is closed or invalid (e.g. previous request was aborted/interrupted), purge it
+    if (entry && !isFdAlive(entry.fd)) {
+        try {
+            await entry.handle.close()
+        } catch { }
+        fdPool.delete(uploadId)
+        entry = null
+    }
     if (!entry) {
         // If not open, open it on the disk in read/write mode ("r+")
         const handle = await fsPromises.open(storagePath, "r+")
@@ -76,12 +95,12 @@ const getFd = async (uploadId, storagePath) => {
 export const releaseFd = async (uploadId) => {
     const entry = fdPool.get(uploadId)
     if (!entry) return
+    fdPool.delete(uploadId) // Remove from cache Map first to prevent race conditions
     try {
         await entry.handle.close() // Safely close file on the hard disk
     } catch (err) {
         console.error(`[FD CLOSE ERROR] ${err.message}`)
     }
-    fdPool.delete(uploadId) // Remove from cache Map
 }
 
 
@@ -93,7 +112,7 @@ setInterval(async () => {
         if (now - entry.lastUsed > 2 * 60 * 1000) {
             try {
                 await entry.handle.close()
-            } catch {}
+            } catch { }
             fdPool.delete(uploadId)
         }
     }
@@ -315,7 +334,7 @@ export const streamChunkMiddleware = (req, res, next) => {
                             stream.unpipe(writeStream)
                             writeStream.destroy()
                             rejectWrite(new Error("Write timeout - chunk stuck"))
-                        }, 120000)
+                        }, 600000)
 
                         // Resolve promise when write finishes successfully
                         writeStream.on("finish", () => {
@@ -357,13 +376,15 @@ export const streamChunkMiddleware = (req, res, next) => {
 
             } catch (err) {
                 console.error(`[WRITE ERROR] ${uploadId} ${err.message}`)
+                await releaseFd(uploadId)
                 if (!stream.destroyed) {
                     stream.resume()
                 }
                 throw err
             }
         })()
-
+        // Prevent unhandled promise rejection crash if it fails before busboy 'finish' event
+        promise.catch(() => { })
         writePromises.push(promise)
     })
 

@@ -13,6 +13,8 @@ export function SearchProvider({ children }) {
     //  for storing search result in the cache so when user comes back so no api will call here
     const searchCache = useRef({})
 
+    const requestIdRef = useRef(0)
+
     const [isSearchMode, setIsSearchMode] = useState(false)
     const [searchResults, setSearchResults] = useState([])
     const [searchLoading, setSearchLoading] = useState(false)
@@ -41,43 +43,39 @@ export function SearchProvider({ children }) {
     //  search api
     const searchApi = useCallback(async (filters, page = 1) => {
 
-        //  create cache key  for sving search result here
         const cacheKey = JSON.stringify({ filters, page })
+        const thisRequestId = ++requestIdRef.current
 
-        //  cehck cache if we have search recently so no new search happens
+        console.log(`[searchApi] START id=${thisRequestId} page=${page} query=${filters.query}`)
+
         if (searchCache.current[cacheKey]) {
+            console.log(`[searchApi] CACHE HIT id=${thisRequestId} page=${page}`)
             const cachedData = searchCache.current[cacheKey]
-
             if (page === 1) setSearchResults(cachedData.results || [])
             else setSearchResults(prev => [...prev, ...(cachedData.results || [])]);
-
             setTotalCount(cachedData.totalCount);
             setCurrentPage(page);
             setIsSearchMode(true);
             setSearchFilters(filters);
             setSearchLoading(false);
             setLoadingMore(false);
-            return; // We stop here! No API call is made.
+            return;
         }
 
-        // clear the previous request if still running here
         if (abortControllerRef.current) {
+            console.log(`[searchApi] aborting previous controller (id=${thisRequestId} is taking over)`)
             abortControllerRef.current.abort()
         }
 
-        //  create new controller for new request (must be outside the if block!)
         const controller = new AbortController()
         abortControllerRef.current = controller
 
         try {
-            if (page === 1) {
-                setSearchLoading(true)
-            } else {
-                setLoadingMore(true)
-            }
+            if (page === 1) setSearchLoading(true)
+            else setLoadingMore(true)
+
             setSearchError(null)
             setIsSearchMode(true)
-
             setSearchFilters(filters)
 
             const params = {}
@@ -91,36 +89,47 @@ export function SearchProvider({ children }) {
             if (filters.dateTo) params.dateTo = filters.dateTo
             params.page = page
 
+            console.log(`[searchApi] AWAITING id=${thisRequestId} page=${page}`)
+
             const { data } = await axiosApi.get("/search/filter", {
                 params,
                 signal: controller.signal
             })
 
-            // 3. SAVE TO CACHE: Save the backend response into our memory dictionary for next time!
+            console.log(`[searchApi] RESOLVED id=${thisRequestId} page=${page} currentGlobalId=${requestIdRef.current} results=${data.results?.length}`)
+
+            if (thisRequestId !== requestIdRef.current) {
+                console.log(`[searchApi] STALE — DROPPING id=${thisRequestId} (current is ${requestIdRef.current})`)
+                return
+            }
+
             searchCache.current[cacheKey] = data;
 
-            if (page === 1) {
-                setSearchResults(data.results || [])
-            } else {
-                setSearchResults(prev => [...prev, ...(data.results || [])])
-            }
+            if (page === 1) setSearchResults(data.results || [])
+            else setSearchResults(prev => [...prev, ...(data.results || [])])
 
             setTotalCount(data.totalCount)
             setCurrentPage(page)
 
+            console.log(`[searchApi] APPLIED id=${thisRequestId} page=${page}`)
 
         } catch (error) {
-            // Silently ignore if the error was just us cancelling the request
             if (error.name === "CanceledError" || error.code === "ERR_CANCELED") {
+                console.log(`[searchApi] CANCELED id=${thisRequestId} page=${page}`)
                 return;
+            }
+            if (thisRequestId !== requestIdRef.current) {
+                console.log(`[searchApi] STALE ERROR — DROPPING id=${thisRequestId}`)
+                return
             }
             setSearchError(error.response?.data?.message || "Search failed")
             setSearchResults([])
         } finally {
-            // Only stop the loading spinner if this specific request wasn't cancelled
-            if (!controller.signal.aborted) {
+            if (thisRequestId === requestIdRef.current) {
                 setSearchLoading(false)
                 setLoadingMore(false)
+            } else {
+                console.log(`[searchApi] FINALLY SKIPPED (stale) id=${thisRequestId}`)
             }
         }
     }, [])
@@ -128,20 +137,24 @@ export function SearchProvider({ children }) {
 
     // load more pagination here
     const loadMore = useCallback(() => {
-        if (searchLoading) return
+        console.log(`[loadMore] called — searchLoading=${searchLoading} loadingMore=${loadingMore} resultsLen=${searchResults.length} totalCount=${totalCount} currentPage=${currentPage}`)
+        if (searchLoading || loadingMore) return
         if (searchResults.length >= totalCount) return
         searchApi(searchFilters, currentPage + 1)
-    }, [searchLoading, searchResults, totalCount, currentPage, searchFilters, searchApi])
+    }, [searchLoading, loadingMore, searchResults, totalCount, currentPage, searchFilters, searchApi])
 
+
+    const purgeSearchCache = useCallback(() => {
+        searchCache.current = {}
+    }, [])
 
     // when search clear 
     const clearSearch = useCallback(() => {
-
-        // force stop the pending search api request instatly
+        console.log(`[clearSearch] CALLED — bumping requestId from ${requestIdRef.current} to ${requestIdRef.current + 1}`)
         if (abortControllerRef.current) {
             abortControllerRef.current.abort()
         }
-
+        requestIdRef.current++
         setIsSearchMode(false)
         setSearchResults([])
         setSearchError(null)
@@ -150,16 +163,9 @@ export function SearchProvider({ children }) {
         setTotalCount(0)
         setCurrentPage(1)
         setSearchFilters({
-            query: "",
-            fileType: null,
-            ownerFilter: null,
-            location: null,
-            folderId: null,
-            personIds: null,
-            personNames: null,
-            dateFrom: null,
-            dateTo: null,
-            date: null
+            query: "", fileType: null, ownerFilter: null, location: null,
+            folderId: null, personIds: null, personNames: null,
+            dateFrom: null, dateTo: null, date: null
         })
     }, [])
 
@@ -173,6 +179,7 @@ export function SearchProvider({ children }) {
             searchFilters,
             searchApi,
             clearSearch,
+            purgeSearchCache,
             setSearchResults,
             loadMore,
             totalCount,

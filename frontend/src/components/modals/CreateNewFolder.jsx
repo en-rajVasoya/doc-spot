@@ -12,6 +12,8 @@ function CreateNewFolder({ onClose }) {
     const modalRef = useRef(null);
     const inputRef = useRef(null)
 
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
     const { isMobile } = useResponsive()
     const { createFolderApi } = useFileExplorer();
 
@@ -37,13 +39,21 @@ function CreateNewFolder({ onClose }) {
 
     //  when handle submit here
     const handleSubmit = async () => {
+        if (isSubmitting) return;
+
         if (!name.trim()) {
             setShake(true)
             setTimeout(() => setShake(false), 400)
             return;
         }
-        await createFolderApi(name.trim())
-        onClose()
+
+        try {
+            setIsSubmitting(true)
+            await createFolderApi(name.trim())
+            onClose()
+        } catch (error) {
+            setIsSubmitting(false)
+        }
     }
 
     return (
@@ -89,6 +99,7 @@ function CreateNewFolder({ onClose }) {
                         <button
                             className="btn-secondary btn-lg m-0"
                             onClick={onClose}
+                            disabled={isSubmitting}
                         >
                             Cancel
                         </button>
@@ -96,8 +107,9 @@ function CreateNewFolder({ onClose }) {
                         <button
                             className="btn-black btn-lg m-0"
                             onClick={handleSubmit}
+                            disabled={isSubmitting}
                         >
-                            Create
+                            {isSubmitting ? "Creating..." : "Create"}
                         </button>
                     </Modal.Footer>
                 </div>

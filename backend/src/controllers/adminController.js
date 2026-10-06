@@ -66,7 +66,7 @@ export const createUser = async (req, res) => {
         const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/
 
         if (!passwordRegex.test(password)) {
-            return res.status(400).json({ success: false, message: "Password must be 8 characters, one uppercase and one special symbol" })
+            return res.status(400).json({ success: false, message: "Password must be at least 8 characters, with 1 uppercase, 1 special symbol, and no spaces" })
         }
 
         // ##################################################
@@ -342,7 +342,7 @@ export const updateUser = async (req, res) => {
             if (!passwordRegex.test(password)) {
                 return res.status(400).json({
                     success: false,
-                    message: "Password must be 8 characters, one uppercase and one special symbol"
+                    message: "Password must be at least 8 characters, with 1 uppercase, 1 special symbol, and no spaces"
                 });
             }
             const hashedPassword = await bcrypt.hash(password, 10);
@@ -640,207 +640,347 @@ export const deleteUser = async (req, res) => {
 
 
 // ----------------------------- IMPORT USERS ------------------------------
+// export const importUsers = async (req, res) => {
+//     try {
+//         if (!req.clientDb) {
+//             return res.status(400).json({ message: "Client DB not found" });
+//         }
+//         const userModel = getUserModel(req.clientDb);
+//         const clientModel = require("@models/client");
+//         if (!req.file) {
+//             return res.status(400).json({ message: "CSV file required" });
+//         }
+//         const users = [];
+//         await new Promise((resolve, reject) => {
+//             fs.createReadStream(req.file.path)
+//                 .pipe(csv({
+//                     mapHeaders: ({ header }) => {
+//                         // Normalize case (Email, EMAIL, EMail -> email) but keep exact
+//                         // spelling otherwise, so typos like "Emails" don't silently
+//                         // pass through as something else.
+//                         const normalized = header.toLowerCase().trim();
+//                         if (normalized === "fullname" || normalized === "full_name" || normalized === "full name") {
+//                             return "name";
+//                         }
+//                         return normalized;
+//                     }
+//                 }))
+//                 .on("data", (row) => users.push(row))
+//                 .on("end", resolve)
+//                 .on("error", reject);
+//         });
+//         if (!users.length) {
+//             fs.unlinkSync(req.file.path);
+//             return res.status(400).json({ message: "CSV is empty" });
+//         }
+
+//         // ── Header validation ───────────────────────────────────────────
+//         // Required columns (case-insensitive), but must match EXACTLY once
+//         // normalized — "Emails", "user_name", "pass word" etc. should NOT
+//         // be silently accepted as the real column.
+//         const REQUIRED_HEADERS = ["username", "name", "email", "password"];
+//         const HEADER_DISPLAY_NAME = {
+//             username: "Username",
+//             name: "FullName",
+//             email: "Email",
+//             password: "Password",
+//         };
+//         const actualHeaders = Object.keys(users[0]);
+//         const missingHeaders = REQUIRED_HEADERS.filter((h) => !actualHeaders.includes(h));
+//         if (missingHeaders.length) {
+//             fs.unlinkSync(req.file.path);
+//             return res.status(400).json({
+//                 message: `Can't import: file headers don't match the required format. Missing or renamed column(s): ${missingHeaders.map((h) => HEADER_DISPLAY_NAME[h]).join(", ")}. Expected columns: Username, FullName, Email, Password.`
+//             });
+//         }
+//         // ─────────────────────────────────────────────────────────────────
+
+//         // ── Validation helpers ──────────────────────────────────────────
+//         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+//         const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
+
+//         const validateEmail = (email) => emailRegex.test(String(email || "").trim());
+//         const validatePassword = (password) => passwordRegex.test(String(password || ""));
+
+//         // ── User limit check ──────────────────────────────────────────────
+//         const client = await clientModel.findOne({ admin_user_id: req.user._id })
+//             .select("subscription_status number_of_users");
+//         const subscriptionStatus = client?.subscription_status || "trial";
+//         const isTrial = subscriptionStatus === "trial";
+//         const userLimit = isTrial
+//             ? parseInt(process.env.TRIAL_USER_LIMIT || "20", 10)
+//             : parseInt(client.number_of_users || "501", 10);
+//         const currentUserCount = await userModel.countDocuments({});
+//         const availableSlots = userLimit - currentUserCount;
+//         if (availableSlots <= 0) {
+//             fs.unlinkSync(req.file.path);
+//             return res.status(400).json({
+//                 message: `User limit reached. Your ${isTrial ? "trial" : "current"} plan allows up to ${userLimit} users. You already have ${currentUserCount} users. Please upgrade your plan to add more users.`
+//             });
+//         }
+//         // ─────────────────────────────────────────────────────────────────
+//         const emails = users.map(u => u.email).filter(Boolean);
+//         const usernames = users.map(u => u.username).filter(Boolean);
+//         const existingUsers = await userModel.find({
+//             $or: [
+//                 { email: { $in: emails } },
+//                 { username: { $in: usernames } }
+//             ]
+//         });
+//         const existingEmailSet = new Set(existingUsers.map(u => u.email));
+//         const existingUsernameSet = new Set(existingUsers.map(u => u.username));
+
+//         // Track usernames/emails seen within the CSV itself (to catch duplicates inside the file)
+//         const seenEmailSet = new Set();
+//         const seenUsernameSet = new Set();
+
+//         const bulkOps = [];
+//         const errors = [];
+//         let limitReachedCount = 0;
+
+//         for (let i = 0; i < users.length; i++) {
+//             const user = users[i];
+//             const row = i + 2;
+//             const username = (user.username || "").trim();
+//             const email = (user.email || "").trim();
+
+//             try {
+//                 // ── Basic required fields ──────────────────────────────
+//                 if (!user.name || !email || !username || !user.password) {
+//                     errors.push({ row, username: username || null, email: email || null, error: "Missing required fields" });
+//                     continue;
+//                 }
+
+//                 // ── Username uniqueness (DB + within file) ─────────────
+//                 if (existingUsernameSet.has(username) || seenUsernameSet.has(username)) {
+//                     errors.push({ row, username, email, error: "Username already exists" });
+//                     continue;
+//                 }
+
+//                 // ── Email uniqueness (DB + within file) ────────────────
+//                 if (existingEmailSet.has(email) || seenEmailSet.has(email)) {
+//                     errors.push({ row, username, email, error: "Email already exists" });
+//                     continue;
+//                 }
+
+//                 // ── Email format ────────────────────────────────────────
+//                 if (!validateEmail(email)) {
+//                     errors.push({ row, username, email, error: "Invalid email address" });
+//                     continue;
+//                 }
+
+//                 // ── Password strength ───────────────────────────────────
+//                 if (!validatePassword(user.password)) {
+//                     errors.push({
+//                         row,
+//                         username,
+//                         email,
+//                         error: "Password must be at least 8 characters and contain 1 uppercase, 1 lowercase, 1 number, and 1 special character"
+//                     });
+//                     continue;
+//                 }
+
+//                 // ── Stop inserting once available slots are filled ────
+//                 if (bulkOps.length >= availableSlots) {
+//                     limitReachedCount++;
+//                     errors.push({
+//                         row,
+//                         username,
+//                         email,
+//                         error: `User limit reached. Your ${isTrial ? "trial" : "current"} plan allows up to ${userLimit} users.`
+//                     });
+//                     continue;
+//                 }
+
+//                 // Mark as seen so later duplicate rows in the same file get caught
+//                 seenUsernameSet.add(username);
+//                 seenEmailSet.add(email);
+
+//                 const hashedPassword = await bcrypt.hash(user.password, 10);
+//                 bulkOps.push({
+//                     insertOne: {
+//                         document: {
+//                             name: user.name,
+//                             username,
+//                             email,
+//                             password: hashedPassword,
+//                             status: "offline",
+//                             avatar: {
+//                                 "file_name": "default-profile-7.svg",
+//                                 "file_url": "/uploads/default/default-icon.svg",
+//                                 "original_file_url": "/uploads/default/compressed-default-icon.webp",
+//                                 "file_type": "image/svg+xml",
+//                                 "file_size": 172450,
+//                                 "thumbnail_url": "/uploads/default/thumb-default-icon.png"
+//                             }
+//                         }
+//                     }
+//                 });
+//             } catch (err) {
+//                 errors.push({ row, username: username || null, email: email || null, error: err.message });
+//             }
+//         }
+
+//         if (bulkOps.length) {
+//             await userModel.bulkWrite(bulkOps);
+//         }
+//         fs.unlinkSync(req.file.path);
+//         return res.status(200).json({
+//             message: limitReachedCount > 0
+//                 ? `Import completed. ${limitReachedCount} user(s) were not imported because you've reached your ${isTrial ? "trial" : "plan"} limit of ${userLimit} users. Please upgrade your plan to add more users.`
+//                 : "Users import completed",
+//             inserted: bulkOps.length,
+//             // errors: errors.length,
+//             // errorDetails: errors
+//         });
+//     } catch (error) {
+//         logger.error("Import Users Error:", error);
+//         if (req.file?.path && fs.existsSync(req.file.path)) {
+//             fs.unlinkSync(req.file.path);
+//         }
+//         return res.status(500).json({ message: "Import failed" });
+//     }
+// };
+
+
+
+// ----------------------------- IMPORT USERS ------------------------------
 export const importUsers = async (req, res) => {
     try {
-        if (!req.clientDb) {
-            return res.status(400).json({ message: "Client DB not found" });
-        }
-        const userModel = getUserModel(req.clientDb);
-        const clientModel = require("@models/client");
-        if (!req.file) {
-            return res.status(400).json({ message: "CSV file required" });
-        }
-        const users = [];
-        await new Promise((resolve, reject) => {
-            fs.createReadStream(req.file.path)
-                .pipe(csv({
-                    mapHeaders: ({ header }) => {
-                        // Normalize case (Email, EMAIL, EMail -> email) but keep exact
-                        // spelling otherwise, so typos like "Emails" don't silently
-                        // pass through as something else.
-                        const normalized = header.toLowerCase().trim();
-                        if (normalized === "fullname" || normalized === "full_name" || normalized === "full name") {
-                            return "name";
-                        }
-                        return normalized;
-                    }
-                }))
-                .on("data", (row) => users.push(row))
-                .on("end", resolve)
-                .on("error", reject);
-        });
-        if (!users.length) {
-            fs.unlinkSync(req.file.path);
-            return res.status(400).json({ message: "CSV is empty" });
+        // ----------------------------------------------------
+        // ---- STEP 1: get the data from frontend
+        // ----------------------------------------------------
+        const { users } = req.body
+
+        if (!Array.isArray(users) || users.length === 0) {
+            return res.status(400).json({ success: false, message: "No users to import" });
         }
 
-        // ── Header validation ───────────────────────────────────────────
-        // Required columns (case-insensitive), but must match EXACTLY once
-        // normalized — "Emails", "user_name", "pass word" etc. should NOT
-        // be silently accepted as the real column.
-        const REQUIRED_HEADERS = ["username", "name", "email", "password"];
-        const HEADER_DISPLAY_NAME = {
-            username: "Username",
-            name: "FullName",
-            email: "Email",
-            password: "Password",
-        };
-        const actualHeaders = Object.keys(users[0]);
-        const missingHeaders = REQUIRED_HEADERS.filter((h) => !actualHeaders.includes(h));
-        if (missingHeaders.length) {
-            fs.unlinkSync(req.file.path);
-            return res.status(400).json({
-                message: `Can't import: file headers don't match the required format. Missing or renamed column(s): ${missingHeaders.map((h) => HEADER_DISPLAY_NAME[h]).join(", ")}. Expected columns: Username, FullName, Email, Password.`
-            });
-        }
-        // ─────────────────────────────────────────────────────────────────
-
-        // ── Validation helpers ──────────────────────────────────────────
+        // ----------------------------------------------------
+        // ---- STEP 2: email and password regex
+        // ----------------------------------------------------
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
+        const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
 
-        const validateEmail = (email) => emailRegex.test(String(email || "").trim());
-        const validatePassword = (password) => passwordRegex.test(String(password || ""));
+        const validateEmail = (email) => emailRegex.test(String(email || "").trim())
+        const validatePassword = (password) => passwordRegex.test(String(password || ""))
 
-        // ── User limit check ──────────────────────────────────────────────
-        const client = await clientModel.findOne({ admin_user_id: req.user._id })
-            .select("subscription_status number_of_users");
-        const subscriptionStatus = client?.subscription_status || "trial";
-        const isTrial = subscriptionStatus === "trial";
-        const userLimit = isTrial
-            ? parseInt(process.env.TRIAL_USER_LIMIT || "20", 10)
-            : parseInt(client.number_of_users || "501", 10);
-        const currentUserCount = await userModel.countDocuments({});
-        const availableSlots = userLimit - currentUserCount;
-        if (availableSlots <= 0) {
-            fs.unlinkSync(req.file.path);
-            return res.status(400).json({
-                message: `User limit reached. Your ${isTrial ? "trial" : "current"} plan allows up to ${userLimit} users. You already have ${currentUserCount} users. Please upgrade your plan to add more users.`
-            });
-        }
-        // ─────────────────────────────────────────────────────────────────
-        const emails = users.map(u => u.email).filter(Boolean);
-        const usernames = users.map(u => u.username).filter(Boolean);
+        // ----------------------------------------------------
+        // ---- STEP 3: find email and user id in the db
+        // ----------------------------------------------------
+        const emails = users.map(u => u.email?.trim().toLowerCase()).filter(Boolean)
+        const userIds = users.map(u => u.user_id?.trim()).filter(Boolean)
+
         const existingUsers = await userModel.find({
             $or: [
                 { email: { $in: emails } },
-                { username: { $in: usernames } }
+                { user_id: { $in: userIds } }
             ]
-        });
-        const existingEmailSet = new Set(existingUsers.map(u => u.email));
-        const existingUsernameSet = new Set(existingUsers.map(u => u.username));
+        }).select("email user_id")
 
-        // Track usernames/emails seen within the CSV itself (to catch duplicates inside the file)
+        const existingEmailSet = new Set(existingUsers.map(u => u.email))
+        const existingUserIdSet = new Set(existingUsers.map(u => u.user_id))
+
+        // track duplicates within the submitted batch itself
         const seenEmailSet = new Set();
-        const seenUsernameSet = new Set();
+        const seenUserIdSet = new Set();
 
-        const bulkOps = [];
-        const errors = [];
-        let limitReachedCount = 0;
+        // ----------------------------------------------------
+        // ---- STEP 4: validate row by row and build bulk insert 
+        // ----------------------------------------------------
+        const bulkOps = []
+        const errors = []
 
         for (let i = 0; i < users.length; i++) {
-            const user = users[i];
-            const row = i + 2;
-            const username = (user.username || "").trim();
-            const email = (user.email || "").trim();
+            const row = users[i]
+            const rowNumber = i + 2
+
+            const user_id = (row.user_id || "").trim();
+            const name = (row.name || "").trim();
+            const email = (row.email || "").trim().toLowerCase();
+            const password = row.password || "";
 
             try {
-                // ── Basic required fields ──────────────────────────────
-                if (!user.name || !email || !username || !user.password) {
-                    errors.push({ row, username: username || null, email: email || null, error: "Missing required fields" });
-                    continue;
+                // required fields
+                if (!user_id || !name || !email || !password) {
+                    errors.push({ row: rowNumber, user_id: user_id || null, email: email || null, error: "Missing required fields" })
+                    continue
                 }
 
-                // ── Username uniqueness (DB + within file) ─────────────
-                if (existingUsernameSet.has(username) || seenUsernameSet.has(username)) {
-                    errors.push({ row, username, email, error: "Username already exists" });
-                    continue;
+                // user_id unique
+                if (existingUserIdSet.has(user_id) || seenUserIdSet.has(user_id)) {
+                    errors.push({ row: rowNumber, user_id, email, error: "User ID already exists" })
+                    continue
                 }
 
-                // ── Email uniqueness (DB + within file) ────────────────
+                // email unique check
                 if (existingEmailSet.has(email) || seenEmailSet.has(email)) {
-                    errors.push({ row, username, email, error: "Email already exists" });
-                    continue;
+                    errors.push({ row: rowNumber, user_id, email, error: "Email already exists" })
+                    continue
                 }
 
-                // ── Email format ────────────────────────────────────────
+                // email format validation
                 if (!validateEmail(email)) {
-                    errors.push({ row, username, email, error: "Invalid email address" });
+                    errors.push({ row: rowNumber, user_id, email, error: "Invalid email address" });
                     continue;
                 }
 
-                // ── Password strength ───────────────────────────────────
-                if (!validatePassword(user.password)) {
+                // password validation
+                if (!validatePassword(password)) {
                     errors.push({
-                        row,
-                        username,
+                        row: rowNumber,
+                        user_id,
                         email,
-                        error: "Password must be at least 8 characters and contain 1 uppercase, 1 lowercase, 1 number, and 1 special character"
+                        error: "Password must be at least 8 characters, with 1 uppercase, 1 special symbol, and no spaces"
                     });
                     continue;
                 }
 
-                // ── Stop inserting once available slots are filled ────
-                if (bulkOps.length >= availableSlots) {
-                    limitReachedCount++;
-                    errors.push({
-                        row,
-                        username,
-                        email,
-                        error: `User limit reached. Your ${isTrial ? "trial" : "current"} plan allows up to ${userLimit} users.`
-                    });
-                    continue;
-                }
+                // mark as seen so duplicate rows within the same batch get caught
+                seenUserIdSet.add(user_id)
+                seenEmailSet.add(email)
 
-                // Mark as seen so later duplicate rows in the same file get caught
-                seenUsernameSet.add(username);
-                seenEmailSet.add(email);
+                const hashedPassword = await bcrypt.hash(password, 10);
 
-                const hashedPassword = await bcrypt.hash(user.password, 10);
                 bulkOps.push({
                     insertOne: {
                         document: {
-                            name: user.name,
-                            username,
+                            user_id,
+                            name,
                             email,
                             password: hashedPassword,
-                            status: "offline",
-                            avatar: {
-                                "file_name": "default-profile-7.svg",
-                                "file_url": "/uploads/default/default-icon.svg",
-                                "original_file_url": "/uploads/default/compressed-default-icon.webp",
-                                "file_type": "image/svg+xml",
-                                "file_size": 172450,
-                                "thumbnail_url": "/uploads/default/thumb-default-icon.png"
-                            }
+                            is_active: true
                         }
                     }
-                });
-            } catch (err) {
-                errors.push({ row, username: username || null, email: email || null, error: err.message });
+                })
+
+            } catch (error) {
+                errors.push({ row: rowNumber, user_id: user_id || null, email: email || null, error: error.message });
             }
         }
 
+        // ----------------------------------------------------
+        // ---- STEP 5: bulk write all valid rows to DB
+        // ----------------------------------------------------
         if (bulkOps.length) {
             await userModel.bulkWrite(bulkOps);
         }
-        fs.unlinkSync(req.file.path);
+
         return res.status(200).json({
-            message: limitReachedCount > 0
-                ? `Import completed. ${limitReachedCount} user(s) were not imported because you've reached your ${isTrial ? "trial" : "plan"} limit of ${userLimit} users. Please upgrade your plan to add more users.`
-                : "Users import completed",
+            success: true,
+            message: errors.length > 0
+                ? `Import completed. ${bulkOps.length} user(s) imported, ${errors.length} row(s) failed.`
+                : "Users imported successfully",
             inserted: bulkOps.length,
-            // errors: errors.length,
-            // errorDetails: errors
+            errors: errors.length,
+            errorDetails: errors
         });
+
     } catch (error) {
         logger.error("Import Users Error:", error);
-        if (req.file?.path && fs.existsSync(req.file.path)) {
-            fs.unlinkSync(req.file.path);
-        }
-        return res.status(500).json({ message: "Import failed" });
+        return res.status(500).json({ success: false, message: "Import failed" });
     }
-};
+}
 
 // ----------------------------- CHECK AVAILABILITY ---------------------------
 //  when admin create new user and input box of user id and email show this message 
@@ -865,3 +1005,20 @@ export const checkAvailability = async (req, res) => {
         return res.status(500).json({ success: false, message: error.message });
     }
 };
+
+
+
+
+
+
+//  light weight api for fetching user id and email when import user modal will open
+export const userInfo = async (req, res) => {
+    try {
+        const users = await userModel.find({ is_deleted: false }).select("user_id email -_id").lean()
+
+        return res.status(200).json({ success: true, users })
+    } catch (error) {
+        logger.error("Fetch user info error: ", error)
+        return res.status(500).json({ success: false, message: error.message });
+    }
+}

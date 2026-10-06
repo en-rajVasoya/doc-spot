@@ -2,12 +2,25 @@
 import axiosApi from "../../utils/api";
 import axios from "axios"; // Clean axios for direct S3 requests
 import { isBlockedFile, checkZipContainsBlocked, checkRarContainsBlocked } from "../../utils/blockFileTypes.js";
+import { createStallGuard, waitForOnline } from "../../utils/stallGuard.js"
 
-const CHUNK_SIZE = 15 * 1024 * 1024
+// Previous code:
+const CHUNK_SIZE = 6 * 1024 * 1024
 const SMALL_FILE_THRESHOLD = 1 * 1024 * 1024
-const SMALL_BATCH_SIZE = 50
-const CHUNK_BATCH_SIZE = 10
-const MAX_CONCURRENT = 4
+// const SMALL_BATCH_SIZE = 50
+const SMALL_BATCH_SIZE = 25
+const CHUNK_BATCH_SIZE = 1
+// const MAX_CONCURRENT = 4
+const MAX_CONCURRENT = 3
+
+// Adaptive device detection for mobile performance optimization
+// const isMobile = typeof navigator !== "undefined" && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+// const CHUNK_SIZE = isMobile ? 5 * 1024 * 1024 : 15 * 1024 * 1024; // 5MB for mobile, 15MB for PC
+// const SMALL_FILE_THRESHOLD = 1 * 1024 * 1024;
+// const SMALL_BATCH_SIZE = isMobile ? 20 : 50;
+// const CHUNK_BATCH_SIZE = isMobile ? 2 : 5; // 2 parallel chunks on mobile to prevent socket congestion, 5 on PC
+// const MAX_CONCURRENT = isMobile ? 2 : 4;
 
 export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSession) {
     const { sessionMapsRef, uploadQueuesRef, uploadStartedRef, abortControllersRef } = refs
@@ -52,7 +65,10 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
         batch
             .filter(f => f.file._isPlaceholder)
             .forEach(f => {
-                updateFile(sessionId, f.filekey, { status: "done", progress: 100 }, f.status)
+                // Mark placeholder as "skipped" — not "done" — because no real file is uploaded to DB.
+                // Using "done" was inflating the done counter by 1 per empty folder, causing
+                // a mismatch between the upload panel count and the actual file count in DB.
+                updateFile(sessionId, f.filekey, { status: "skipped", progress: 100 }, f.status)
             })
 
         // STEP 2 — filter real files
@@ -144,14 +160,47 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
             })
 
             // STEP 7 — API call
-            // We send the entire package of small files to the server at once.
-            const { data } = await axiosApi.post("/upload/small-batch", form, {
-                signal: controller.signal,
-                timeout: 30000
-            })
+            // We send the entire package of small files to the server at once with retry support.
+            let retries = 0;
+            const MAX_RETRIES = 3;
+            let responseData = null;
+
+            while (true) {
+                const guard = createStallGuard(controller.signal);
+                try {
+                    const { data } = await axiosApi.post("/upload/small-batch", form, {
+                        signal: guard.signal,
+                        timeout: 0,
+                        onUploadProgress: () => guard.touch()
+                    });
+                    responseData = data;
+                    guard.cleanup();
+                    break;
+                } catch (err) {
+                    guard.cleanup();
+                    if (controller.signal.aborted) return;
+
+                    // Real server rejection (403, 400, etc.) = don't retry
+                    if (err.response && err.response.status < 500) throw err;
+
+                    // Offline: wait for network, don't waste retries
+                    if (typeof navigator !== "undefined" && !navigator.onLine) {
+                        const backOnline = await waitForOnline(60000);
+                        if (!backOnline) throw err;
+                        continue;
+                    }
+
+                    retries++;
+                    if (retries > MAX_RETRIES) throw err;
+                    console.warn(`[RETRY] small-batch failed (${err.message}), retrying ${retries}/${MAX_RETRIES}...`);
+                    await new Promise(r => setTimeout(r, 1000 * retries));
+                }
+            }
+            const data = responseData;
 
             // STEP 8 — handle response
             // The server tells us which files succeeded and which were blocked, and we update the UI.
+            const doneIds = []
             uploadBatch.forEach(f => {
                 const result = data.results?.find(
                     r => r.fingerprint === f.fingerprint
@@ -175,15 +224,28 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
                     updateFile(sessionId, f.filekey, {
                         status: "done",
                         progress: 100,
-                        id: result?.id || null // Store the DB _id
+                        id: result?.id || null, // Store the DB _id
+                        scanStatus: result?.scanStatus || null
                     })
+
+                    if (result?.id) doneIds.push(result.id)
                     // onUploadComplete?.()
                     // if (f.isRetry) onUploadComplete?.()
                 }
             })
 
+            // early notify per batch for loose files (not folder uploads)
+            const isFolderUpload = uploadBatch.some(f => f.file.webkitRelativePath?.includes("/"))
+            if (!isFolderUpload && doneIds.length > 0) {
+                axiosApi.post("/upload/notify-complete", {
+                    parentId: parentId || null,
+                    itemIds: doneIds,
+                    rootFolderId: null
+                }).catch(err => console.error("early notify failed:", err))
+            }
+
         } catch (error) {
-            if (error.name === "CanceledError") return
+            if (controller.signal.aborted) return
             console.error("[DEBUG] uploadSmallBatch error response:", error.response?.data);
             console.error("uploadSmallBatch error:", error)
 
@@ -199,22 +261,22 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
                 }, f.status)
             })
 
-            // if network is down then stop the whole queue
-            if (isNetworkError) {
-                const queue = uploadQueuesRef.current.get(sessionId)
-                if (queue) {
-                    // mark all remaining files in queue as error
-                    queue.forEach(fileObj => {
-                        if (fileObj === "DONE" || !fileObj) return
-                        updateFile(sessionId, fileObj.filekey, {
-                            status: "error",
-                            message: "No connection"
-                        }, fileObj.status)
-                    })
-                    queue.length = 0
-                    queue.push("DONE")
-                }
-            }
+            // Note: Do NOT wipe the whole queue on a single batch failure so remaining files can continue
+            // if (isNetworkError) {
+            //     const queue = uploadQueuesRef.current.get(sessionId)
+            //     if (queue) {
+            //         // mark all remaining files in queue as error
+            //         queue.forEach(fileObj => {
+            //             if (fileObj === "DONE" || !fileObj) return
+            //             updateFile(sessionId, fileObj.filekey, {
+            //                 status: "error",
+            //                 message: "No connection"
+            //             }, fileObj.status)
+            //         })
+            //         queue.length = 0
+            //         queue.push("DONE")
+            //     }
+            // }
         }
     }
 
@@ -225,13 +287,13 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
     const uploadLargeFile = async (sessionId, fileObj, replaceMap) => {
         if (fileObj.file._isPlaceholder) {
             updateFile(sessionId, fileObj.filekey, {
-                status: "done",
+                status: "skipped",
                 progress: 100
             }, fileObj.status)
             return; // STOP upload completely
         }
 
-        const { file, filekey, fingerprint, parentId } = fileObj;
+        const { file, filekey, fingerprint, parentId, replacesFileId } = fileObj;
 
         if (isDuplicateActiveUpload(sessionId, filekey, fingerprint, parentId)) {
             updateFile(sessionId, filekey, { status: "skipped", progress: 100 }, fileObj.status)
@@ -284,7 +346,7 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
                 totalChunks: Math.ceil(file.size / CHUNK_SIZE),
                 parent: parentId || null,
                 fileHeader,
-                replacesFileId: replaceMap?.[file.name] || null
+                replacesFileId: replacesFileId || replaceMap?.[file.name] || null
             }, { signal: controller.signal })
 
 
@@ -294,7 +356,7 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
                 updateFile(sessionId, filekey, { status: "blocked", message: initData.message })
                 return
             }
-            console.log(`[INIT] ${(performance.now() - initStart).toFixed(1)}ms | uploadId=${initData.uploadId}`);
+            // console.log(`[INIT] ${(performance.now() - initStart).toFixed(1)}ms | uploadId=${initData.uploadId}`);
 
             //  if file already uploaded then already uploaded
             // If the exact file is already there, we skip uploading and instantly mark it 100%.
@@ -329,10 +391,11 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
             let uploadCount = alreadyUploaded.size;
             // S3 Single Put (files between 1MB and 5MB)
             if (initData.singlePutUrl) {
-                console.log(`[S3 SINGLE PUT] ${file.name} | sending directly to S3...`);
+                // console.log(`[S3 SINGLE PUT] ${file.name} | sending directly to S3...`);
                 let retries = 0;
                 const MAX_RETRIES = 3;
                 while (true) {
+                    const guard = createStallGuard(controller.signal);
                     try {
                         let lastLoaded = 0;
                         let bytesInWindow = 0;
@@ -341,8 +404,9 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
 
                         await axios.put(initData.singlePutUrl, file, {
                             headers: { "Content-Type": file.type || "application/octet-stream" },
-                            signal: controller.signal,
+                            signal: guard.signal,
                             onUploadProgress: (progressEvent) => {
+                                guard.touch();
                                 const pct = parseFloat((progressEvent.progress * 100).toFixed(1));
 
                                 const loadedDelta = progressEvent.loaded - lastLoaded;
@@ -361,17 +425,29 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
                                 }
                             }
                         });
+                        guard.cleanup();
                         break;
                     } catch (err) {
-                        if (err.name === "CanceledError") return;
-                        const isNetworkError = !err.response;
-                        if (isNetworkError && retries < MAX_RETRIES) {
-                            retries++;
-                            await new Promise(r => setTimeout(r, 2000 * retries));
+                        guard.cleanup();
+                        if (controller.signal.aborted) return;
+
+                        if (err.response && err.response.status < 500) throw err;
+
+                        if (typeof navigator !== "undefined" && !navigator.onLine) {
+                            const backOnline = await waitForOnline(60000);
+                            if (!backOnline) {
+                                updateFile(sessionId, filekey, { status: "error", message: "Network connection lost" });
+                                throw err;
+                            }
                             continue;
                         }
-                        updateFile(sessionId, filekey, { status: "error", message: "Upload failed - connection lost" });
-                        throw err;
+
+                        retries++;
+                        if (retries > MAX_RETRIES) {
+                            updateFile(sessionId, filekey, { status: "error", message: "Upload failed - connection lost" });
+                            throw err;
+                        }
+                        await new Promise(r => setTimeout(r, 2000 * retries));
                     }
                 }
                 uploadCount = totalChunks;
@@ -393,17 +469,19 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
                 if (totalBytesLoaded > file.size) totalBytesLoaded = file.size;
 
                 //  send batch to the backend /upload-chunk
-                console.log(`[CHUNKS] ${file.name} | Total batches: ${batches.length} | Total chunks: ${chunks.length} | Already uploaded: ${alreadyUploaded.size}`)
+                // console.log(`[CHUNKS] ${file.name} | Total batches: ${batches.length} | Total chunks: ${chunks.length} | Already uploaded: ${alreadyUploaded.size}`)
                 for (let i = 0; i < batches.length; i++) {
                     const batch = batches[i]
                     const batchBytes = batch.reduce((sum, c) => sum + c.blob.size, 0)
 
                     const chunkStart = performance.now()
-                    console.log(`[BATCH START] ${file.name} | batch ${i + 1}/${batches.length} | chunks: [${batch.map(c => c.index)}] | sending...`)
+                    // console.log(`[BATCH START] ${file.name} | batch ${i + 1}/${batches.length} | chunks: [${batch.map(c => c.index)}] | sending...`)
 
                     let retries = 0
                     const MAX_RETRIES = 3
                     while (true) {
+                        const guard = createStallGuard(controller.signal)
+                        let attemptLoaded = 0
                         try {
                             if (initData.urls) {
                                 // S3 MULTIPART PUT
@@ -413,9 +491,11 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
                                     let lastLoaded = 0;
                                     await axios.put(putUrl, c.blob, {
                                         headers: { "Content-Type": "application/octet-stream" },
-                                        signal: controller.signal,
+                                        signal: guard.signal,
                                         onUploadProgress: (progressEvent) => {
+                                            guard.touch();
                                             const loadedDelta = progressEvent.loaded - lastLoaded;
+                                            attemptLoaded += loadedDelta;
                                             bytesInWindow += loadedDelta;
                                             totalBytesLoaded += loadedDelta;
                                             lastLoaded = progressEvent.loaded;
@@ -443,15 +523,17 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
 
                                 let lastLoaded = 0;
                                 await axiosApi.post("/upload/upload-chunk", form, {
-                                    signal: controller.signal,
-                                    timeout: 45000,   // 5 miniutes
+                                    signal: guard.signal,
+                                    timeout: 0,
                                     headers: {
                                         "x-upload-id": uploadId,
                                         "x-indexes": JSON.stringify(batch.map(c => c.index)),
                                         "x-starts": JSON.stringify(batch.map(c => c.start))
                                     },
                                     onUploadProgress: (progressEvent) => {
+                                        guard.touch();
                                         const loadedDelta = progressEvent.loaded - lastLoaded;
+                                        attemptLoaded += loadedDelta;
                                         bytesInWindow += loadedDelta;
                                         totalBytesLoaded += loadedDelta;
                                         lastLoaded = progressEvent.loaded;
@@ -471,10 +553,25 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
                                     }
                                 })
                             }
-                            console.log(`[BATCH OK] ${file.name} | batch ${i + 1}/${batches.length} | took ${(performance.now() - chunkStart).toFixed(0)}ms`)
+                            guard.cleanup()
                             break // Success!
                         } catch (err) {
-                            if (err.name === "CanceledError") return
+                            guard.cleanup()
+                            if (controller.signal.aborted) return
+                            totalBytesLoaded -= attemptLoaded // roll back failed attempt's bytes from progress bar
+
+                            if (err.response && err.response.status < 500) throw err
+
+                            // If device is offline, wait up to 60s for Wi-Fi to reconnect before burning retries!
+                            if (typeof navigator !== "undefined" && !navigator.onLine) {
+                                const backOnline = await waitForOnline(60000)
+                                if (!backOnline) {
+                                    updateFile(sessionId, filekey, { status: "error", message: "Network connection lost" })
+                                    throw err
+                                }
+                                continue
+                            }
+
                             console.error(`[BATCH FAIL DETAIL]`, {
                                 fileName: file.name,
                                 batchIndex: i,
@@ -484,23 +581,18 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
                                 errorMessage: err.message,
                                 httpStatus: err.response?.status,
                                 httpData: err.response?.data,
-                                isTimeout: err.code === "ECONNABORTED",
+                                isTimeout: err.code === "ECONNABORTED" || guard.isStalled(),
                                 isNetworkError: !err.response,
                                 retriesExhausted: retries >= MAX_RETRIES
                             })
 
-                            const isNetworkError = !err.response && err.code !== "ECONNABORTED"
-                            if (isNetworkError && retries < MAX_RETRIES) {
-                                retries++
-                                console.warn(`[RETRY] ${file.name} | batch ${i + 1}/${batches.length} | retry ${retries}/${MAX_RETRIES} | err=${err.message}`)
-                                await new Promise(r => setTimeout(r, 2000 * retries)) // Wait 2s, 4s, 6s
-                                continue
+                            retries++
+                            if (retries > MAX_RETRIES) {
+                                updateFile(sessionId, filekey, { status: "error", message: "Upload failed - connection lost" })
+                                throw err
                             }
-
-                            console.error(`[BATCH FAIL] ${file.name} | batch ${i + 1}/${batches.length} | took ${(performance.now() - chunkStart).toFixed(0)}ms | err.name=${err.name} | err.code=${err.code} | status=${err.response?.status} | msg=${err.message}`)
-                            console.error(`[UPLOAD ERROR] ${new Date().toLocaleTimeString()} | File: ${file.name} | Status: ${err.response?.status} | Msg: ${err.message}`);
-                            updateFile(sessionId, filekey, { status: "error", message: "Upload failed - connection lost" })
-                            throw err
+                            console.warn(`[RETRY] ${file.name} | batch ${i + 1}/${batches.length} | retry ${retries}/${MAX_RETRIES} | err=${err.message}`)
+                            await new Promise(r => setTimeout(r, 2000 * retries))
                         }
                     }
 
@@ -508,26 +600,30 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
                 }
             }
 
-            console.log(`[ALL BATCHES DONE] ${file.name} | Finished chunking loops | calling /upload/complete...`)
+            // console.log(`[ALL BATCHES DONE] ${file.name} | Finished chunking loops | calling /upload/complete...`)
 
-            console.log(`[COMPLETE] calling complete for: ${file.name}, uploadId: ${uploadId}`)
+            // console.log(`[COMPLETE] calling complete for: ${file.name}, uploadId: ${uploadId}`)
 
-            const { data: completeData } = await axiosApi.post("/upload/complete", { uploadId }, { signal: controller.signal })
+            const { data: completeData } = await axiosApi.post("/upload/complete", { uploadId }, {
+                signal: controller.signal,
+                timeout: 0
+            })
             updateFile(sessionId, filekey, {
                 status: "done",
                 progress: 100,
                 speed: null,
-                id: completeData?.id || null // Store the DB _id
+                id: completeData?.id || null, // Store the DB _id
+                scanStatus: completeData?.scanStatus || null
             }, fileObj.status)
 
-            console.log(`[COMPLETE RESPONSE] ${file.name}: ${JSON.stringify(completeData)}`)
+            // console.log(`[COMPLETE RESPONSE] ${file.name}: ${JSON.stringify(completeData)}`)
 
             // if (fileObj.isRetry) onUploadComplete?.()
 
 
         } catch (error) {
             console.error(`[LARGEFILE CATCH] ${file.name} | error.name=${error.name} | error.code=${error.code} | error.message=${error.message}`)
-            if (error.name === "CanceledError") return
+            if (controller.signal.aborted) return
             console.error("[DEBUG] uploadLargeFile error response:", error.response?.data);
             console.error("uploadLargeFile error:", error)
 
@@ -587,11 +683,11 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
         uploadStartedRef.current.set(sessionId, true)
 
         const queue = uploadQueuesRef.current.get(sessionId)
-        console.log(`[WORKERS] Starting ${MAX_CONCURRENT} workers for session ${sessionId} | Queue size: ${queue.length}`)
+        // console.log(`[WORKERS] Starting ${MAX_CONCURRENT} workers for session ${sessionId} | Queue size: ${queue.length}`)
 
         return Array(MAX_CONCURRENT).fill(null).map(async (_, workerIndex) => {
             await new Promise(r => setTimeout(r, workerIndex * 500))
-            console.log(`[WORKER-${workerIndex}] Started`)
+            // console.log(`[WORKER-${workerIndex}] Started`)
             while (true) {
                 const fileObj = queue.shift()
                 if (!fileObj) {
@@ -599,28 +695,28 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
                     continue
                 }
                 if (fileObj === "DONE") {
-                    console.log(`[WORKER-${workerIndex}] saw DONE, stopping`)
+                    // console.log(`[WORKER-${workerIndex}] saw DONE, stopping`)
                     queue.unshift("DONE")
                     break
                 }
-                console.log(`[WORKER-${workerIndex}] picking up: ${fileObj.file.name} | isSmall=${fileObj.isSmall} | queue remaining: ${queue.length}`)
+                // console.log(`[WORKER-${workerIndex}] picking up: ${fileObj.file.name} | isSmall=${fileObj.isSmall} | queue remaining: ${queue.length}`)
                 const workerFileStart = performance.now()
                 if (fileObj.isSmall) {
                     const batch = [fileObj]
-                    while (batch.length < SMALL_BATCH_SIZE && queue[0]?.isSmall) {
+                    while (batch.length < SMALL_BATCH_SIZE && queue[0]?.isSmall && queue[0]?.parentId === fileObj.parentId) {
                         batch.push(queue.shift())
                     }
-                    console.log(`[WORKER-${workerIndex}] uploading small batch of ${batch.length} files`)
+                    // console.log(`[WORKER-${workerIndex}] uploading small batch of ${batch.length} files`)
                     await uploadSmallBatch(sessionId, batch, batch[0].parentId)
-                    console.log(`[WORKER-${workerIndex}] small batch done | took ${(performance.now() - workerFileStart).toFixed(0)}ms`)
+                    // console.log(`[WORKER-${workerIndex}] small batch done | took ${(performance.now() - workerFileStart).toFixed(0)}ms`)
                 } else {
-                    console.log(`[WORKER-${workerIndex}] uploading large file: ${fileObj.file.name} (${(fileObj.file.size / 1024 / 1024).toFixed(1)}MB)`)
+                    // console.log(`[WORKER-${workerIndex}] uploading large file: ${fileObj.file.name} (${(fileObj.file.size / 1024 / 1024).toFixed(1)}MB)`)
                     await uploadLargeFile(sessionId, fileObj)
-                    console.log(`[WORKER-${workerIndex}] large file done: ${fileObj.file.name} | took ${(performance.now() - workerFileStart).toFixed(0)}ms`)
+                    // console.log(`[WORKER-${workerIndex}] large file done: ${fileObj.file.name} | took ${(performance.now() - workerFileStart).toFixed(0)}ms`)
                 }
-                console.log(`[WORKER-${workerIndex}] finished processing, looping back for next file`)
+                // console.log(`[WORKER-${workerIndex}] finished processing, looping back for next file`)
             }
-            console.log(`[WORKER-${workerIndex}] EXITED the while loop — this worker is now DEAD`)
+            // console.log(`[WORKER-${workerIndex}] EXITED the while loop — this worker is now DEAD`)
         })
     }
 
@@ -671,7 +767,7 @@ export function useUploadWorkers(refs, updateFile, onUploadComplete, updateSessi
                 errorFiles.push(fileObj)
             }
         })
-        console.log(`[DEBUG] retryFolder: Found ${errorFiles.length} files with status 'error'`);
+        // console.log(`[DEBUG] retryFolder: Found ${errorFiles.length} files with status 'error'`);
         if (errorFiles.length === 0) return
 
         // 2. Reset all error files to "waiting"

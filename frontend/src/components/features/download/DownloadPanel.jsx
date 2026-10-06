@@ -11,15 +11,27 @@ import { useState, useRef, useEffect } from "react";
 import { Modal } from "react-bootstrap";
 import CustomScroll from "../../layout/CustomScroll";
 import getFileIcon from "../../../utils/getFileIcon";
+import retryIcon from "@images/icon/retry-icon.svg"
 
+
+import useResponsive from "../../../hooks/useResponsive.js";
+
+const RetryIcon = () => <InteractiveIcon defaultIcon={retryIcon} width={24} />
 
 /* Confirm Cancel Modal */
 function ConfirmCancelModal({ show, onConfirm, onClose, isFolder, isAll }) {
     const modalRef = useRef(null)
+    const [shake, setShake] = useState(false)
+    const { isMobile } = useResponsive()
 
     const handleOutsideClick = (e) => {
         if (modalRef.current && !modalRef.current.contains(e.target)) {
-            onClose()
+            if (isMobile) {
+                onClose()
+            } else {
+                setShake(true)
+                setTimeout(() => setShake(false), 400)
+            }
         }
     }
 
@@ -30,6 +42,7 @@ function ConfirmCancelModal({ show, onConfirm, onClose, isFolder, isAll }) {
                 backdrop="static"
                 keyboard={false}
                 centered
+                dialogClassName={`modal-dialog-base ${shake ? 'shake' : ''}`}
             >
                 <div ref={modalRef}>
                     <Modal.Header className="border-0">
@@ -101,14 +114,15 @@ const ArrowUpIcon = () => <InteractiveIcon defaultIcon={arrowUp} width={24} />;
 
 
 /* Row */
-function DownloadRow({ session, onCancel }) {
+function DownloadRow({ session, onCancel, onRetry  }) {
     const {
         fileId,
         name,
         status,
         progress = 0,
         speed,
-        isFolder
+        isFolder,
+        error
     } = session;
 
     const isDownloading = status === "downloading";
@@ -118,8 +132,8 @@ function DownloadRow({ session, onCancel }) {
     const isAssembling = status === "assembling";
 
     const formatSpeed = (mbps) => {
-        if (!mbps) return null;
-        return mbps > 1 ? `${mbps.toFixed(1)} MB/s` : null;
+        if (!mbps || mbps <= 0) return null;
+        return mbps >= 1 ? `${mbps.toFixed(1)} MB/s` : `${(mbps * 1024).toFixed(0)} KB/s`;
     };
 
     return (
@@ -158,12 +172,19 @@ function DownloadRow({ session, onCancel }) {
                 )}
 
                 {isError && (
-                    <Tooltip text="Failed">
-                        <span><ErrorIcon /></span>
-                    </Tooltip>
+                    <>
+                        <Tooltip text={error || "Failed"}>
+                            <span><ErrorIcon /></span>
+                        </Tooltip>
+                        <Tooltip text="Retry download">
+                            <button className="btn-only-icon" onClick={() => onRetry(session.id)}>
+                                <RetryIcon />
+                            </button>
+                        </Tooltip>
+                    </>
                 )}
-                {!isDone && (
-                    <Tooltip text="Close">
+                {(isDownloading || isAssembling || isCreating) && (
+                    <Tooltip text="Cancel">
                         <button className="btn-only-icon" onClick={() => onCancel(session)}>
                             <CloseIcon />
                         </button>
@@ -183,7 +204,8 @@ function DownloadPanel() {
         isMinimized,
         toggleMinimized,
         closeSession,
-        closeAllSessions
+        closeAllSessions,
+        retryDownload 
     } = useDownload();
 
     const [cancelModal, setCancelModal] = useState({ show: false, session: null, isAll: false });
@@ -229,7 +251,7 @@ function DownloadPanel() {
     // }, [sessions, closeAllSessions])
 
 
-    if (!isPanelOpen) return null;
+    if (!isPanelOpen || sessions.length === 0) return null;
 
     const handleCancelClick = (session) => {
         // If download is already done or errored, just close without modal
@@ -242,7 +264,7 @@ function DownloadPanel() {
 
     const handleCancelAllClick = () => {
         // Only show modal if there are active downloads
-        const hasActive = sessions.some(s => s.status === "downloading" || s.status === "assembling");
+        const hasActive = sessions.some(s => s.status === "downloading" || s.status === "assembling" || s.status === "creating");
         if (hasActive) {
             setCancelModal({ show: true, session: null, isAll: true });
         } else {
@@ -260,7 +282,7 @@ function DownloadPanel() {
     };
 
     return (
-        <div className="download-panel-box"  onMouseDown={handleBringToFront}>
+        <div className="download-panel-box" style={{ zIndex }} onMouseDown={handleBringToFront}>
             <div className="upload-file-box">
                 <div className="upload-file-sub-box">
 
@@ -273,7 +295,7 @@ function DownloadPanel() {
                                     {isMinimized ? <ArrowUpIcon /> : <ArrowDownIcon />}
                                 </button>
                             </Tooltip>
-                            <Tooltip text="Close">
+                            <Tooltip text="Cancel">
                                 <button className="btn-only-icon" onClick={handleCancelAllClick}>
                                     <CloseIcon />
                                 </button>
@@ -288,9 +310,10 @@ function DownloadPanel() {
                                 <CustomScroll className="upload-file-ustom-scroll" showBottomBlur={false} showTopBlur={false}>
                                     {sessions.map(session => (
                                         <DownloadRow
-                                            key={session.fileId}
+                                            key={session.id}
                                             session={session}
                                             onCancel={handleCancelClick}
+                                            onRetry={retryDownload}
                                         />
                                     ))}
                                 </CustomScroll>

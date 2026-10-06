@@ -66,20 +66,20 @@ export default defineConfig({
   },
   server: {
     https: {
-      key: fs.readFileSync('./192.168.1.112+2-key.pem'),
-      cert: fs.readFileSync('./192.168.1.112+2.pem'),
+      key: fs.readFileSync('./192.168.1.160+2-key.pem'),
+      cert: fs.readFileSync('./192.168.1.160+2.pem'),
     },
     host: '0.0.0.0',
     port: 5177,
     proxy: {
       '/socket.io': {
-        target: 'https://3.111.147.179:4001',
+        target: 'https://192.168.1.160:4001',
         changeOrigin: true,
         secure: false,
         ws: true,
       },
       '^/(api|files|uploadimage)': {
-        target: 'https://3.111.147.179:4001',
+        target: 'https://192.168.1.160:4001',
         changeOrigin: true,
         secure: false,
         timeout: 0,

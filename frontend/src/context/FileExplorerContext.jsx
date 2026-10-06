@@ -60,10 +60,14 @@ export function FileExplorerProvider({ children }) {
 
     // getting current user for scoket event
     const { user } = useAuth()
-    const { socket, socketRef } = useSocket()
+    const { socket } = useSocket()
     const { isSearchMode, setSearchResults, searchFilters, searchApi } = useSearch()
 
     const [trail, setTrail] = useState([])
+    const trailRef = useRef([])
+    useEffect(() => {
+        trailRef.current = trail
+    }, [trail])
     // currentFolderId always comes from trail, not URL directly
     // const currentFolderId = trail.length ? trail[trail.length - 1].id : null;
     const currentFolderId = folderId || null
@@ -76,6 +80,9 @@ export function FileExplorerProvider({ children }) {
 
     //  for rename the file and fodlers
     const [renameItem, setRenameItem] = useState(null)
+
+    const [suggestedHasMore, setSuggestedHasMore] = useState(false)
+
 
     // Callback ref to notify Dashboard when items are unshared/removed in real-time
     const onItemsRemovedRef = useRef(null);
@@ -185,7 +192,10 @@ export function FileExplorerProvider({ children }) {
     // ##################################################
     // ---- STEP 3: Fetch items for main screen ---------
     // ##################################################
+    const fetchRequestIdRef = useRef(0)
+
     const fetchItems = useCallback(async () => {
+        const requestId = ++fetchRequestIdRef.current
         setError(null)
         setLoading(true)
         try {
@@ -196,13 +206,19 @@ export function FileExplorerProvider({ children }) {
                     sortOrder: sortOrderRef.current
                 }
             })
-            // await new Promise(resolve => setTimeout(resolve, 100))
+
+            // if a newer fetchItems() call has started since this one, drop this stale response
+            if (requestId !== fetchRequestIdRef.current) return
+
             setItems(data.items)
 
         } catch (error) {
+            if (requestId !== fetchRequestIdRef.current) return
             setError(error.response?.data?.message || "Failed to fetch files and folders")
         } finally {
-            setLoading(false)
+            if (requestId === fetchRequestIdRef.current) {
+                setLoading(false)
+            }
         }
     }, [currentFolderId])
 
@@ -214,11 +230,13 @@ export function FileExplorerProvider({ children }) {
         fetchItems()
     }, [fetchItems, location.pathname])
 
-    //  re-fetch dashboard items when exiting search mode here
+    //  re-fetch dashboard items when exit search mode here
     useEffect(() => {
         if (prevSearchModeRef.current && !isSearchMode) {
             if (!isNavigatingRef.current) {
                 fetchItems()
+            } else {
+                console.log(`[FileExplorerContext] SKIPPED fetchItems — isNavigatingRef is true`)
             }
         }
         prevSearchModeRef.current = isSearchMode
@@ -243,36 +261,111 @@ export function FileExplorerProvider({ children }) {
     useEffect(() => {
         if (!user?._id || !socket) return
 
-        //  removed all listener first if any there
+        // removed listeners before attaching (excluding item_deleted_forever which is shared with TrashContext)
         socket.off("share_added")
         socket.off("share_removed")
         socket.off("item_uploaded")
         socket.off("item_renamed")
-        socket.off("item_deleted_forever")
         socket.off("item_color_changed")
         socket.off("item_moved")
         socket.off("item_copied")
         socket.off("item_restored")
-        socket.off("scan_complete")
         socket.off("item_folder_created")
         socket.off("global_user_profile_updated")
+        socket.off("folder_size_updated")
 
 
-        //  for scanning here
-        socket.on("scan_complete", ({ fileId, status, message }) => {
-            if (status === "clean") {
-                showNotification("File scanned — no threats found ", "success", "bottom-center")
-            } else if (status === "infected") {
-                showNotification(message || "Virus detected! File has been deleted", "error", "bottom-center")
+        //  for virus  scanning here
+        const handleScanComplete = ({ fileId, status, newItem, folderId }) => {
+            if (status === "infected") {
                 setItems(prev => prev.filter(item => item._id !== fileId))
-            } else if (status === "failed") {
-                showNotification("File scan failed ", "warning", "bottom-center")
+            } else if (status === "clean" && newItem) {
+                if (String(currentFolderId) === String(folderId) || (!currentFolderId && !folderId)) {
+                    setItems(prev => {
+                        if (prev.some(item => String(item._id) === String(newItem._id))) return prev
+                        let next = prev
+                        if (newItem.replacesFileId) {
+                            next = next.filter(existing => String(existing._id) !== String(newItem.replacesFileId))
+                        }
+                        return insertSorted(next, newItem)
+                    })
+                }
             }
-        })
+            // "failed" — nothing to do, item was never added
+        }
+        socket.on("scan_complete", handleScanComplete)
 
 
-        socket.on("share_added", ({ itemIds } = {}) => {
-            if (!currentFolderId) {
+        // socket.on("share_added", ({ itemIds } = {}) => {
+        //     if (!currentFolderId) {
+        //         fetchItems();
+        //     }
+        //     if (currentFolderId) {
+        //         axiosApi.get(`/file/folder/${currentFolderId}`)
+        //             .then(({ data }) => {
+        //                 setCurrentFolderPermission(data.currentPermission || null);
+        //             });
+        //     }
+
+        //     // update user list live when share event matches item or its parent folder
+        //     if (sharedUsersData.itemId) {
+        //         const relevantIds = new Set([
+        //             sharedUsersData.itemId,
+        //             ...sharedUsersData.sharedWith.map(s => s.inheritedFolderId).filter(Boolean)
+        //         ].map(String));
+
+        //         if (!itemIds || itemIds.some(id => relevantIds.has(String(id)))) {
+        //             loadSharedUsers(sharedUsersData.itemId);
+        //         }
+        //     }
+        // });
+
+
+        // socket.on("share_removed", ({ itemIds, accessRevoked } = {}) => {
+
+        //     // ONLY kick out user, deselect items, and auto-close modals if THIS user's access was revoked!
+        //     if (accessRevoked) {
+        //         if (itemIds && itemIds.length > 0) {
+        //             setSelectedIds(prev => {
+        //                 const next = new Set(prev);
+        //                 itemIds.forEach(id => next.delete(String(id)));
+        //                 return next;
+        //             });
+        //             onItemsRemovedRef.current?.(itemIds);
+        //         }
+
+        //         if (currentFolderId) {
+        //             // user is inside a folder - check if still have access
+        //             axiosApi.get(`/file/folder/${currentFolderId}`)
+        //                 .then(({ data }) => {
+        //                     setCurrentFolderPermission(data.currentPermission || null)
+        //                 })
+        //                 .catch(() => {
+        //                     // folder no longer accessible - kick user out
+        //                     navigate(getPathPrefix())
+        //                 })
+        //         } else {
+        //             // user is at root - just refetch to remove shared item from list
+        //             fetchItems()
+        //         }
+        //     }
+
+        //     // refresh the share user modal live when share event matches item or its parent folder
+        //     if (sharedUsersData.itemId) {
+        //         const relevantIds = new Set([
+        //             sharedUsersData.itemId,
+        //             ...sharedUsersData.sharedWith.map(s => s.inheritedFolderId).filter(Boolean)
+        //         ].map(String));
+
+        //         if (!itemIds || itemIds.some(id => relevantIds.has(String(id)))) {
+        //             loadSharedUsers(sharedUsersData.itemId);
+        //         }
+        //     }
+        // })
+
+        socket.on("share_added", ({ itemIds, senderId } = {}) => {
+            // ONLY refetch all files if someone ELSE shared it with you (so the new file appears in your list!)
+            if (senderId && senderId !== String(user?._id || user?.id)) {
                 fetchItems();
             }
             if (currentFolderId) {
@@ -282,16 +375,29 @@ export function FileExplorerProvider({ children }) {
                     });
             }
 
-            // this is for when share user modal is opned here so update user list when other user sahre o run share user
-            if (sharedUsersData.itemId && (!itemIds || itemIds.some(id => String(id) === String(sharedUsersData.itemId)))) {
-                loadSharedUsers(sharedUsersData.itemId)
+            if (itemIds?.length) {
+                itemIds.forEach(id => {
+                    axiosApi.get(`/share/${id}`).then(({ data }) => {
+
+                        // 1. Update main file list
+                        setItems(prev => prev.map(item => {
+                            if (item._id.toString() !== id.toString()) return item;
+                            const myShare = data.sharedWith?.find(s => String(s.userId?._id || s.userId || s) === String(user?._id || user?.id));
+                            const newPerm = myShare ? myShare.permission : item.permission;
+                            return { ...item, sharedWith: data.sharedWith, isShared: data.sharedWith.length > 0, permission: newPerm };
+                        }))
+
+                        // 2. Update modal list immediately if it's open (replaces redundant loadSharedUsers call)
+                        if (sharedUsersData.itemId && String(id) === String(sharedUsersData.itemId)) {
+                            setSharedUsersData(prev => ({ ...prev, itemId: id, owner: data.owner, inheritedFolderOwner: data.inheritedFolderOwner || null, sharedWith: data.sharedWith }))
+                        }
+                    }).catch(err => console.log("[share_added] fetch failed:", err.response?.status, err.message))
+                })
             }
         });
 
-
         socket.on("share_removed", ({ itemIds, accessRevoked } = {}) => {
 
-            // ONLY kick out user, deselect items, and auto-close modals if THIS user's access was revoked!
             if (accessRevoked) {
                 if (itemIds && itemIds.length > 0) {
                     setSelectedIds(prev => {
@@ -303,22 +409,37 @@ export function FileExplorerProvider({ children }) {
                 }
 
                 if (currentFolderId) {
-                    // user is inside a folder - check if still have access
                     axiosApi.get(`/file/folder/${currentFolderId}`)
                         .then(({ data }) => {
                             setCurrentFolderPermission(data.currentPermission || null)
                         })
                         .catch(() => {
-                            // folder no longer accessible - kick user out
-                            navigate(getPathPrefix())
+                            const currentTrail = trailRef.current;
+                            const revokedIndex = currentTrail.findIndex(t => (itemIds || []).some(id => String(id) === String(t.id)));
+                            if (revokedIndex > 0) {
+                                const safeParent = currentTrail[revokedIndex - 1];
+                                navigate(`${getPathPrefix()}/folder/${safeParent.id}`);
+                            } else {
+                                navigate(getPathPrefix());
+                            }
                         })
-                } else {
-                    // user is at root - just refetch to remove shared item from list
-                    fetchItems()
                 }
+                fetchItems()
             }
 
-            // refresh the share user modal when other user changes it 
+            if (itemIds?.length) {
+                itemIds.forEach(id => {
+                    axiosApi.get(`/share/${id}`).then(({ data }) => {
+                        setItems(prev => prev.map(item => {
+                            if (item._id.toString() !== id.toString()) return item;
+                            const myShare = data.sharedWith?.find(s => String(s.userId?._id || s.userId || s) === String(user?._id || user?.id));
+                            const newPerm = myShare ? myShare.permission : item.permission;
+                            return { ...item, sharedWith: data.sharedWith, isShared: data.sharedWith.length > 0, permission: newPerm };
+                        }))
+                    }).catch(err => console.log("[share_removed] fetch failed:", err.response?.status, err.message))
+                })
+            }
+
             if (sharedUsersData.itemId && (!itemIds || itemIds.some(id => String(id) === String(sharedUsersData.itemId)))) {
                 loadSharedUsers(sharedUsersData.itemId)
             }
@@ -326,7 +447,8 @@ export function FileExplorerProvider({ children }) {
 
         socket.on("item_uploaded", ({ folderId, newItem, newItems }) => {
             if (String(currentFolderId) === String(folderId) || (!currentFolderId && !folderId)) {
-                const itemsToAdd = newItems?.length ? newItems : (newItem ? [newItem] : []);
+                const itemsToAdd = (newItems?.length ? newItems : (newItem ? [newItem] : []))
+                    .filter(item => item.type === "folder" || item.scanStatus !== "scanning");
                 if (itemsToAdd.length > 0) {
                     setItems(prev => {
                         let next = [...prev];
@@ -340,7 +462,7 @@ export function FileExplorerProvider({ children }) {
                         });
                         return next;
                     });
-                } else {
+                } else if (!(newItems?.length || newItem)) {
                     fetchItems();
                 }
             }
@@ -355,15 +477,12 @@ export function FileExplorerProvider({ children }) {
             //  if in current folder and from breadcrumb it is changing so socket event
             if (itemId === currentFolderId) {
                 setCurrentFolderMeta(prev => ({ ...prev, name: newName }))
-                setTrail(prev => prev.map(t =>
-                    t.id === itemId ? { ...t, name: newName } : t
-                ))
-            }
-        })
 
-        // item delete
-        socket.on("item_deleted_forever", ({ itemId }) => {
-            setItems(prev => prev.filter(i => i._id !== itemId))
+            }
+
+            setTrail(prev => prev.map(t =>
+                t.id === itemId ? { ...t, name: newName } : t
+            ))
         })
 
         //  folder icon change socket evetn
@@ -376,7 +495,7 @@ export function FileExplorerProvider({ children }) {
 
 
         // item moved socket
-        socket.on("item_moved", ({ itemId, oldParent, newParent, movedItem }) => {
+        socket.on("item_moved", ({ itemId, oldParent, newParent, movedItem, reason }) => {
             // remove from old folder
             if (String(currentFolderId) === String(oldParent) || (!currentFolderId && !oldParent)) {
                 setItems(prev => prev.filter(item => item._id.toString() !== itemId.toString()))
@@ -398,7 +517,7 @@ export function FileExplorerProvider({ children }) {
                 })
             }
 
-            if (itemId === currentFolderId) {
+            if (itemId === currentFolderId && reason !== "removed") {
                 navigate(newParent ? `${getPathPrefix()}/folder/${newParent}` : getPathPrefix())
             }
         })
@@ -424,26 +543,26 @@ export function FileExplorerProvider({ children }) {
         //  here if user trash someting notify user 2 
         const handleItemTrashed = (data) => {
             const { parentId, ids, itemId, oldParent } = data;
+            const trashedIds = ids ? ids.map(String) : (itemId ? [String(itemId)] : []);
 
-            if (ids) {
-                // triggered via notifySharedUsers
-                if (String(currentFolderId) === String(parentId) || (!currentFolderId && !parentId)) {
-                    setItems(prev => prev.filter(item => !ids.includes(item._id.toString())));
-                }
-                if (ids.includes(currentFolderId)) {
+            if (String(currentFolderId) === String(parentId || oldParent) || (!currentFolderId && !parentId && !oldParent)) {
+                setItems(prev => prev.filter(item => !trashedIds.includes(item._id.toString())));
+            }
+
+            // Check if current folder OR any parent folder in the breadcrumb trail was deleted
+            const currentTrail = trailRef.current;
+            const trashedIndex = currentTrail.findIndex(t => trashedIds.includes(String(t.id)));
+
+            if (trashedIndex !== -1) {
+                // Find the immediate surviving parent before the deleted folder
+                const safeParent = trashedIndex > 0 ? currentTrail[trashedIndex - 1] : null;
+                if (safeParent) {
+                    navigate(`${getPathPrefix()}/folder/${safeParent.id}`);
+                } else {
                     navigate(getPathPrefix());
                 }
-            } else if (itemId) {
-                // triggered via crossUserItemsMap (shared file trashed by another user)
-                if (String(currentFolderId) === String(oldParent) || (!currentFolderId && !oldParent)) {
-                    setItems(prev => prev.filter(item => item._id.toString() !== itemId.toString()));
-                }
-
-                // If the editor deleted the folder the owner is currently looking at, kick the owner out to root!
-                if (String(itemId) === String(currentFolderId)) {
-                    navigate(getPathPrefix());
-                }
-
+            } else if (trashedIds.includes(String(currentFolderId))) {
+                navigate(parentId ? `${getPathPrefix()}/folder/${parentId}` : getPathPrefix());
             }
         };
 
@@ -532,20 +651,53 @@ export function FileExplorerProvider({ children }) {
             })
         });
 
+
+        // folder size update socket
+        socket.on("folder_size_updated", ({ updates }) => {
+            if (!updates?.length) return
+            const sizeMap = new Map(updates.map(u => [String(u.folderId), u.totalSize]))
+
+            setItems(prev => prev.map(item =>
+                item.type === "folder" && sizeMap.has(String(item._id))
+                    ? { ...item, totalSize: sizeMap.get(String(item._id)) }
+                    : item
+            ))
+        })
+
+        //  when user replace whoel folder so socket event
+        const onFolderReplaced = ({ oldFolderId, newFolderId, parentId }) => {
+            // remove the old folder from the list (new one arrives via item_uploaded)
+            setItems(prev => prev.filter(i => String(i._id) !== String(oldFolderId)))
+
+            const currentTrail = trailRef.current
+            const idx = currentTrail.findIndex(t => String(t.id) === String(oldFolderId))
+
+            if (String(currentFolderId) === String(oldFolderId)) {
+                // user is inside the old folder -> go to the new one
+                navigate(`${getPathPrefix()}/folder/${newFolderId}`)
+            } else if (idx !== -1) {
+                // user is deeper inside the old folder -> go to the new one too
+                navigate(`${getPathPrefix()}/folder/${newFolderId}`)
+            }
+        }
+
+        socket.on("folder_replaced", onFolderReplaced)
+
         return () => {
             socket.off("share_added")
             socket.off("share_removed")
             socket.off("item_uploaded")
             socket.off("item_renamed")
-            socket.off("item_deleted_forever")
             socket.off("item_color_changed")
             socket.off("item_moved")
             socket.off("item_copied")
             socket.off("item_restored")
             socket.off("item_trashed", handleItemTrashed)
-            socket.off("scan_complete")
+            socket.off("scan_complete", handleScanComplete)
             socket.off("item_folder_created")
             socket.off("global_user_profile_updated")
+            socket.off("folder_size_updated")
+            socket.off("folder_replaced", onFolderReplaced)
         }
 
     }, [user?._id, socket, currentFolderId, fetchItems, sharedUsersData.itemId])
@@ -558,6 +710,7 @@ export function FileExplorerProvider({ children }) {
     // ---- STEP 5: Sync breadcrumb trail on URL change -
     // ##################################################
     useEffect(() => {
+        setHighlightedId(null)
         clearSelection()
         setItems([]) // Clear old items immediately to prevent UI flicker
         if (!folderId) {
@@ -566,12 +719,11 @@ export function FileExplorerProvider({ children }) {
             return
         }
 
-        const lastTrailId = trail[trail.length - 1]?.id
-        if (lastTrailId === folderId) return
+        // const lastTrailId = trail[trail.length - 1]?.id
+        // if (lastTrailId === folderId) return
 
         axiosApi.get(`/file/folder/${folderId}`)
             .then(({ data }) => {
-                console.log("currentPermission from backend:", data.currentPermission)
                 setTrail(data.trail)
                 setCurrentFolderPermission(data.currentPermission || null)   // get the current folder permission
                 setCurrentFolderMeta(data.currentFolder || null)
@@ -726,7 +878,7 @@ export function FileExplorerProvider({ children }) {
     // ##################################################
     // ---- STEP 11: Delete Items API -------------------
     // ##################################################
-    const deleteItemApi = async (ids) => {
+    const deleteItemApi = async (ids, toastMessage = "Moved to trash") => {
         try {
             // Optimistically update the UI to feel instant
             setItems(prev => prev.filter(item => !ids.includes(item._id)))
@@ -738,11 +890,14 @@ export function FileExplorerProvider({ children }) {
             // Send a single batch request to the server
             await axiosApi.post("/trash/delete", { ids })
 
-            showNotification("Moved to trash", "success", "bottom-center")
+            // ONLY show notification if a message was provided
+            if (toastMessage) {
+                showNotification(toastMessage, "success", "bottom-center")
+            }
         } catch (error) {
             // If the server fails (e.g. Access Denied), refresh to get the real state
             fetchItems()
-            showNotification(error.response?.data?.message || "Move to trash failed", "error", "bottom-center")
+            showNotification("Move to trash failed", "error", "bottom-center")
         }
     }
 
@@ -847,10 +1002,10 @@ export function FileExplorerProvider({ children }) {
     // ##################################################
     // ---- STEP 17: Share Item API ---------------------
     // ##################################################
-    const shareItemApi = async (ids, userIds, permission) => {
+    const shareItemApi = async (ids, userIds, permission, applyToChildren = false) => {
         try {
             const idArray = Array.isArray(ids) ? ids : [ids]
-            await axiosApi.post("/share", { itemIds: idArray, userIds, permission })
+            await axiosApi.post("/share", { itemIds: idArray, userIds, permission, applyToChildren })
 
             // update isShared in UI for all selected items
             const idSet = new Set(idArray.map(id => id.toString()))
@@ -880,7 +1035,29 @@ export function FileExplorerProvider({ children }) {
     const unshareItemApi = async (ids, userIds) => {
         try {
             const idArray = Array.isArray(ids) ? ids : [ids]
+            const idSet = new Set(idArray.map(id => id.toString()))
+            const userIdSet = new Set(userIds.map(id => id.toString()))
+
             await axiosApi.delete("/unshare", { data: { itemIds: idArray, userIds } })
+
+            setItems(prev => prev.map(item => {
+                if (!idSet.has(item._id.toString())) return item
+                const nextSharedWith = (item.sharedWith || []).filter(
+                    s => !userIdSet.has((s.userId?._id || s.userId).toString())
+                )
+                return { ...item, sharedWith: nextSharedWith, isShared: nextSharedWith.length > 0 }
+            }))
+
+            if (isSearchMode) {
+                setSearchResults(prev => prev.map(item => {
+                    if (!idSet.has(item._id.toString())) return item
+                    const nextSharedWith = (item.sharedWith || []).filter(
+                        s => !userIdSet.has((s.userId?._id || s.userId).toString())
+                    )
+                    return { ...item, sharedWith: nextSharedWith, isShared: nextSharedWith.length > 0 }
+                }))
+            }
+
         } catch (error) {
             alert(error.response?.data?.message || "Unshare failed")
         }
@@ -920,18 +1097,24 @@ export function FileExplorerProvider({ children }) {
 
 
     //  here this is for when share user modal opens so suggested user will show there
-    const getSuggestedUsersApi = async () => {
+    const getSuggestedUsersApi = async (itemId, page = 1) => {
         try {
-            const { data } = await axiosApi.get("/share/suggested_users")
+            const { data } = await axiosApi.get("/share/suggested_users", {
+                params: { itemId, page, limit: 10 }
+            })
             const users = data.users || []
 
-            setSuggestedUsers(users)
+            setSuggestedUsers(prev => {
+                if (page === 1) return users                 // first page replaces the list
+                const seen = new Set(prev.map(u => String(u._id)))
+                return [...prev, ...users.filter(u => !seen.has(String(u._id)))]   // later pages append, no duplicates
+            })
+            setSuggestedHasMore(Boolean(data.hasMore))
 
             return users
-
         } catch (error) {
             console.log(error.message)
-            return []
+            return null   // null = failed, so the modal won't advance the page
         }
     }
 
@@ -956,13 +1139,13 @@ export function FileExplorerProvider({ children }) {
     const loadSharedUsers = async (itemId) => {
         const data = await getSharedUsersApi(itemId)
         if (data) {
-            setSharedUsersData({ itemId, owner: data.owner, sharedWith: data.sharedWith })
+            setSharedUsersData({ itemId, owner: data.owner, inheritedFolderOwner: data.inheritedFolderOwner || null, sharedWith: data.sharedWith, permission: data.permission })
         }
         return data
     }
 
     const clearSharedUsers = () => {
-        setSharedUsersData({ itemId: null, owner: null, sharedWith: [] })
+        setSharedUsersData({ itemId: null, owner: null, inheritedFolderOwner: null, sharedWith: [] })
     }
 
 
@@ -971,14 +1154,16 @@ export function FileExplorerProvider({ children }) {
     const getFolderSizeApi = async (folderId) => {
         try {
             const { data } = await axiosApi.get(`/file/folder/${folderId}/size`)
-            return data.size
+            return data
         } catch (error) {
             console.error(error.message)
             return null
         }
     }
 
-    const clearSelection = () => setSelectedIds(new Set())
+    const clearSelection = useCallback(() => {
+        setSelectedIds(prev => (prev.size === 0 ? prev : new Set()))
+    }, [])
 
 
     //  if user is only the viewer so expose this permission
@@ -1033,6 +1218,7 @@ export function FileExplorerProvider({ children }) {
             shareItemApi,
             unshareItemApi,
             suggestedUsers,
+            suggestedHasMore,
             setOnItemsRemoved,
             sharedUsersData,
             loadSharedUsers,

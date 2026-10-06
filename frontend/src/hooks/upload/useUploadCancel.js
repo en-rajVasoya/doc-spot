@@ -22,8 +22,13 @@ export function useUploadCancel(refs, sessions, setSessions, setIsPanelOpen) {
             abortControllersRef.current.delete(filekey)
         }
 
-        //  here cleanup backend — ONLY if not already finished
-        if (fileObj?.uploadId && fileObj.status !== "done" && fileObj.status !== "skipped") {
+        //  here cleanup backend — if in-flight or completed but still scanning
+        const isCancelableState = fileObj?.uploadId && (
+            (fileObj.status !== "done" && fileObj.status !== "skipped") ||
+            (fileObj.status === "done" && fileObj.scanStatus === "scanning")
+        )
+
+        if (isCancelableState) {
             try {
                 await axiosApi.delete(`/upload/cancle/${fileObj.uploadId}`)
             } catch (error) {
@@ -72,10 +77,14 @@ export function useUploadCancel(refs, sessions, setSessions, setIsPanelOpen) {
             }
         })
 
-        // STEP 3 — collect uploadIds from files that are NOT finished
+        // STEP 3 — collect uploadIds from files that are NOT finished or still scanning
         const uploadIds = []
         filesMap.forEach(f => {
-            if (f.uploadId && f.status !== "done" && f.status !== "skipped") {
+            const isCancelable = f.uploadId && (
+                (f.status !== "done" && f.status !== "skipped") ||
+                (f.status === "done" && f.scanStatus === "scanning")
+            )
+            if (isCancelable) {
                 uploadIds.push(f.uploadId)
             }
         })
@@ -138,8 +147,8 @@ export function useUploadCancel(refs, sessions, setSessions, setIsPanelOpen) {
     return {
         cancelFileUpload,
         cancelSessionUpload,
-        closeAllSessions        
-      
+        closeAllSessions
+
     }
 }
 

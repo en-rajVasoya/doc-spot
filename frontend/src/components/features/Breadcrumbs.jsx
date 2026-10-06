@@ -291,20 +291,19 @@ const Breadcrumbs = memo(function Breadcrumbs({
                                 zIndex: 10000,
                                 left: "100%",
                                 top: 0,
-                                minWidth: "95px",
-                                maxWidth: "105px",
-                                padding: "10px",
+                                minWidth: "175px",
+                                padding: "12px",
                                 background: "var(--white)",
                                 border: "1px solid var(--secondary)",
                                 borderRadius: "8px",
                                 boxShadow: "0px 4px 24px 0px rgba(0, 0, 0, 0.10)"
                             }}
                         >
-                            <p className="mb-2 text-nowrap" style={{ fontSize: "12px", color: "var(--dark-50)", textAlign: "center" }}>Folder Color</p>
+                            <p className="mb-2 text-nowrap" style={{ fontSize: "12px", color: "var(--dark-50)", textAlign: "left" }}>Folder Color</p>
                             <div
                                 style={{
                                     display: "grid",
-                                    gridTemplateColumns: "repeat(2, 1fr)",
+                                    gridTemplateColumns: "repeat(5, 1fr)",
                                     gap: "8px",
                                     justifyItems: "center"
                                 }}

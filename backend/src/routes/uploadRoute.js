@@ -38,6 +38,10 @@ uploadRouter.post("/complete", authMiddleware, completeUpload)
 
 uploadRouter.post("/small-batch", authMiddleware, smallUpload.any(), uploadSmallBatch)
 
+// OLD 3-step routes — kept for reference, not active
+// uploadRouter.post("/small-batch/init", authMiddleware, initSmallBatch)
+// uploadRouter.post("/small-batch/local-write", authMiddleware, smallUpload.single("file"), writeSmallBatchLocal)
+// uploadRouter.post("/small-batch/complete", authMiddleware, completeSmallBatch)
 
 
 //  bulk folder upload

@@ -9,6 +9,55 @@ import { getFolderContentsRecursive } from "#utils/index"
 
 import { Validator } from "node-input-validator";
 
+
+
+//  this fucntion will run when use will open the sahre user model if any existing link there for the item then shwo this 
+export const getLinkInfo = async (req, res) => {
+    try {
+        const { item_id } = req.query;
+        if (!item_id) {
+            return res.status(400).json({ success: false, message: "item_id is required" });
+        }
+
+        //  find the item is ther ein the share link or not
+        const sharedLink = await SharedLink.findOne({ item_id });
+        if (!sharedLink) {
+            return res.status(200).json({ success: true, exists: false, data: null });
+        }
+
+        //  if link found then calculate the expiry date here 
+        const isExpired = sharedLink.is_expired || (sharedLink.expire_date && new Date() > new Date(sharedLink.expire_date))
+
+        if (isExpired) {
+            //  if link is dead so deelte this so modla can do new link here
+            await sharedLink.deleteOne()
+            return res.status(200).json({ success: true, exists: false, data: null });
+        }
+
+        return res.status(200).json({
+            success: true,
+            exists: true,
+            data: {
+                _id: sharedLink._id,
+                item_id: sharedLink.item_id,
+                token: sharedLink.token,
+                link: sharedLink.link,
+                type: sharedLink.type,
+                is_public: sharedLink.is_public,
+                has_password: Boolean(sharedLink.password),
+                password: sharedLink.password || "",
+                expire_date: sharedLink.expire_date,
+                is_expired: sharedLink.is_expired,
+            }
+        });
+
+    } catch (error) {
+        logger.error(error);
+        return res.status(500).json({ success: false, message: error.message });
+    }
+}
+
+
 export const storeLinks = async (req, res) => {
     try {
         const { links, user_ids, is_public, expire_date, password } = req.body;
@@ -22,7 +71,7 @@ export const storeLinks = async (req, res) => {
             user_ids: "array",
             is_public: "required|boolean",
             password: "string",
-            expire_date: "date"
+            expire_date: "string"
         });
 
         const matched = await validations.check();
@@ -33,34 +82,91 @@ export const storeLinks = async (req, res) => {
             return res.status(400).json({ success: false, errors });
         }
 
-        // Extract token from each link and build documents
-        const sharedLinksData = await Promise.all(
-            links.map(async ({ link, type, item_id }) => {
-                const url = new URL(link);
-                const token = url.searchParams.get("token");
-                const hashedPassword = password ? await bcrypt.hash(password, 8) : null;
 
-                return {
+        // so here now when user modify the existing link here so update all field here
+        // if password send is not defined so remove the password else modfiy the password
+        const passwordFieldSent = Object.prototype.hasOwnProperty.call(req.body, "password");
+
+        const savedLinks = await Promise.all(
+            links.map(async ({ link, type, item_id }) => {
+                let existingLink = await SharedLink.findOne({ item_id })
+
+                let token;
+                let finalLink;
+
+                if (existingLink) {
+                    // reuse the existing link so url naver changes
+                    token = existingLink.token
+                    finalLink = existingLink.link
+                } else {
+                    const url = new URL(link)
+                    token = url.searchParams.get("token")
+                    finalLink = link
+                }
+
+                //  ----------------------------------------------------
+                //  password modify
+                //  ---------------------------------------------------
+                const oldPassword = existingLink ? existingLink.password : null
+                let savedPassword =oldPassword
+
+
+                if (!is_public) {
+                    //  privte link passwrod will be null
+                    savedPassword = null
+                } else if (passwordFieldSent) {
+                    // if no passwrod sent so null
+                    if (password === null || password === "") {
+                        savedPassword = null
+                    } else {
+                        savedPassword = password
+                    }
+                }
+
+                //  here check the is passwrod actually changed
+                const passwordChanged = oldPassword !== savedPassword
+                const updateDoc = {
                     user_id: userID,
                     token,
                     type,
-                    link,
-                    item_id, // file_id or folder_id
-                    password: hashedPassword,
+                    link: finalLink,
+                    item_id,
+                    password: savedPassword,
                     is_public,
                     permissions_users: user_ids || [],
                     expire_date: expire_date || null,
+                    is_expired: false,
                 };
-            })
-        );
 
-        const savedLinks = await SharedLink.insertMany(sharedLinksData);
+                const saved = await SharedLink.findOneAndUpdate(
+                    { item_id },
+                    { $set: updateDoc },
+                    { upsert: true, new: true, setDefaultsOnInsert: true }
+                )
+
+                if (req.io) {
+                    req.io.to(saved.token).emit("shared_link_updated", {
+                        item_id,
+                        token: saved.token,
+                        is_public: saved.is_public,
+                        has_password: Boolean(saved.password),
+                        password_changed: passwordChanged,
+                        is_expired: saved.is_expired
+                    });
+                }
+
+                return saved
+
+            })
+        )
 
         return res.status(201).json({
             success: true,
             message: "Links stored successfully",
             data: savedLinks
         });
+
+
 
     } catch (error) {
         logger.error(error);
@@ -97,8 +203,10 @@ export const accessLink = async (req, res) => {
                 return res.status(401).json({ success: false, is_login_required: true, message: "Login required to access this link" });
             }
 
-            const hasAccess = sharedLink.permissions_users.some(
-                (id) => id.toString() === req.user.toString()
+            const currentUserId = req.user?._id?.toString() || req.user?.toString();
+            const isOwner = String(sharedLink.user_id) === currentUserId;
+            const hasAccess = isOwner || sharedLink.permissions_users.some(
+                (id) => id.toString() === currentUserId
             );
             if (!hasAccess) {
                 return res.status(403).json({ success: false, is_access_denied: true, message: "You don't have access to this link" });
@@ -125,6 +233,7 @@ export const accessLink = async (req, res) => {
                 success: true,
                 type: "file",
                 data: file,
+                is_public: sharedLink.is_public,
                 redirect_url: `${process.env.APP_URL}/${file.storagePath}`
             });
         }
@@ -176,7 +285,7 @@ export const verifyLinkPassword = async (req, res) => {
         }
 
         // Verify password
-        const isMatch = await bcrypt.compare(password, sharedLink.password);
+        const isMatch = password === sharedLink.password;
         if (!isMatch) {
             return res.status(401).json({ success: false, message: "Incorrect password" });
         }

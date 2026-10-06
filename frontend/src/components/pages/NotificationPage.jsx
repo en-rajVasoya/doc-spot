@@ -11,6 +11,7 @@ import InteractiveIcon from "../layout/InteractiveIcon";
 // Icons & Context
 import closeIcon from "@images/icon/close-icon.svg";
 import notificationIcon from "@images/icon/notification.svg";
+import clockIcon from "@images/icon/clock-icon.svg";
 import notificationNoFoundImg from "@images/icon/notification-no-found-img.svg"
 
 import { useBellNotification } from "../../context/BellNotificationContext.jsx";
@@ -87,14 +88,11 @@ function NotificationPage() {
         if (isTrashNotification) {
             navigate("/trash-dashboard", { state: { highlightId: metadata.itemId } });
         } else {
-            const targetRoute = metadata.parentId
-                ? `/dashboard/folder/${metadata.parentId}`
-                : (isShareNotification ? "/shared-with-me" : "/dashboard");
+            const targetRoute = isShareNotification
+                ? "/shared-with-me"
+                : (metadata.parentId ? `/dashboard/folder/${metadata.parentId}` : "/dashboard");
 
-            navigate(targetRoute)
-            if (metadata.itemId) {
-                triggerHighlight(metadata.itemId)
-            }
+            navigate(targetRoute, { state: { highlightId: metadata.itemId } });
         }
     };
 
@@ -153,7 +151,17 @@ function NotificationPage() {
             >
                 <div className="notification-page-item-content">
                     <div className="notification-page-avatar-wrap">
-                        <UserAvatar user={notification.actor} />
+                        {notification.type === "link_expiring" || notification.type === "link_expired" ? (
+                            <span className='notification-link_expiring-icon'>
+                                <InteractiveIcon
+                                    defaultIcon={clockIcon}
+                                    alt=""
+                                    width={20}
+                                />
+                            </span>
+                        ) : (
+                            <UserAvatar user={notification.actor} />
+                        )}
                         {isUnread && (
                             <span className="notification-page-unread-dot" />
                         )}
@@ -161,12 +169,20 @@ function NotificationPage() {
                     <div className="notification-page-item-info">
                         <div className="d-flex align-items-center gap-2 mb-1">
                             <span className="notification-page-actor">
-                                {notification.actor?.name || "System"}
+                                {notification.type === "link_expiring"
+                                    ? "Link Expiration Warning"
+                                    : notification.type === "link_expired"
+                                        ? "Link Expired"
+                                        : (notification.actor?.name || "System")}
                             </span>
                         </div>
                         <div
                             className="notification-page-message"
-                            dangerouslySetInnerHTML={{ __html: notification.message }}
+                            dangerouslySetInnerHTML={{
+                                __html: notification.type === "link_expiring" && notification.metadata?.expireDate
+                                    ? `The public link for your ${notification.metadata.itemType} <b>"${notification.metadata.itemName}"</b> is expiring at <b>${new Date(notification.metadata.expireDate).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}</b>.`
+                                    : notification.message
+                            }}
                         />
                         <span className="notification-page-time">
                             {formatNotificationTime(notification.createdAt)}

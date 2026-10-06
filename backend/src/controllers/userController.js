@@ -25,7 +25,7 @@ const getKey = () => {
 //  User Register Controller
 export const registerUser = async (req, res) => {
     try {
-        let { name, email, password } = req.body;
+        let { name, email, password, user_id } = req.body;
 
         // validation check all filed are required
         if (!name || !email || !password) {
@@ -42,26 +42,43 @@ export const registerUser = async (req, res) => {
             return res.status(400).json({ success: false, message: "Email is invalid" })
         }
 
+        // Determine user_id (use provided user_id or generate from email prefix)
+        const finalUserId = user_id && user_id.trim()
+            ? user_id.trim()
+            : normalizedEmail.split("@")[0];
+
         //  validation for password - password must contains one upper case one special charcter and must 8 char long
         const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
         if (!passwordRegex.test(password)) {
-            return res.status(400).json({ success: false, message: "Password must be 8 char one upper case and one special symbole" })
+            return res.status(400).json({ success: false, message: "Password must be at least 8 characters, with 1 uppercase, 1 special symbol, and no spaces" })
         }
 
-        //  find if user already registered
+        //  find if user already registered by email
         const existingUser = await User.findOne({ email: normalizedEmail })
         if (existingUser) {
             return res.status(400).json({ success: false, message: "Email already registered" })
         }
+
+        // Check if user_id is already taken
+        const existingUserId = await User.findOne({ user_id: finalUserId })
+        if (existingUserId) {
+            return res.status(400).json({ success: false, message: "Username/user_id already exists" })
+        }
+
+        // Automatically make the very first user in the database an admin!
+        const userCount = await User.countDocuments()
+        const role = userCount === 0 ? "admin" : (req.body.role || "user")
 
         //  password hashing
         const hashedPassword = await bcrypt.hash(password, 10)
 
         //  create new user
         const user = await User.create({
+            user_id: finalUserId,
             name,
             email: normalizedEmail,
-            password: hashedPassword
+            password: hashedPassword,
+            role
         })
 
         // dont send password to frontend
@@ -79,7 +96,7 @@ export const registerUser = async (req, res) => {
 export const userLogin = async (req, res) => {
     try {
         let { email, password, remember = false } = req.body;
-        console.log("remember value:", req.body.remember, typeof req.body.remember)
+        // console.log("remember value:", req.body.remember, typeof req.body.remember)
 
         //  normalize theemail
         email = email?.trim().toLowerCase();
@@ -127,17 +144,19 @@ export const userLogin = async (req, res) => {
         }
 
         // ------------------------------------------
-        // Access Token - always short lived (5 min)
+        // Access Token - always short lived (2 hour)
         // ------------------------------------------
-        const accessToken = await generateToken(user._id, 5 * 60 * 1000)
+        const accessToken = await generateToken(user._id, 2 * 60 * 60 * 1000)
 
 
         // ------------------------------------------
         // Refresh Token - duration depends on "remember me"
         // ------------------------------------------
         const refreshTokenExpiry = remember
-            ? 7 * 24 * 60 * 60 * 1000   // 7 days
-            : 24 * 60 * 60 * 1000;
+            //  ? 7 * 24 * 60 * 60 * 1000   // 7 days
+            //     : 24 * 60 * 60 * 1000;
+            ? 30 * 24 * 60 * 60 * 1000   // 30 days (1 month)
+            : 7 * 24 * 60 * 60 * 1000;   // 7 days
 
 
         const refreshToken = await generateToken(user._id, refreshTokenExpiry, true)
@@ -158,20 +177,20 @@ export const userLogin = async (req, res) => {
         const isProduction = process.env.NODE_ENV === "production";
 
         // access token cookie
-        res.cookie("auth_token", accessToken, {
+        res.cookie("doc_auth_token", accessToken, {
             httpOnly: true,
             secure: isProduction,
             sameSite: isProduction ? "none" : "lax",
-            maxAge: 5 * 60 * 1000    // 5 min
+            maxAge: 2 * 60 * 60 * 1000
         })
 
 
         //  refresh token cookie
-        res.cookie("refresh_token", refreshToken, {
+        res.cookie("doc_refresh_token", refreshToken, {
             httpOnly: true,
             secure: isProduction,
             sameSite: isProduction ? "none" : "lax",
-            maxAge: refreshTokenExpiry    // 1 day or 7 days
+            maxAge: refreshTokenExpiry    // 7 days or 30 days (1 month)
         })
 
 
@@ -199,7 +218,7 @@ export const userLogin = async (req, res) => {
 export const userLogout = async (req, res) => {
     try {
         const isProduction = process.env.NODE_ENV === "production";
-        const refreshToken = req.cookies.refresh_token
+        const refreshToken = req.cookies.doc_refresh_token || req.cookies.refresh_token
 
         //  delete the session from DB so refresh token can not be used agian here
         if (refreshToken) {
@@ -207,14 +226,14 @@ export const userLogout = async (req, res) => {
         }
 
 
-        res.clearCookie("auth_token", {
+        res.clearCookie("doc_auth_token", {
             httpOnly: true,
             secure: isProduction,
             sameSite: isProduction ? "none" : "lax",
             maxAge: 0
         })
 
-        res.clearCookie("refreshToken", {
+        res.clearCookie("doc_refresh_token", {
             httpOnly: true,
             secure: isProduction,
             sameSite: isProduction ? "none" : "lax",
@@ -236,7 +255,7 @@ export const userLogout = async (req, res) => {
 //  refresh token for the new acces token generate here
 export const refreshAccessToken = async (req, res) => {
     try {
-        const token = req.cookies.refresh_token
+        const token = req.cookies.doc_refresh_token || req.cookies.refresh_token
         if (!token) {
             return res.status(401).json({ success: false, message: "No refresh token, please login" });
         }
@@ -265,22 +284,22 @@ export const refreshAccessToken = async (req, res) => {
         } catch (verifyError) {
             // token expired/invalid/tampered — session is dead, clean it up
             await sessionModel.deleteOne({ _id: session._id })
-            res.clearCookie("auth_token")
-            res.clearCookie("refresh_token")
+            res.clearCookie("doc_auth_token")
+            res.clearCookie("doc_refresh_token")
             return res.status(401).json({ success: false, message: "Session expired, please login again" });
         }
 
 
         // if refresh token is still valid so create new access token here
-        const newAccessToken = await generateToken(payload.id, 5 * 60 * 1000)
+        const newAccessToken = await generateToken(payload.id, 2 * 60 * 60 * 1000)
 
         const isProduction = process.env.NODE_ENV === "production";
 
-        res.cookie("auth_token", newAccessToken, {
+        res.cookie("doc_auth_token", newAccessToken, {
             httpOnly: true,
             secure: isProduction,
             sameSite: isProduction ? "none" : "lax",
-            maxAge: 5 * 60 * 1000    // 5 min
+            maxAge: 2 * 60 * 60 * 1000    // 2 hours
         })
 
 
@@ -357,7 +376,7 @@ export const updateProfile = async (req, res) => {
 
             const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
             if (!passwordRegex.test(password)) {
-                return res.status(400).json({ message: "Password must be 8 characters, one uppercase and one special symbol" });
+                return res.status(400).json({ message: "Password must be at least 8 characters, with 1 uppercase, 1 special symbol, and no spaces" });
             }
 
             const isMatch = await bcrypt.compare(currentPassword, userData.password);
@@ -479,8 +498,8 @@ export const forgotPassword = async (req, res) => {
             return res.status(403).json({ success: false, message: "Account is inactive. Please contact your administrator." })
         }
 
-        // generate random 32 char token
-        const rawToken = crypto.randomBytes(32).toString("hex")
+        // generate random 16 byte (32 char) token
+        const rawToken = crypto.randomBytes(16).toString("hex")
 
         // hash the token to store in the database securely
         const hashedToken = crypto.createHash("sha256").update(rawToken).digest("hex")
@@ -495,22 +514,19 @@ export const forgotPassword = async (req, res) => {
         //  create reset url here with token here
         const resetUrl = `${process.env.WEB_URL}/reset-password/${rawToken}`
 
-        //  build the email html
-        const emailHtml = `
-            <h3>Hello ${user.name},</h3>
-            <p>You requested a password reset. Click the link below to securely set a new password:</p>
-            <a href="${resetUrl}" target="_blank">${resetUrl}</a>
-            <p>This link will expire in 15 minutes.</p>
-            <p>If you didn't request this, you can safely ignore this email.</p>
-        `;
-
 
         //  send the email with helper function 
         await sendEmail({
             to: user.email,
             subject: "Password Reset Request - DocSpot",
-            html: emailHtml
-        })
+            template: "resetPassword",    // which tempelate you want to use
+            data: {
+                name: user.name,
+                link: resetUrl,
+                MAIN_URL: process.env.APP_URL || `http://localhost:${process.env.PORT || 4001}`,
+                unsubscribe_link: "#"
+            }
+        });
 
         res.status(200).json({ success: true, message: "Password reset link sent to your email" });
 
@@ -585,7 +601,7 @@ export const resetPassword = async (req, res) => {
         if (!passwordRegex.test(password)) {
             return res.status(400).json({
                 success: false,
-                message: "Password must be at least 8 characters, with 1 uppercase, 1 lowercase, 1 number, and 1 special character."
+                message: "Password must be at least 8 characters, with 1 uppercase, 1 special symbol, and no spaces"
             });
         }
 
@@ -610,6 +626,14 @@ export const resetPassword = async (req, res) => {
         user.reset_password_token = undefined;
         user.reset_password_expires = undefined;
         await user.save()
+
+        // Delete all active sessions for this user from DB so all other devices lose access
+        await sessionModel.deleteMany({ user_id: user._id });
+
+        // Emit real-time force_logout to all connected devices/mobile sessions of this user
+        req.emitToUser?.(user._id.toString(), "force_logout", {
+            message: "Your password was reset successfully. Please log in again."
+        });
 
         res.status(200).json({ success: true, message: "Password reset successfully. You can now login." });
     } catch (error) {

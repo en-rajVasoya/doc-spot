@@ -21,6 +21,7 @@ self.addEventListener('fetch', (event) => {
     const url = new URL(event.request.url);
 
     if (url.pathname.startsWith('/native-download/')) {
+        console.log("[SW] intercepted native-download request:", url.pathname)
         // getting file id 
         const parts = url.pathname.split('/');
         const fileId = parts[parts.length - 1];
@@ -43,6 +44,7 @@ self.addEventListener('fetch', (event) => {
 
 //  here sw will read from index db all chuk and then streams them to chrome download panel
 async function startStreaming(fileId, fileName, fileSize) {
+    console.log("[SW] startStreaming called for", fileId)
 
     //  how many chunks exist in index db start from chunk 0
     const totalChunks = Math.ceil(fileSize / CHUNK_SIZE)
@@ -50,6 +52,7 @@ async function startStreaming(fileId, fileName, fileSize) {
     let currentChunk = 0
 
     const clients = await self.clients.matchAll()
+    console.log("[SW] clients found:", clients.length)
 
     //  stream file chunks to download panel of chrome
     const stream = new ReadableStream({
@@ -59,6 +62,8 @@ async function startStreaming(fileId, fileName, fileSize) {
                 // when downloa dcomplete
                 if (currentChunk >= totalChunks) {
                     controller.close()
+                    console.log("[SW] stream finished, posting DOWNLOAD_COMPLETE for", fileId, "to", clients.length, "clients")
+
 
                     clients.forEach(client => {
                         client.postMessage({
@@ -101,7 +106,8 @@ async function startStreaming(fileId, fileName, fileSize) {
         headers: {
             'Content-Type': 'application/octet-stream',
             'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
-            'Cache-Control': 'no-cache'
+            'Cache-Control': 'no-cache',
+            'Content-Length': fileSize.toString()
         }
     })
 }

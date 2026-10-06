@@ -17,14 +17,14 @@ export function TrashProvider({ children }) {
     const { user } = useAuth()
     const navigate = useNavigate()
     const { folderId } = useParams()
-    const { socketRef } = useSocket()
+    const { socket } = useSocket()
 
     const [items, setItems] = useState([])
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
     const [trail, setTrail] = useState([])
     const [selectedIds, setSelectedIds] = useState(new Set())
-
+    const [isRestoring, setIsRestoring] = useState(false)
 
     //  here we are defining current folder id when child so child id
     const currentFolderId = trail.length ? trail[trail.length - 1].id : null;
@@ -134,24 +134,34 @@ export function TrashProvider({ children }) {
 
     //  socket event here
     useEffect(() => {
-        if (!user?._id) return;
-        const socket = socketRef.current;
-        if (!socket) return;
+        if (!user?._id || !socket) return;
+        console.log("[TrashContext] Attaching socket listeners, socket id:", socket.id)
 
-        //  if any item get trashed trash page refresh
         const handleItemTrashedForTrash = () => {
             if (!currentFolderId) {
                 fetchTrashedItems()
             }
         }
 
+        const handleItemDeletedForever = ({ itemId, itemIds } = {}) => {
+            console.log("[FRONTEND] item_deleted_forever received:", itemId, itemIds)
+            const deletedSet = new Set((itemIds || [itemId]).filter(Boolean).map(String));
+            console.log("[FRONTEND] item_deleted_forever received:", deletedSet)
+            setItems(prev => prev.filter(i => !deletedSet.has(String(i._id))));
+            if (currentFolderId && deletedSet.has(String(currentFolderId))) {
+                navigate("/trash-dashboard");
+            }
+        }
+
         socket.on("item_trashed", handleItemTrashedForTrash)
+        socket.on("item_deleted_forever", handleItemDeletedForever)
 
         return () => {
             socket.off("item_trashed", handleItemTrashedForTrash)
+            socket.off("item_deleted_forever", handleItemDeletedForever)
         }
 
-    }, [user?._id, currentFolderId, fetchTrashedItems, socketRef])
+    }, [user?._id, currentFolderId, fetchTrashedItems, socket])
 
 
     //  here we are using open folder to user can go inside that folder
@@ -187,21 +197,43 @@ export function TrashProvider({ children }) {
 
 
     //  restore item here
-    const restoreItemApi = async (id, silent = false) => {
-        try {
-            const { data } = await axiosApi.post("/trash/restore", { id })
-            setItems(prev => prev.filter(item => item._id !== id))
-            setSelectedIds(new Set())
-            if (!silent) showNotification("Restored successfully", "success", "bottom-center")
+    const restoreItemApi = async (ids, silent = false) => {
+        if (isRestoring) return // Prevents clicking 2 or 3 times!
 
-            // when user goes inside the fodler and resotre current folder using the breadcrumb so navigate user to the dashboard
-            if(id === currentFolderId){
+        const idArray = Array.isArray(ids) ? ids : [ids]
+        setIsRestoring(true)
+
+        try {
+            const { data } = await axiosApi.post("/trash/restore", { ids: idArray })
+
+            const failedSet = new Set((data.failed || []).map(f => String(f.id)))
+            const restoredSet = new Set(idArray.map(String).filter(id => !failedSet.has(id)))
+
+            setItems(prev => prev.filter(item => !restoredSet.has(String(item._id))))
+            setSelectedIds(new Set())
+
+            if (!silent) {
+                if (failedSet.size > 0) {
+                    showNotification(`${data.restored} restored, ${failedSet.size} failed`, "error", "bottom-center")
+                } else {
+                    const message = restoredSet.size > 1 ? "Items restored successfully" : "Item restored successfully"
+                    showNotification(message, "success", "bottom-center")
+                }
+            }
+
+            if (currentFolderId && restoredSet.has(String(currentFolderId))) {
                 navigate("/trash-dashboard")
             }
+
+            return data
         } catch (error) {
             showNotification(error.response?.data?.message || "Restore failed", "error", "bottom-center")
+        } finally {
+            setIsRestoring(false)
         }
     }
+
+
 
 
     //  delete item forever here
@@ -259,7 +291,8 @@ export function TrashProvider({ children }) {
             sortBy,
             setSortBy,
             sortOrder,
-            setSortOrder
+            setSortOrder,
+            isRestoring
         }}>
             {children}
         </TrashContext.Provider>
