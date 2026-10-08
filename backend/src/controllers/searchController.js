@@ -857,7 +857,6 @@ export const searchFiles = async (req, res) => {
         }).select("_id").lean()
 
         const ownedFolderIds = ownedFolders.map(f => f._id)
-        console.log(`[SEARCH] Total owned folders (private + shared) count: ${ownedFolderIds.length}`);
 
         const accessibleAncestorIds = [...sharedRootFolderIds, ...ownedFolderIds]
 
@@ -939,7 +938,6 @@ export const searchFiles = async (req, res) => {
                 isTrashed: { $ne: true }
             }).select("_id").lean();
             const ownedSharedFolderIds = ownedSharedFolders.map(f => f._id);
-            console.log(`[SEARCH] Total owned SHARED folders count: ${ownedSharedFolderIds.length}`);
 
             filter.$and.push({
                 owner: userID,
@@ -1011,10 +1009,10 @@ export const searchFiles = async (req, res) => {
         // ##################################################
         // ---- STEP 6: Run the query 
         // ##################################################
-        console.log("[QUERY ARRAY SIZES]", {
-            sharedRootFolderIds: sharedRootFolderIds.length,
-            accessibleAncestorIds: accessibleAncestorIds.length
-        });
+        // console.log("[QUERY ARRAY SIZES]", {
+        //     sharedRootFolderIds: sharedRootFolderIds.length,
+        //     accessibleAncestorIds: accessibleAncestorIds.length
+        // });
         const [results, totalCount] = await Promise.all([
             uploadModel.find(filter)
                 .select("name type fileSize totalSize fileType updatedAt createdAt parent ancestorIds owner storagePath color isShared sharedWith isTrashed")

@@ -43,16 +43,13 @@ const canPersistHandle = async () => {
         const result = await detectIncognito()
         isPrivateSessionCache = result.isPrivate
 
-        console.log(`[STORAGE] detectIncognito: isPrivate=${result.isPrivate}, browser=${result.browserName}`)
 
         // If Incognito / Private / Guest: stay in RAM only! (returns false)
         if (result.isPrivate) {
-            console.log("[STORAGE] Incognito detected: Handle will remain in-memory only (never saved to IndexedDB).")
             return false
         }
 
         // If Normal Chrome: allow saving to IndexedDB! (returns true)
-        console.log("[STORAGE] Normal profile detected: Storing handle in IndexedDB is enabled!")
         return true
 
     } catch (error) {

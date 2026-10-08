@@ -19,16 +19,14 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('load', async () => {
     try {
       const reg = await navigator.serviceWorker.register('/streamsaver-sw.js', { scope: '/' });
-      console.log('[SW] Registered successfully:', reg.scope);
       if (navigator.serviceWorker.controller) {
         window.__swReady = true;
       }
       navigator.serviceWorker.addEventListener('controllerchange', () => {
         window.__swReady = true;
-        console.log('[SW] Controller changed, ready for downloads');
       });
     } catch (err) {
-      console.warn('[SW] Registration failed:', err);
+      // console.warn('[SW] Registration failed:', err);
     }
   });
 }

@@ -9,7 +9,6 @@ function ShareInheritedModel({ data, onClose }) {
     const { user, newPermission, folderId, folderName, itemIdsToUpdate } = data;
     const { shareItemApi, unshareItemApi, loadSharedUsers, sharedUsersData } = useFileExplorer();
     const [loading, setLoading] = useState(false);
-    console.log("12 -->", data);
 
     const handleConfirm = async () => {
         setLoading(true)

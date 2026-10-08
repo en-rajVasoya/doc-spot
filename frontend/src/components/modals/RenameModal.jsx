@@ -9,7 +9,6 @@ import useResponsive from "../../hooks/useResponsive";
 function RenameModal({ data, onClose }) {
 
     // Shake animation
-    console.log("data i s", data)
 
     const [shake, setShake] = useState(false);
     const modalRef = useRef(null);

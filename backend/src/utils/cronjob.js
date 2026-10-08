@@ -93,7 +93,6 @@ export const startTrashCleanup = (emitToUser) => {
 
                     if (item.owner) {
                         const ownerIdStr = item.owner.toString();
-                        console.log(`[Trash cleanup] Emitting item_deleted_forever to owner ${ownerIdStr} for item ${item._id}`);
                         emitToUser(ownerIdStr, "item_deleted_forever", {
                             itemId: item._id.toString(),
                             itemIds: allItemIdsStr
@@ -102,7 +101,6 @@ export const startTrashCleanup = (emitToUser) => {
 
                     logger.info(`[Trash cleanup] Item deleted: ${item._id}`)
                 } catch (error) {
-                    console.error(`[TRASH CLEANUP] Error deleting item ${item._id}:`, error);
                     logger.error(`[TRASH CLEANUP] Failed to delete ${item._id}: ${error.message}`)
                 }
             }
@@ -117,7 +115,6 @@ export const startTrashCleanup = (emitToUser) => {
 
 // cronjob to expire shared links — runs every 1 minute
 export const startExpiredLinksCleanup = (emitToUser) => {
-    console.log("[LINK CLEANUP] Cron initialized — will run every 1 minute (* * * * *)");
     logger.info("[LINK CLEANUP] Cron initialized — will run every 1 minute (* * * * *)");
 
     // runs every 1 minute to check expired links
@@ -140,7 +137,6 @@ export const startExpiredLinksCleanup = (emitToUser) => {
                 return
             }
 
-            console.log(`[LINK CLEANUP] [${timestamp}] Found ${linksToExpire.length} expired link(s) to expire`);
 
             const idsToExpire = linksToExpire.map(l => l._id)
 

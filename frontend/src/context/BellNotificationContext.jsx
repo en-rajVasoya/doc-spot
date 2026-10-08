@@ -68,8 +68,14 @@ export function BellNotificationProvider({ children }) {
         const handleProfileUpdated = (updatedUser) => {
             if (!updatedUser?._id) return;
             setNotifications(prev => prev.map(notif => {
-                if (notif.actor && String(notif.actor._id) === String(updatedUser._id)) {
-                    return { ...notif, actor: { ...notif.actor, ...updatedUser } };
+                const actorId = notif.actor?._id || notif.actor;
+                if (actorId && String(actorId) === String(updatedUser._id)) {
+                    return {
+                        ...notif,
+                        actor: typeof notif.actor === "object"
+                            ? { ...notif.actor, ...updatedUser }
+                            : { ...updatedUser }
+                    };
                 }
                 return notif;
             }));

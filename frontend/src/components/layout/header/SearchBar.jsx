@@ -309,7 +309,6 @@ function SearchBar({ searchBarOpen, setSearchBarOpen }) {
     // ---- STEP 6: Search suggested  users for selection ----------
     // ##################################################
     const handleUserSearch = useCallback((inputValue) => {
-        console.log("handleUserSearch called", inputValue)
         if (!inputValue || inputValue.trim().length === 0) {
             getSuggestedUsersApi().then((users) => {
                 const options = users.map((u) => ({

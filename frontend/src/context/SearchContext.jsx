@@ -46,10 +46,8 @@ export function SearchProvider({ children }) {
         const cacheKey = JSON.stringify({ filters, page })
         const thisRequestId = ++requestIdRef.current
 
-        console.log(`[searchApi] START id=${thisRequestId} page=${page} query=${filters.query}`)
 
         if (searchCache.current[cacheKey]) {
-            console.log(`[searchApi] CACHE HIT id=${thisRequestId} page=${page}`)
             const cachedData = searchCache.current[cacheKey]
             if (page === 1) setSearchResults(cachedData.results || [])
             else setSearchResults(prev => [...prev, ...(cachedData.results || [])]);
@@ -63,7 +61,6 @@ export function SearchProvider({ children }) {
         }
 
         if (abortControllerRef.current) {
-            console.log(`[searchApi] aborting previous controller (id=${thisRequestId} is taking over)`)
             abortControllerRef.current.abort()
         }
 
@@ -89,17 +86,14 @@ export function SearchProvider({ children }) {
             if (filters.dateTo) params.dateTo = filters.dateTo
             params.page = page
 
-            console.log(`[searchApi] AWAITING id=${thisRequestId} page=${page}`)
 
             const { data } = await axiosApi.get("/search/filter", {
                 params,
                 signal: controller.signal
             })
 
-            console.log(`[searchApi] RESOLVED id=${thisRequestId} page=${page} currentGlobalId=${requestIdRef.current} results=${data.results?.length}`)
 
             if (thisRequestId !== requestIdRef.current) {
-                console.log(`[searchApi] STALE — DROPPING id=${thisRequestId} (current is ${requestIdRef.current})`)
                 return
             }
 
@@ -111,15 +105,12 @@ export function SearchProvider({ children }) {
             setTotalCount(data.totalCount)
             setCurrentPage(page)
 
-            console.log(`[searchApi] APPLIED id=${thisRequestId} page=${page}`)
 
         } catch (error) {
             if (error.name === "CanceledError" || error.code === "ERR_CANCELED") {
-                console.log(`[searchApi] CANCELED id=${thisRequestId} page=${page}`)
                 return;
             }
             if (thisRequestId !== requestIdRef.current) {
-                console.log(`[searchApi] STALE ERROR — DROPPING id=${thisRequestId}`)
                 return
             }
             setSearchError(error.response?.data?.message || "Search failed")
@@ -137,7 +128,6 @@ export function SearchProvider({ children }) {
 
     // load more pagination here
     const loadMore = useCallback(() => {
-        console.log(`[loadMore] called — searchLoading=${searchLoading} loadingMore=${loadingMore} resultsLen=${searchResults.length} totalCount=${totalCount} currentPage=${currentPage}`)
         if (searchLoading || loadingMore) return
         if (searchResults.length >= totalCount) return
         searchApi(searchFilters, currentPage + 1)
@@ -150,7 +140,6 @@ export function SearchProvider({ children }) {
 
     // when search clear 
     const clearSearch = useCallback(() => {
-        console.log(`[clearSearch] CALLED — bumping requestId from ${requestIdRef.current} to ${requestIdRef.current + 1}`)
         if (abortControllerRef.current) {
             abortControllerRef.current.abort()
         }

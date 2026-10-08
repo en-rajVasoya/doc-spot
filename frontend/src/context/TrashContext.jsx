@@ -135,7 +135,6 @@ export function TrashProvider({ children }) {
     //  socket event here
     useEffect(() => {
         if (!user?._id || !socket) return;
-        console.log("[TrashContext] Attaching socket listeners, socket id:", socket.id)
 
         const handleItemTrashedForTrash = () => {
             if (!currentFolderId) {
@@ -144,9 +143,7 @@ export function TrashProvider({ children }) {
         }
 
         const handleItemDeletedForever = ({ itemId, itemIds } = {}) => {
-            console.log("[FRONTEND] item_deleted_forever received:", itemId, itemIds)
             const deletedSet = new Set((itemIds || [itemId]).filter(Boolean).map(String));
-            console.log("[FRONTEND] item_deleted_forever received:", deletedSet)
             setItems(prev => prev.filter(i => !deletedSet.has(String(i._id))));
             if (currentFolderId && deletedSet.has(String(currentFolderId))) {
                 navigate("/trash-dashboard");

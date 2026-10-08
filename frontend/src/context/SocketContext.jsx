@@ -22,7 +22,7 @@ export function SocketProvider({ children }) {
         }
 
         const socketInstance = io(SOCKET_URL, {
-            // query: { userId: user._id },
+            forceNew: true,
             withCredentials: true,
             reconnection: true,
             reconnectionAttempts: Infinity,

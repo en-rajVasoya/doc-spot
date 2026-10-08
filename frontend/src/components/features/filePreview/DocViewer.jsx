@@ -278,27 +278,13 @@ async function injectCharts(containerEl, blob) {
         if (!chartDataList.length) return
         // Debug log — remove after confirming correct placeholder is found
         if (process.env.NODE_ENV === "development") {
-            console.log("=== Chart debug ===")
-            console.log("Charts in zip:", chartFiles)
-            console.log("SVGs in DOM:", containerEl.querySelectorAll("svg").length)
             containerEl.querySelectorAll("svg").forEach((svg, i) => {
-                console.log(`SVG[${i}]`, {
-                    w: svg.getAttribute("width"),
-                    h: svg.getAttribute("height"),
-                    children: svg.children.length,
-                    html: svg.innerHTML.substring(0, 120)
-                })
+                
             })
             const blocks = containerEl.querySelectorAll(
                 'span[style*="display:inline-block"], div[style*="display:inline-block"]'
             )
-            console.log("Inline-block wrappers:", blocks.length)
-            blocks.forEach((el, i) => {
-                console.log(`Wrapper[${i}]`, {
-                    style: el.getAttribute("style"),
-                    html: el.innerHTML.substring(0, 80)
-                })
-            })
+            
         }
         const placeholders = findChartPlaceholders(containerEl)
         if (placeholders.length > 0) {

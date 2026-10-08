@@ -239,20 +239,14 @@ function ShareUserModal({ data, onClose, setModal }) {
     // checks if the currently logged-in user is the owner of the item
     const isOwner = owner && user && String(owner.userId) === String(user._id);
 
-console.log("data : ", data)
-console.log("allSelectedItems[0]:",allSelectedItems[0])
-console.log("sharedWith : ",sharedWith)
     // Get current user's permission for this item
     const currentUserEntry = sharedWith.find(s => String(s.userId || s._id) === String(user?._id))
-    console.log("currentUserEntry :",currentUserEntry)
     const currentPermission = sharedUsersData.permission
     || data?.permission
     || allSelectedItems[0]?.permission
     || (isOwner ? "owner" : currentUserEntry?.permission)
-console.log("currentPermission : ", currentPermission)
     // Allow sharing if user is Owner OR Editor
     const canShare = isOwner || currentPermission === "editor" || currentPermission === "owner";
-console.log("canShare :",canShare)
 
     // Fixed: React-Select portal click
     const handleOutsideClick = (e) => {

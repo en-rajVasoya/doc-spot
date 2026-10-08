@@ -11,7 +11,6 @@ const processQueue = async () => {
     const job = queue.shift()
     activeScans++
 
-    console.log(`[SCAN QUEUE] Starting scan — active: ${activeScans}, remaining: ${queue.length}`)
 
     try {
         await job()
@@ -19,7 +18,6 @@ const processQueue = async () => {
         console.error("[SCAN QUEUE] Job failed:", error.message)
     } finally {
         activeScans--
-        console.log(`[SCAN QUEUE] Scan finished — active: ${activeScans}, remaining: ${queue.length}`)
         processQueue()
     }
 }
@@ -28,7 +26,6 @@ const processQueue = async () => {
 
 export const addToScanQueue = (uploadId, job) => {
     if (queuedIds.has(uploadId)) {
-        console.log(`[SCAN QUEUE] Duplicate skipped: ${uploadId}`)
         return
     }
 
@@ -42,7 +39,6 @@ export const addToScanQueue = (uploadId, job) => {
         }
     })
 
-    console.log(`[SCAN QUEUE] Job added — queue: ${queue.length}, active: ${activeScans}`)
 
     while (activeScans < MAX_CONCURRENT && queue.length > 0) {
         processQueue()

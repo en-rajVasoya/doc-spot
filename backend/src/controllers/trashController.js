@@ -289,6 +289,7 @@ export const trashItem = async (req, res) => {
         const notificationsToCreate = [];
         const crossUserItemsMap = new Map();
         const idsSet = new Set(ids.filter(Boolean).map(id => id.toString()));
+        const audienceMap = new Map();   // userId -> [trashed item ids they must remove]
 
 
         //synchronous one-liner replacing the slow while loop
@@ -379,9 +380,9 @@ export const trashItem = async (req, res) => {
                             });
                         });
 
-                        if (totalMovedSize > 0) {
-                            await updateFolderSizeTree(item._id, -totalMovedSize);
-                        }
+                        // if (totalMovedSize > 0) {
+                        //     await updateFolderSizeTree(item._id, -totalMovedSize);
+                        // }
                     }
 
                     // Notify the Owner to update the folder icon and share info live
@@ -492,6 +493,14 @@ export const trashItem = async (req, res) => {
             const item = await uploadModel.findOne({ _id: id, isTrashed: { $ne: true } }).populate("owner", "_id name profilePic").lean();
             if (!item || item.isTrashed) continue;
 
+            const audience = new Set()
+            await notifySharedUsers(item._id, "item_trashed", null, (uid) => audience.add(String(uid)))
+
+            // if someone else's item is being pushed back to its owner's root, the owner
+            // already gets "item_moved", so don't also tell them "item_trashed"
+            const itemOwnerIdStr = String(item.owner._id || item.owner)
+            if (itemOwnerIdStr !== String(deletedBy)) audience.delete(itemOwnerIdStr)
+
             //  give that item to the helper function to find where ot move trash or other user root
             const processResult = await processItem(item);
 
@@ -501,10 +510,11 @@ export const trashItem = async (req, res) => {
                 continue;
             }
 
-            //  group trashed item by parent folder or root for socket notifications
-            const parentKey = item.parent ? item.parent.toString() : "root";
-            if (!parentsToNotify.has(parentKey)) parentsToNotify.set(parentKey, []);
-            parentsToNotify.get(parentKey).push(String(item._id));
+            // remember which trashed ids each user must be told about
+            audience.forEach(uid => {
+                if (!audienceMap.has(uid)) audienceMap.set(uid, [])
+                audienceMap.get(uid).push(String(item._id))
+            })
 
             //  update the folder size if item is inside a folder
             if (item.parent) {
@@ -594,16 +604,10 @@ export const trashItem = async (req, res) => {
                 });
         });
 
-        // notify al ll toehr users that this file is removed
-        for (const [pId, trashedIds] of parentsToNotify) {
-            const actualParentId = pId === "root" ? null : pId;
-            await notifySharedUsers(
-                actualParentId || trashedIds[0],
-                "item_trashed",
-                { parentId: actualParentId, ids: trashedIds },
-                req.emitToUser
-            );
-        }
+        // each user gets ONE event with only the ids they can see
+        audienceMap.forEach((trashedIds, uid) => {
+            req.emitToUser(uid, "item_trashed", { parentId: null, ids: trashedIds })
+        })
 
         res.json({ success: true, message: "Item moved to trash" });
 
@@ -724,18 +728,15 @@ export const restoreItem = async (req, res) => {
         let restoredToRoot = 0
         const failed = []
 
-        // if user is selecting multipel files for restoring send one socket not many
-        const restoreNotifications = new Map()
-        const queueRestoreNotify = (id, parentId) => {
-            const key = parentId ? String(parentId) : "root"
-            if (!restoreNotifications.has(key)) {
-                restoreNotifications.set(key, {
-                    anchorId: id,
-                    parentId: parentId ? String(parentId) : null,
-                    itemIds: []
-                })
-            }
-            restoreNotifications.get(key).itemIds.push(String(id))
+        const audienceMap = new Map()   // userId -> [restored item ids they should see]
+        const queueRestoreNotify = async (id) => {
+            // who can see this item now (the item itself, then every folder above it)
+            const audience = new Set()
+            await notifySharedUsers(id, "item_restored", null, (uid) => audience.add(String(uid)))
+            audience.forEach(uid => {
+                if (!audienceMap.has(uid)) audienceMap.set(uid, [])
+                audienceMap.get(uid).push(String(id))
+            })
         }
 
         for (const id of ids) {
@@ -818,7 +819,7 @@ export const restoreItem = async (req, res) => {
                             { _id: id },
                             { $set: { isTrashed: false, trashedAt: null, parent: null, ancestorIds: [], directly_trashed: false } }
                         )
-                        queueRestoreNotify(id, null)
+                        await queueRestoreNotify(id)
 
                         restored++
                         restoredToRoot++
@@ -846,7 +847,7 @@ export const restoreItem = async (req, res) => {
                     }
                 }
 
-                queueRestoreNotify(id, item.parent)
+                await queueRestoreNotify(id)
                 restored++
             } catch (error) {
                 logger.error(error)
@@ -861,15 +862,10 @@ export const restoreItem = async (req, res) => {
         }
 
 
-        //  notify once here
-        for (const { anchorId, parentId, itemIds } of restoreNotifications.values()) {
-            await notifySharedUsers(
-                anchorId,
-                "item_restored",
-                { itemId: anchorId, itemIds, parentId },
-                req.emitToUser
-            )
-        }
+        // each user gets ONE event with only the ids they can see
+        audienceMap.forEach((itemIds, uid) => {
+            req.emitToUser(uid, "item_restored", { itemIds, parentId: null })
+        })
 
         return res.json({ success: true, restored, restoredToRoot, failed })
 
@@ -1045,7 +1041,7 @@ export const deleteForver = async (req, res) => {
         const filesToUnlink = [];
 
         for (const item of itemsToProcess) {
-            await notifySharedUsers(item.parent || item._id, "item_deleted", { itemId: item._id, parentId: item.parent }, req.emitToUser);
+            await notifySharedUsers(item.parent || item._id, "item_deleted_forever", { itemId: item._id, parentId: item.parent }, req.emitToUser);
 
             allMetadataIdsToDelete.push(item._id);
 

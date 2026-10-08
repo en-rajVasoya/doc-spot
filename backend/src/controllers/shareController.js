@@ -482,7 +482,6 @@ export const unshareItem = async (req, res) => {
 
             allCollaboratorIds.forEach(uid => {
                 const revoked = unsharedSet.has(uid.toString())
-                console.log(`[Backend shareController] Emitting share_removed to uid=${uid} | accessRevoked=${revoked} | itemId=${item._id}`)
                 req.emitToUser(uid, "share_removed", {
                     itemIds: [item._id],
                     accessRevoked: revoked

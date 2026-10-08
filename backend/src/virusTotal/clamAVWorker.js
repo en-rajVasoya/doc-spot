@@ -188,11 +188,6 @@ export const scanFileWithClamAV = async (fileId, filePath, fileSize, ownerId) =>
     const startTime = Date.now()
 
     try {
-        console.log(`\n--------------------------------------------------`)
-        console.log(`[CLAMAV WORKER] Starting remote scan for: ${fileId}`)
-        console.log(`[CLAMAV WORKER] Path: ${filePath}`)
-        console.log(`[CLAMAV WORKER] Size: ${(fileSize / (1024 * 1024)).toFixed(2)} MB`)
-        console.log(`[CLAMAV WORKER] Connecting to: ${CLAMAV_HOST}:${CLAMAV_PORT}...`)
 
         await Upload.findByIdAndUpdate(fileId, { scanStatus: "scanning" })
 
@@ -210,21 +205,17 @@ export const scanFileWithClamAV = async (fileId, filePath, fileSize, ownerId) =>
         const duration = ((Date.now() - startTime) / 1000).toFixed(2)
 
         if (isInfected) {
-            console.log(`[CLAMAV WORKER] !!! VIRUS DETECTED !!!`)
-            console.log(`[CLAMAV WORKER] Signature: ${virusName}`)
-            console.log(`[CLAMAV WORKER] Time taken: ${duration}s`)
+
 
             // Purge file from S3 or Local Disk
             try {
                 await storage.deleteFile(filePath)
-                console.log(`[CLAMAV WORKER] Infected file successfully purged from storage.`)
             } catch (e) {
                 console.error(`[CLAMAV WORKER] Storage cleanup error:`, e.message)
             }
 
             // Remove database record
             await Upload.findByIdAndDelete(fileId)
-            console.log(`[CLAMAV WORKER] Database record removed.`)
 
             // Send notification to user
             emitToUser(ownerId, "scan_complete", {
@@ -234,8 +225,7 @@ export const scanFileWithClamAV = async (fileId, filePath, fileSize, ownerId) =>
             })
 
         } else {
-            console.log(`[CLAMAV WORKER] File is CLEAN`)
-            console.log(`[CLAMAV WORKER] Time taken: ${duration}s`)
+
 
             await Upload.findByIdAndUpdate(fileId, {
                 scanStatus: "clean",
@@ -280,7 +270,7 @@ export const scanFileWithClamAV = async (fileId, filePath, fileSize, ownerId) =>
             })
         }
     } finally {
-        console.log(`--------------------------------------------------\n`)
+        // console.log(`--------------------------------------------------\n`)
     }
 }
 

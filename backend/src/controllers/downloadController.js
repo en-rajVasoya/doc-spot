@@ -64,7 +64,6 @@ const cleanupOldZips = async () => {
         if (job.createdAt && (now - job.createdAt) > TWENTY_FOUR_HOURS) {
             if (job.zipKey) {
                 await storage.deleteZipFile(job.zipKey)
-                console.log(`[CLEANUP] Deleted old zip: ${zipId}`)
             }
             zipJobsMap.delete(zipId)
         }
@@ -140,7 +139,6 @@ const startZipWorker = async (zipId, zipKey, fileList, folderName) => {
     await acquireZipSlot()
 
     const workerStartMs = nowMs()
-    console.log(`[ZIP][${zipId}] Worker spawn start | files=${fileList.length} | name=${folderName}`)
     const child = fork(path.join(__dirname, "../workers/zipWorker.js"))
 
     const currentJob = zipJobsMap.get(zipId)
@@ -159,7 +157,7 @@ const startZipWorker = async (zipId, zipKey, fileList, folderName) => {
 
     child.on("message", (msg) => {
         if (msg.type === "started") {
-            console.log(`[ZIP][${zipId}] Worker started | files=${msg.fileCount}`)
+            // console.log(`[ZIP][${zipId}] Worker started | files=${msg.fileCount}`)
         }
 
         if (msg.type === "progress") {
@@ -171,9 +169,7 @@ const startZipWorker = async (zipId, zipKey, fileList, folderName) => {
             const lastLoggedPercent = job?.lastLoggedPercent ?? -10
             if (msg.percent >= lastLoggedPercent + 10 || msg.percent === 100) {
                 const elapsedSec = ((nowMs() - workerStartMs) / 1000).toFixed(1)
-                console.log(
-                    `[ZIP][${zipId}] Progress ${msg.percent}% | ${msg.processedBytes}/${msg.totalBytes} bytes | elapsed=${elapsedSec}s`
-                )
+                
                 if (job) {
                     zipJobsMap.set(zipId, { ...job, progress: msg.percent, lastLoggedPercent: msg.percent })
                 }
@@ -189,7 +185,6 @@ const startZipWorker = async (zipId, zipKey, fileList, folderName) => {
                 createdAt: Date.now()
             })
             const totalSec = ((nowMs() - workerStartMs) / 1000).toFixed(1)
-            console.log(`[ZIP][${zipId}] Ready | size=${msg.fileSize} bytes | files=${msg.fileCount} | worker=${msg.elapsedMs}ms | total=${totalSec}s`)
             safeRelease()
         }
         if (msg.type === "error") {
@@ -289,14 +284,12 @@ export const downloadFolder = async (req, res) => {
             [id.toString()]: ""
         }, includeTrash);
 
-        console.log(`[ZIP][folder:${id}] File list ready | files=${fileList.length} | collectMs=${nowMs() - collectStartMs}`)
 
         const zipId = uuidv4()
         const zipKey = `zips/${zipId}.zip`
         zipJobsMap.set(zipId, { status: "creating", zipKey, folderName: folderData.name, createdAt: Date.now() })
 
         res.json({ success: true, zipId, folderName: folderData.name })
-        console.log(`[ZIP][${zipId}] Job created from folder download | setupMs=${nowMs() - requestStartMs}`)
 
         startZipWorker(zipId, zipKey, fileList, folderData.name)
 
@@ -357,7 +350,6 @@ export const downloadMultiple = async (req, res) => {
         if (folderIds.length > 0) {
             const collectStartMs = nowMs()
             const folderFiles = await collectFilesFromFolders(folderIds, pathPrefixMap, includeTrash)
-            console.log(`[ZIP][multi] Nested file list ready | folderCount=${folderIds.length} | files=${folderFiles.length} | collectMs=${nowMs() - collectStartMs}`)
             fileList.push(...folderFiles)
         }
 
@@ -375,7 +367,6 @@ export const downloadMultiple = async (req, res) => {
         zipJobsMap.set(zipId, { status: "creating", zipKey, folderName: zipName, createdAt: Date.now() })
 
         res.json({ success: true, zipId, folderName: zipName })
-        console.log(`[ZIP][${zipId}] Job created from multi download | totalFiles=${fileList.length} | setupMs=${nowMs() - requestStartMs}`)
         startZipWorker(zipId, zipKey, fileList, zipName)
     } catch (error) {
         logger.error(error)
@@ -462,12 +453,10 @@ export const deleteZip = async (req, res) => {
 
         if (job.status === "creating" && job.childProcess) {
             job.childProcess.kill()
-            console.log(`[ZIP] Killed worker process for zip: ${zip_id}`)
         }
 
         if (job.zipKey) {
             await storage.deleteZipFile(job.zipKey)
-            console.log(`[ZIP] Deleted: ${zip_id}`)
         }
 
         zipJobsMap.delete(zip_id)

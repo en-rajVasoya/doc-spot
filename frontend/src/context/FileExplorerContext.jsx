@@ -1,14 +1,12 @@
-import { createContext, useContext, useState, useCallback, useEffect } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useUpload } from "./UploadContext";
 import axiosApi from "../utils/api.js";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "./AuthContext.jsx";
-import { useRef } from "react";
-import { io } from "socket.io-client"
 import { useNotification } from "./NotificationContext.jsx";
 import { useSocket } from "./SocketContext.jsx";
 import { useSearch } from "./SearchContext.jsx";
-import { useMemo } from "react";
+import { useSocketEvent } from "../hooks/useSocketEvent.js";
 
 import { getRoute } from "../utils/getRoutes.js";
 
@@ -194,10 +192,10 @@ export function FileExplorerProvider({ children }) {
     // ##################################################
     const fetchRequestIdRef = useRef(0)
 
-    const fetchItems = useCallback(async () => {
+    const fetchItems = useCallback(async (showSpinner = true) => {
         const requestId = ++fetchRequestIdRef.current
         setError(null)
-        setLoading(true)
+        if (showSpinner) setLoading(true)
         try {
             const { data } = await axiosApi.get("/file/get-files", {
                 params: {
@@ -257,451 +255,323 @@ export function FileExplorerProvider({ children }) {
 
     // ##################################################
     // ---- STEP 4: Real-time socket event listeners ----
+    // Each event is one stable useSocketEvent call.
+    // The hook keeps the handler in a ref, so the handler always
+    // reads the latest state/props without re-registering on every render.
     // ##################################################
-    useEffect(() => {
-        if (!user?._id || !socket) return
 
-        // removed listeners before attaching (excluding item_deleted_forever which is shared with TrashContext)
-        socket.off("share_added")
-        socket.off("share_removed")
-        socket.off("item_uploaded")
-        socket.off("item_renamed")
-        socket.off("item_color_changed")
-        socket.off("item_moved")
-        socket.off("item_copied")
-        socket.off("item_restored")
-        socket.off("item_folder_created")
-        socket.off("global_user_profile_updated")
-        socket.off("folder_size_updated")
+    const rawUserId = user?._id || user?.id
+    const myId = rawUserId ? String(rawUserId) : null
 
+    // helpers — read live values directly (safe because hook always updates handlerRef)
+    const isHere = (folderId) =>
+        String(currentFolderId || null) === String(folderId || null)
 
-        //  for virus  scanning here
-        const handleScanComplete = ({ fileId, status, newItem, folderId }) => {
-            if (status === "infected") {
-                setItems(prev => prev.filter(item => item._id !== fileId))
-            } else if (status === "clean" && newItem) {
-                if (String(currentFolderId) === String(folderId) || (!currentFolderId && !folderId)) {
-                    setItems(prev => {
-                        if (prev.some(item => String(item._id) === String(newItem._id))) return prev
-                        let next = prev
-                        if (newItem.replacesFileId) {
-                            next = next.filter(existing => String(existing._id) !== String(newItem.replacesFileId))
-                        }
-                        return insertSorted(next, newItem)
-                    })
-                }
+    // --- scan_complete ---
+    useSocketEvent(socket, "scan_complete", ({ fileId, status, newItem, folderId }) => {
+        if (status === "infected") {
+            setItems(prev => prev.filter(item => item._id !== fileId))
+        } else if (status === "clean" && newItem) {
+            if (isHere(folderId)) {
+                setItems(prev => {
+                    if (prev.some(item => String(item._id) === String(newItem._id))) return prev
+                    let next = prev
+                    if (newItem.replacesFileId) {
+                        next = next.filter(e => String(e._id) !== String(newItem.replacesFileId))
+                    }
+                    return insertSorted(next, newItem)
+                })
             }
-            // "failed" — nothing to do, item was never added
         }
-        socket.on("scan_complete", handleScanComplete)
+    })
 
+    // --- share_added ---
+    useSocketEvent(socket, "share_added", ({ itemIds, senderId } = {}) => {
+        if (senderId && senderId !== myId) {
+            fetchItems()
+        }
+        if (currentFolderId) {
+            axiosApi.get(`/file/folder/${currentFolderId}`)
+                .then(({ data }) => setCurrentFolderPermission(data.currentPermission || null))
+                .catch(() => { })
+        }
 
-        // socket.on("share_added", ({ itemIds } = {}) => {
-        //     if (!currentFolderId) {
-        //         fetchItems();
-        //     }
-        //     if (currentFolderId) {
-        //         axiosApi.get(`/file/folder/${currentFolderId}`)
-        //             .then(({ data }) => {
-        //                 setCurrentFolderPermission(data.currentPermission || null);
-        //             });
-        //     }
+        if (itemIds?.length) {
+            itemIds.forEach(id => {
+                axiosApi.get(`/share/${id}`).then(({ data }) => {
+                    setItems(prev => prev.map(item => {
+                        if (item._id.toString() !== id.toString()) return item
+                        const myShare = data.sharedWith?.find(s => String(s.userId?._id || s.userId || s) === myId)
+                        const newPerm = myShare ? myShare.permission : item.permission
+                        return { ...item, sharedWith: data.sharedWith, isShared: data.sharedWith.length > 0, permission: newPerm }
+                    }))
+                    if (sharedUsersData.itemId && String(id) === String(sharedUsersData.itemId)) {
+                        setSharedUsersData(prev => ({
+                            ...prev,
+                            itemId: id,
+                            owner: data.owner,
+                            inheritedFolderOwner: data.inheritedFolderOwner || null,
+                            sharedWith: data.sharedWith
+                        }))
+                    }
+                }).catch(err => console.log("[share_added] fetch failed:", err.response?.status, err.message))
+            })
+        }
+    })
 
-        //     // update user list live when share event matches item or its parent folder
-        //     if (sharedUsersData.itemId) {
-        //         const relevantIds = new Set([
-        //             sharedUsersData.itemId,
-        //             ...sharedUsersData.sharedWith.map(s => s.inheritedFolderId).filter(Boolean)
-        //         ].map(String));
-
-        //         if (!itemIds || itemIds.some(id => relevantIds.has(String(id)))) {
-        //             loadSharedUsers(sharedUsersData.itemId);
-        //         }
-        //     }
-        // });
-
-
-        // socket.on("share_removed", ({ itemIds, accessRevoked } = {}) => {
-
-        //     // ONLY kick out user, deselect items, and auto-close modals if THIS user's access was revoked!
-        //     if (accessRevoked) {
-        //         if (itemIds && itemIds.length > 0) {
-        //             setSelectedIds(prev => {
-        //                 const next = new Set(prev);
-        //                 itemIds.forEach(id => next.delete(String(id)));
-        //                 return next;
-        //             });
-        //             onItemsRemovedRef.current?.(itemIds);
-        //         }
-
-        //         if (currentFolderId) {
-        //             // user is inside a folder - check if still have access
-        //             axiosApi.get(`/file/folder/${currentFolderId}`)
-        //                 .then(({ data }) => {
-        //                     setCurrentFolderPermission(data.currentPermission || null)
-        //                 })
-        //                 .catch(() => {
-        //                     // folder no longer accessible - kick user out
-        //                     navigate(getPathPrefix())
-        //                 })
-        //         } else {
-        //             // user is at root - just refetch to remove shared item from list
-        //             fetchItems()
-        //         }
-        //     }
-
-        //     // refresh the share user modal live when share event matches item or its parent folder
-        //     if (sharedUsersData.itemId) {
-        //         const relevantIds = new Set([
-        //             sharedUsersData.itemId,
-        //             ...sharedUsersData.sharedWith.map(s => s.inheritedFolderId).filter(Boolean)
-        //         ].map(String));
-
-        //         if (!itemIds || itemIds.some(id => relevantIds.has(String(id)))) {
-        //             loadSharedUsers(sharedUsersData.itemId);
-        //         }
-        //     }
-        // })
-
-        socket.on("share_added", ({ itemIds, senderId } = {}) => {
-            // ONLY refetch all files if someone ELSE shared it with you (so the new file appears in your list!)
-            if (senderId && senderId !== String(user?._id || user?.id)) {
-                fetchItems();
+    // --- share_removed ---
+    useSocketEvent(socket, "share_removed", ({ itemIds, accessRevoked } = {}) => {
+        if (accessRevoked) {
+            if (itemIds && itemIds.length > 0) {
+                setSelectedIds(prev => {
+                    const next = new Set(prev)
+                    itemIds.forEach(id => next.delete(String(id)))
+                    return next
+                })
+                onItemsRemovedRef.current?.(itemIds)
             }
+
             if (currentFolderId) {
                 axiosApi.get(`/file/folder/${currentFolderId}`)
-                    .then(({ data }) => {
-                        setCurrentFolderPermission(data.currentPermission || null);
-                    });
-            }
-
-            if (itemIds?.length) {
-                itemIds.forEach(id => {
-                    axiosApi.get(`/share/${id}`).then(({ data }) => {
-
-                        // 1. Update main file list
-                        setItems(prev => prev.map(item => {
-                            if (item._id.toString() !== id.toString()) return item;
-                            const myShare = data.sharedWith?.find(s => String(s.userId?._id || s.userId || s) === String(user?._id || user?.id));
-                            const newPerm = myShare ? myShare.permission : item.permission;
-                            return { ...item, sharedWith: data.sharedWith, isShared: data.sharedWith.length > 0, permission: newPerm };
-                        }))
-
-                        // 2. Update modal list immediately if it's open (replaces redundant loadSharedUsers call)
-                        if (sharedUsersData.itemId && String(id) === String(sharedUsersData.itemId)) {
-                            setSharedUsersData(prev => ({ ...prev, itemId: id, owner: data.owner, inheritedFolderOwner: data.inheritedFolderOwner || null, sharedWith: data.sharedWith }))
+                    .then(({ data }) => setCurrentFolderPermission(data.currentPermission || null))
+                    .catch(() => {
+                        const currentTrail = trailRef.current
+                        const revokedIndex = currentTrail.findIndex(t => (itemIds || []).some(id => String(id) === String(t.id)))
+                        if (revokedIndex > 0) {
+                            const safeParent = currentTrail[revokedIndex - 1]
+                            navigate(`${getPathPrefix()}/folder/${safeParent.id}`)
+                        } else {
+                            navigate(getPathPrefix())
                         }
-                    }).catch(err => console.log("[share_added] fetch failed:", err.response?.status, err.message))
-                })
+                    })
             }
-        });
+            fetchItems()
+        }
 
-        socket.on("share_removed", ({ itemIds, accessRevoked } = {}) => {
+        if (itemIds?.length) {
+            itemIds.forEach(id => {
+                axiosApi.get(`/share/${id}`).then(({ data }) => {
+                    setItems(prev => prev.map(item => {
+                        if (item._id.toString() !== id.toString()) return item
+                        const myShare = data.sharedWith?.find(s => String(s.userId?._id || s.userId || s) === myId)
+                        const newPerm = myShare ? myShare.permission : item.permission
+                        return { ...item, sharedWith: data.sharedWith, isShared: data.sharedWith.length > 0, permission: newPerm }
+                    }))
+                }).catch(err => console.log("[share_removed] fetch failed:", err.response?.status, err.message))
+            })
+        }
 
-            if (accessRevoked) {
-                if (itemIds && itemIds.length > 0) {
-                    setSelectedIds(prev => {
-                        const next = new Set(prev);
-                        itemIds.forEach(id => next.delete(String(id)));
-                        return next;
-                    });
-                    onItemsRemovedRef.current?.(itemIds);
-                }
+        if (sharedUsersData.itemId && (!itemIds || itemIds.some(id => String(id) === String(sharedUsersData.itemId)))) {
+            loadSharedUsers(sharedUsersData.itemId)
+        }
+    })
 
-                if (currentFolderId) {
-                    axiosApi.get(`/file/folder/${currentFolderId}`)
-                        .then(({ data }) => {
-                            setCurrentFolderPermission(data.currentPermission || null)
-                        })
-                        .catch(() => {
-                            const currentTrail = trailRef.current;
-                            const revokedIndex = currentTrail.findIndex(t => (itemIds || []).some(id => String(id) === String(t.id)));
-                            if (revokedIndex > 0) {
-                                const safeParent = currentTrail[revokedIndex - 1];
-                                navigate(`${getPathPrefix()}/folder/${safeParent.id}`);
-                            } else {
-                                navigate(getPathPrefix());
-                            }
-                        })
-                }
-                fetchItems()
-            }
+    // --- item_uploaded ---
+    useSocketEvent(socket, "item_uploaded", ({ folderId, newItem, newItems }) => {
+        if (!isHere(folderId)) return
+        const itemsToAdd = (newItems?.length ? newItems : (newItem ? [newItem] : []))
+            .filter(item => item.type === "folder" || item.scanStatus !== "scanning")
 
-            if (itemIds?.length) {
-                itemIds.forEach(id => {
-                    axiosApi.get(`/share/${id}`).then(({ data }) => {
-                        setItems(prev => prev.map(item => {
-                            if (item._id.toString() !== id.toString()) return item;
-                            const myShare = data.sharedWith?.find(s => String(s.userId?._id || s.userId || s) === String(user?._id || user?.id));
-                            const newPerm = myShare ? myShare.permission : item.permission;
-                            return { ...item, sharedWith: data.sharedWith, isShared: data.sharedWith.length > 0, permission: newPerm };
-                        }))
-                    }).catch(err => console.log("[share_removed] fetch failed:", err.response?.status, err.message))
-                })
-            }
-
-            if (sharedUsersData.itemId && (!itemIds || itemIds.some(id => String(id) === String(sharedUsersData.itemId)))) {
-                loadSharedUsers(sharedUsersData.itemId)
-            }
-        })
-
-        socket.on("item_uploaded", ({ folderId, newItem, newItems }) => {
-            if (String(currentFolderId) === String(folderId) || (!currentFolderId && !folderId)) {
-                const itemsToAdd = (newItems?.length ? newItems : (newItem ? [newItem] : []))
-                    .filter(item => item.type === "folder" || item.scanStatus !== "scanning");
-                if (itemsToAdd.length > 0) {
-                    setItems(prev => {
-                        let next = [...prev];
-                        itemsToAdd.forEach(item => {
-                            if (item.replacesFileId) {
-                                next = next.filter(existing => String(existing._id) !== String(item.replacesFileId));
-                            }
-                            if (!next.some(existing => String(existing._id) === String(item._id))) {
-                                next = insertSorted(next, item);
-                            }
-                        });
-                        return next;
-                    });
-                } else if (!(newItems?.length || newItem)) {
-                    fetchItems();
-                }
-            }
-        })
-
-        // item renamed event here
-        socket.on("item_renamed", ({ itemId, newName }) => {
-            setItems(prev => prev.map(item =>
-                item._id === itemId ? { ...item, name: newName, updatedAt: new Date().toISOString() } : item
-            ))
-
-            //  if in current folder and from breadcrumb it is changing so socket event
-            if (itemId === currentFolderId) {
-                setCurrentFolderMeta(prev => ({ ...prev, name: newName }))
-
-            }
-
-            setTrail(prev => prev.map(t =>
-                t.id === itemId ? { ...t, name: newName } : t
-            ))
-        })
-
-        //  folder icon change socket evetn
-        socket.on("item_color_changed", ({ itemId, color }) => {
-            setItems(prev => prev.map(item =>
-                item._id === itemId ? { ...item, color, updatedAt: new Date().toISOString() } : item
-            ))
-        })
-
-
-
-        // item moved socket
-        socket.on("item_moved", ({ itemId, oldParent, newParent, movedItem, reason }) => {
-            // remove from old folder
-            if (String(currentFolderId) === String(oldParent) || (!currentFolderId && !oldParent)) {
-                setItems(prev => prev.filter(item => item._id.toString() !== itemId.toString()))
-            }
-            // add to new folder
-            if (String(currentFolderId) === String(newParent) || (!currentFolderId && !newParent)) {
-                // If moving to Root (newParent is null), only add to screen if current user is the owner of movedItem
-                if (!newParent && user?._id && movedItem?.owner) {
-                    const movedItemOwnerId = typeof movedItem.owner === "object" ? movedItem.owner._id : movedItem.owner;
-                    if (String(user._id) !== String(movedItemOwnerId)) {
-                        return;
+        if (itemsToAdd.length > 0) {
+            setItems(prev => {
+                let next = [...prev]
+                itemsToAdd.forEach(item => {
+                    if (item.replacesFileId) {
+                        next = next.filter(e => String(e._id) !== String(item.replacesFileId))
                     }
-                }
-
-                setItems(prev => {
-                    const exists = prev.some(item => String(item._id) === String(movedItem._id))
-                    if (exists) return prev
-                    return insertSorted(prev, movedItem)
-                })
-            }
-
-            if (itemId === currentFolderId && reason !== "removed") {
-                navigate(newParent ? `${getPathPrefix()}/folder/${newParent}` : getPathPrefix())
-            }
-        })
-
-        //  item copied event 
-        socket.on("item_copied", ({ parentId, newItem }) => {
-            if (String(currentFolderId) === String(parentId) || (!currentFolderId && !parentId)) {
-                // If copying to Root (parentId is null), only add to screen if current user is the owner of newItem
-                if (!parentId && user?._id && newItem?.owner) {
-                    const newItemOwnerId = typeof newItem.owner === "object" ? newItem.owner._id : newItem.owner;
-                    if (String(user._id) !== String(newItemOwnerId)) {
-                        return;
+                    if (!next.some(e => String(e._id) === String(item._id))) {
+                        next = insertSorted(next, item)
                     }
-                }
-                setItems(prev => insertSorted(prev, newItem))
-            }
-        })
-
-
-
-
-
-        //  here if user trash someting notify user 2 
-        const handleItemTrashed = (data) => {
-            const { parentId, ids, itemId, oldParent } = data;
-            const trashedIds = ids ? ids.map(String) : (itemId ? [String(itemId)] : []);
-
-            if (String(currentFolderId) === String(parentId || oldParent) || (!currentFolderId && !parentId && !oldParent)) {
-                setItems(prev => prev.filter(item => !trashedIds.includes(item._id.toString())));
-            }
-
-            // Check if current folder OR any parent folder in the breadcrumb trail was deleted
-            const currentTrail = trailRef.current;
-            const trashedIndex = currentTrail.findIndex(t => trashedIds.includes(String(t.id)));
-
-            if (trashedIndex !== -1) {
-                // Find the immediate surviving parent before the deleted folder
-                const safeParent = trashedIndex > 0 ? currentTrail[trashedIndex - 1] : null;
-                if (safeParent) {
-                    navigate(`${getPathPrefix()}/folder/${safeParent.id}`);
-                } else {
-                    navigate(getPathPrefix());
-                }
-            } else if (trashedIds.includes(String(currentFolderId))) {
-                navigate(parentId ? `${getPathPrefix()}/folder/${parentId}` : getPathPrefix());
-            }
-        };
-
-        socket.on("item_trashed", handleItemTrashed);
-
-        //  here when user restor something it main screeen socket event
-        socket.on("item_restored", ({ parentId }) => {
-
-            if (currentFolderId === parentId || (!currentFolderId && !parentId)) {
-                fetchItems()
-            }
-        })
-
-
-        //  if inside the fodler new folder creating 
-        socket.on("item_folder_created", ({ parentId, newFolder }) => {
-            if (String(currentFolderId) === String(parentId)) {
-                setItems(prev => {
-                    const exists = prev.some(item => String(item._id) === String(newFolder._id))
-                    if (exists) return prev
-                    return insertSorted(prev, newFolder)
                 })
+                return next
+            })
+        } else if (!(newItems?.length || newItem)) {
+            fetchItems()
+        }
+    })
+
+    // --- item_renamed ---
+    useSocketEvent(socket, "item_renamed", ({ itemId, newName }) => {
+        setItems(prev => prev.map(item =>
+            item._id === itemId ? { ...item, name: newName, updatedAt: new Date().toISOString() } : item
+        ))
+        if (itemId === currentFolderId) {
+            setCurrentFolderMeta(prev => ({ ...prev, name: newName }))
+        }
+        setTrail(prev => prev.map(t => t.id === itemId ? { ...t, name: newName } : t))
+    })
+
+    // --- item_color_changed ---
+    useSocketEvent(socket, "item_color_changed", ({ itemId, color }) => {
+        setItems(prev => prev.map(item =>
+            item._id === itemId ? { ...item, color, updatedAt: new Date().toISOString() } : item
+        ))
+    })
+
+    // --- item_moved ---
+    useSocketEvent(socket, "item_moved", ({ itemId, oldParent, newParent, movedItem, reason }) => {
+        // remove from old folder
+        if (isHere(oldParent)) {
+            setItems(prev => prev.filter(item => item._id.toString() !== itemId.toString()))
+        }
+        // add to new folder
+        if (isHere(newParent)) {
+            if (!newParent && myId && movedItem?.owner) {
+                const movedItemOwnerId = typeof movedItem.owner === "object" ? movedItem.owner._id : movedItem.owner
+                if (myId !== String(movedItemOwnerId)) return
             }
-        })
+            setItems(prev => {
+                if (prev.some(item => String(item._id) === String(movedItem._id))) return prev
+                return insertSorted(prev, movedItem)
+            })
+        }
+        if (itemId === currentFolderId && reason !== "removed") {
+            navigate(newParent ? `${getPathPrefix()}/folder/${newParent}` : getPathPrefix())
+        }
+    })
 
+    // --- item_copied ---
+    useSocketEvent(socket, "item_copied", ({ parentId, newItem }) => {
+        if (!isHere(parentId)) return
+        if (!parentId && myId && newItem?.owner) {
+            const newItemOwnerId = typeof newItem.owner === "object" ? newItem.owner._id : newItem.owner
+            if (myId !== String(newItemOwnerId)) return
+        }
+        setItems(prev => insertSorted(prev, newItem))
+    })
 
-        //  here this socket is for the profile update global all users will see this here
-        // Listen for global profile updates (updates dashboard items AND suggestedUsers centrally)
-        socket.on("global_user_profile_updated", (updatedUser) => {
-            if (!updatedUser?._id) return;
+    // --- item_trashed ---
+    useSocketEvent(socket, "item_trashed", (data) => {
+        const { parentId, ids, itemId, oldParent } = data
+        const trashedIds = ids ? ids.map(String) : (itemId ? [String(itemId)] : [])
 
-            // 1. Update dashboard items (owners and sharedWith)
-            setItems(prev => prev.map(item => {
-                if (!item) return item;
-                let updatedItem = { ...item };
+        // remove by id no matter which folder/tab I'm in (if it's not on screen, filter does nothing)
+        setItems(prev => prev.filter(item => !trashedIds.includes(item._id.toString())))
 
-                if (updatedItem.owner) {
-                    const ownerId = typeof updatedItem.owner === "object" ? (updatedItem.owner._id || updatedItem.owner.userId) : updatedItem.owner;
-                    if (ownerId && String(ownerId) === String(updatedUser._id)) {
-                        if (typeof updatedItem.owner === "object") {
-                            updatedItem.owner = { ...updatedItem.owner, ...updatedUser };
-                        }
-                    }
+        const currentTrail = trailRef.current
+        const trashedIndex = currentTrail.findIndex(t => trashedIds.includes(String(t.id)))
+
+        if (trashedIndex !== -1) {
+            const safeParent = trashedIndex > 0 ? currentTrail[trashedIndex - 1] : null
+            if (safeParent) {
+                navigate(`${getPathPrefix()}/folder/${safeParent.id}`)
+            } else {
+                navigate(getPathPrefix())
+            }
+        } else if (trashedIds.includes(String(currentFolderId))) {
+            navigate(parentId ? `${getPathPrefix()}/folder/${parentId}` : getPathPrefix())
+        }
+    })
+
+    // --- item_restored ---
+    useSocketEvent(socket, "item_restored", () => {
+        fetchItems(false)
+    })
+
+    // --- item_folder_created ---
+    useSocketEvent(socket, "item_folder_created", ({ parentId, newFolder }) => {
+        if (String(currentFolderId) === String(parentId)) {
+            setItems(prev => {
+                if (prev.some(item => String(item._id) === String(newFolder._id))) return prev
+                return insertSorted(prev, newFolder)
+            })
+        }
+    })
+
+    // --- global_user_profile_updated ---
+    useSocketEvent(socket, "global_user_profile_updated", (updatedUser) => {
+        if (!updatedUser?._id) return
+
+        setItems(prev => prev.map(item => {
+            if (!item) return item
+            let updatedItem = { ...item }
+
+            if (updatedItem.owner) {
+                const ownerId = typeof updatedItem.owner === "object" ? (updatedItem.owner._id || updatedItem.owner.userId) : updatedItem.owner
+                if (ownerId && String(ownerId) === String(updatedUser._id) && typeof updatedItem.owner === "object") {
+                    updatedItem.owner = { ...updatedItem.owner, ...updatedUser }
                 }
+            }
 
-                if (Array.isArray(updatedItem.sharedWith)) {
-                    updatedItem.sharedWith = updatedItem.sharedWith.map(s => {
-                        if (!s) return s;
-                        const memberId = typeof s === "object" ? (s.userId || s._id) : s;
-                        if (memberId && String(memberId) === String(updatedUser._id)) {
-                            return typeof s === "object" ? { ...s, ...updatedUser } : s;
-                        }
-                        return s;
-                    });
-                }
-
-                return updatedItem;
-            }));
-
-            // 2. Update suggestedUsers centrally so Modals and SearchBars automatically update live
-            setSuggestedUsers(prev => prev.map(u =>
-                String(u._id) === String(updatedUser._id) ? { ...u, ...updatedUser } : u
-            ));
-
-            // 3. Update the open Share modal's owner/sharedWith data if it matches
-            setSharedUsersData(prev => {
-                if (!prev.itemId) return prev
-
-                let changed = false
-                let nextOwner = prev.owner
-                if (prev.owner && String(prev.owner.userId) === String(updatedUser._id)) {
-                    nextOwner = { ...prev.owner, ...updatedUser }
-                    changed = true
-                }
-
-                const nextSharedWith = prev.sharedWith.map(s => {
-                    const memberId = s.userId || s._id
-                    if (String(memberId) === String(updatedUser._id)) {
-                        changed = true
-                        return { ...s, ...updatedUser }
+            if (Array.isArray(updatedItem.sharedWith)) {
+                updatedItem.sharedWith = updatedItem.sharedWith.map(s => {
+                    if (!s) return s
+                    const memberId = typeof s === "object" ? (s.userId || s._id) : s
+                    if (memberId && String(memberId) === String(updatedUser._id)) {
+                        return typeof s === "object" ? { ...s, ...updatedUser } : s
                     }
                     return s
                 })
-
-                return changed ? { ...prev, owner: nextOwner, sharedWith: nextSharedWith } : prev
-            })
-        });
-
-
-        // folder size update socket
-        socket.on("folder_size_updated", ({ updates }) => {
-            if (!updates?.length) return
-            const sizeMap = new Map(updates.map(u => [String(u.folderId), u.totalSize]))
-
-            setItems(prev => prev.map(item =>
-                item.type === "folder" && sizeMap.has(String(item._id))
-                    ? { ...item, totalSize: sizeMap.get(String(item._id)) }
-                    : item
-            ))
-        })
-
-        //  when user replace whoel folder so socket event
-        const onFolderReplaced = ({ oldFolderId, newFolderId, parentId }) => {
-            // remove the old folder from the list (new one arrives via item_uploaded)
-            setItems(prev => prev.filter(i => String(i._id) !== String(oldFolderId)))
-
-            const currentTrail = trailRef.current
-            const idx = currentTrail.findIndex(t => String(t.id) === String(oldFolderId))
-
-            if (String(currentFolderId) === String(oldFolderId)) {
-                // user is inside the old folder -> go to the new one
-                navigate(`${getPathPrefix()}/folder/${newFolderId}`)
-            } else if (idx !== -1) {
-                // user is deeper inside the old folder -> go to the new one too
-                navigate(`${getPathPrefix()}/folder/${newFolderId}`)
             }
+
+            return updatedItem
+        }))
+
+        setSuggestedUsers(prev => prev.map(u =>
+            String(u._id) === String(updatedUser._id) ? { ...u, ...updatedUser } : u
+        ))
+
+        setSharedUsersData(prev => {
+            if (!prev.itemId) return prev
+            let changed = false
+            let nextOwner = prev.owner
+            if (prev.owner && String(prev.owner.userId) === String(updatedUser._id)) {
+                nextOwner = { ...prev.owner, ...updatedUser }
+                changed = true
+            }
+            const nextSharedWith = prev.sharedWith.map(s => {
+                const memberId = s.userId || s._id
+                if (String(memberId) === String(updatedUser._id)) {
+                    changed = true
+                    return { ...s, ...updatedUser }
+                }
+                return s
+            })
+            return changed ? { ...prev, owner: nextOwner, sharedWith: nextSharedWith } : prev
+        })
+    })
+
+    // --- folder_size_updated ---
+    useSocketEvent(socket, "folder_size_updated", ({ updates }) => {
+        if (!updates?.length) return
+        const sizeMap = new Map(updates.map(u => [String(u.folderId), u.totalSize]))
+        setItems(prev => prev.map(item =>
+            item.type === "folder" && sizeMap.has(String(item._id))
+                ? { ...item, totalSize: sizeMap.get(String(item._id)) }
+                : item
+        ))
+    })
+
+    // --- folder_replaced ---
+    useSocketEvent(socket, "folder_replaced", ({ oldFolderId, newFolderId }) => {
+        setItems(prev => prev.filter(i => String(i._id) !== String(oldFolderId)))
+
+        const currentTrail = trailRef.current
+        const idx = currentTrail.findIndex(t => String(t.id) === String(oldFolderId))
+
+        if (String(currentFolderId) === String(oldFolderId) || idx !== -1) {
+            navigate(`${getPathPrefix()}/folder/${newFolderId}`)
+        }
+    })
+
+    // re-sync items when the socket reconnects (wifi drop, laptop sleep, manual reconnect)
+    const hasConnectedOnceRef = useRef(false)
+
+    useEffect(() => {
+        if (!socket) return
+        hasConnectedOnceRef.current = socket.connected // already connected = first connect is done
+
+        const handleConnect = () => {
+            if (!hasConnectedOnceRef.current) {
+                hasConnectedOnceRef.current = true // first connect: page already fetched, skip
+                return
+            }
+            fetchItems() // real reconnect: catch up
         }
 
-        socket.on("folder_replaced", onFolderReplaced)
-
-        return () => {
-            socket.off("share_added")
-            socket.off("share_removed")
-            socket.off("item_uploaded")
-            socket.off("item_renamed")
-            socket.off("item_color_changed")
-            socket.off("item_moved")
-            socket.off("item_copied")
-            socket.off("item_restored")
-            socket.off("item_trashed", handleItemTrashed)
-            socket.off("scan_complete", handleScanComplete)
-            socket.off("item_folder_created")
-            socket.off("global_user_profile_updated")
-            socket.off("folder_size_updated")
-            socket.off("folder_replaced", onFolderReplaced)
-        }
-
-    }, [user?._id, socket, currentFolderId, fetchItems, sharedUsersData.itemId])
-
+        socket.on("connect", handleConnect)
+        return () => socket.off("connect", handleConnect)
+    }, [socket, fetchItems])
 
 
 

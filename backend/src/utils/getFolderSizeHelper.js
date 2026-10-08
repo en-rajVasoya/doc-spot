@@ -45,7 +45,7 @@ export const updateFolderSizeTree = async (folderId, sizeDifference) => {
          // emit one batched event per user
         perUser.forEach((updates, uid) => emitToUser(uid, "folder_size_updated", { updates }));
     } catch (error) {
-        logger.error(`[folder_size_updated] emit failed: ${err.message}`);
+        logger.error(`[folder_size_updated] emit failed: ${error.message}`);
 
     }
 }
